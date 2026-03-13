@@ -7,12 +7,14 @@ import io.ktor.client.plugins.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
 import io.ktor.serialization.kotlinx.json.*
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 @Serializable
 data class Nutriments(
-    val energy_kcal_100g: Double? = null,
+    @SerialName("energy-kcal_100g") val energy_kcal_100g: Double? = null,
+    @SerialName("energy-kcal") val energy_kcal: Double? = null,
     val proteins_100g: Double? = null,
     val carbohydrates_100g: Double? = null,
     val fat_100g: Double? = null
@@ -57,7 +59,7 @@ class FoodService {
             parameter("action", "process")
             parameter("json", 1)
             parameter("page_size", 10)
-            parameter("fields", "product_name,nutriments,image_url,brands")
+            parameter("fields", "product_name,image_url,brands,nutriments_estimated,nutriments")
             parameter("lc", "es")
         }.body()
     }
