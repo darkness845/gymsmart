@@ -7,11 +7,13 @@ import androidx.navigation.compose.composable
 import com.gymsmart.gymsmart.screens.DashboardScreen
 import com.gymsmart.gymsmart.screens.NutritionScreen
 import com.gymsmart.gymsmart.screens.TrainingScreen
+import com.gymsmart.gymsmart.screens.GpsScreen // <--- 1. AÑADIDO: Importamos tu pantalla
 
 sealed class Screen(val route: String) {
     object Dashboard : Screen("dashboard")
     object Nutrition : Screen("nutrition")
     object Training : Screen("training")
+    object Gps : Screen("gps") // <--- 2. AÑADIDO: Tu ruta "gps"
 }
 
 @Composable
@@ -28,6 +30,11 @@ fun NavGraph(navController: NavHostController) {
         }
         composable(Screen.Training.route) {
             TrainingScreen(navController)
+        }
+
+        // ---CÓDIGO DE DANIEL---
+        composable(Screen.Gps.route) {
+            GpsScreen(navController) // <--- 3. AÑADIDO: Registro de tu pantalla
         }
     }
 }
