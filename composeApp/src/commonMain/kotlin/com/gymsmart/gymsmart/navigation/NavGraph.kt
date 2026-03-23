@@ -8,8 +8,10 @@ import com.gymsmart.gymsmart.screens.DashboardScreen
 import com.gymsmart.gymsmart.screens.NutritionScreen
 import com.gymsmart.gymsmart.screens.TrainingScreen
 import com.gymsmart.gymsmart.screens.GpsScreen // <--- 1. AÑADIDO: Importamos tu pantalla
+import com.gymsmart.gymsmart.screens.WeightScreen
 
 sealed class Screen(val route: String) {
+    object Weight :Screen("weight")
     object Dashboard : Screen("dashboard")
     object Nutrition : Screen("nutrition")
     object Training : Screen("training")
@@ -30,6 +32,10 @@ fun NavGraph(navController: NavHostController) {
         }
         composable(Screen.Training.route) {
             TrainingScreen(navController)
+        }
+        // --- NUEVO: WeightScreen ---
+        composable(Screen.Weight.route) {
+            WeightScreen(navController)
         }
 
         // ---CÓDIGO DE DANIEL---

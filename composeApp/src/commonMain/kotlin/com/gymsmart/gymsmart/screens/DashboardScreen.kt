@@ -54,6 +54,10 @@ fun DashboardScreen(navController: NavController) {
         ) {
             Text("GPS y Telemetría Garmin")
         }
+
+        Button(onClick = { navController.navigate(Screen.Weight.route) }) {
+            Text("Peso")
+        }
         // --- FIN DE TU PARTE ---
     }
 }
