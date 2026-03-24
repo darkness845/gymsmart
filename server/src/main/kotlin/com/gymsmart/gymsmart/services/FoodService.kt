@@ -53,14 +53,26 @@ class FoodService {
     }
 
     suspend fun searchFood(query: String): FoodSearchResponse {
-        return client.get("https://world.openfoodfacts.org/cgi/search.pl") {
-            parameter("search_terms", query)
-            parameter("search_simple", 1)
-            parameter("action", "process")
-            parameter("json", 1)
-            parameter("page_size", 10)
-            parameter("fields", "product_name,image_url,brands,nutriments_estimated,nutriments")
-            parameter("lc", "es")
-        }.body()
+        return try {
+            val response = client.get("https://world.openfoodfacts.org/cgi/search.pl") {
+                parameter("search_terms", query)
+                parameter("search_simple", 1)
+                parameter("action", "process")
+                parameter("json", 1)
+                parameter("page_size", 10)
+                parameter("fields", "product_name,image_url,brands,nutriments_estimated,nutriments")
+                parameter("lc", "es")
+                parameter("user_id", "jony2745")
+                parameter("password", "Silimon274")
+            }
+
+            if (response.status.value != 200) {
+                return FoodSearchResponse(products = emptyList(), count = 0)
+            }
+
+            response.body()
+        } catch (e: Exception) {
+            FoodSearchResponse(products = emptyList(), count = 0)
+        }
     }
 }
