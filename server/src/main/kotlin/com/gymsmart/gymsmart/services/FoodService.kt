@@ -94,6 +94,16 @@ class FoodService {
 
             val usdaResponse = response.body<UsdaSearchResponse>()
 
+            // ← AÑADE ESTO
+            println(">>> USDA foods: ${usdaResponse.foods.size}")
+            usdaResponse.foods.firstOrNull()?.let {
+                println(">>> Primer alimento: ${it.description}")
+                println(">>> Nutrientes: ${it.foodNutrients.size}")
+                it.foodNutrients.take(5).forEach { n ->
+                    println(">>>   id=${n.nutrientId} name=${n.nutrientName} value=${n.value}")
+                }
+            }
+
             // Convertir respuesta USDA al formato que ya usa tu frontend
             val products = usdaResponse.foods.map { food ->
                 val nutrients = food.foodNutrients
