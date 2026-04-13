@@ -1,63 +1,206 @@
 package com.gymsmart.gymsmart.screens
 
+import androidx.compose.ui.unit.Dp
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.gymsmart.gymsmart.navigation.Screen
 
 @Composable
 fun DashboardScreen(navController: NavController) {
+
+    val background = Color(0xFFF5F5F5)
+    val accent = Color(0xFFFFC107)
+    val textPrimary = Color(0xFF1C1C1C)
+    val textSecondary = Color(0xFF6B6B6B)
+
     Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+        modifier = Modifier
+            .fillMaxSize()
+            .background(background)
+            .padding(20.dp)
     ) {
+
+        Spacer(modifier = Modifier.height(12.dp))
+
         Text(
-            text = "GymSmart 🏋️",
-            style = MaterialTheme.typography.headlineLarge
+            text = "GymSmart",
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold,
+            color = textPrimary
         )
 
-        Spacer(modifier = Modifier.height(32.dp))
+        Text(
+            text = "Tu progreso diario",
+            style = MaterialTheme.typography.bodyMedium,
+            color = textSecondary
+        )
 
-        // Botón de Jonathan: Nutrición
-        Button(
-            onClick = { navController.navigate(Screen.Nutrition.route) },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Nutrición y Calorías")
-        }
+        Spacer(modifier = Modifier.height(28.dp))
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Botón de Jonathan: Entrenamiento
-        Button(
+        // 🔥 CARD PRINCIPAL
+        AnimatedCard(
             onClick = { navController.navigate(Screen.Training.route) },
-            modifier = Modifier.fillMaxWidth()
+            backgroundColor = accent,
+            height = 130.dp
         ) {
-            Text("Entrenamiento")
+            Column {
+                Text(
+                    "Entrenamiento",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.Black
+                )
+                Text(
+                    "Empieza tu rutina",
+                    color = Color.Black.copy(alpha = 0.7f)
+                )
+            }
         }
 
-        // --- INICIO DE TU PARTE (DANIEL) ---
-        Spacer(modifier = Modifier.height(16.dp)) // Mantenemos el mismo espacio
+        Spacer(modifier = Modifier.height(20.dp))
 
-        Button(
-            onClick = { navController.navigate(Screen.Gps.route) },
-            modifier = Modifier.fillMaxWidth(),
-            // Le damos un color diferente para que sepas cuál es el tuyo (opcional)
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.secondary
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+
+                AnimatedMiniCard(
+                    title = "Nutrición",
+                    onClick = { navController.navigate(Screen.Nutrition.route) },
+                    modifier = Modifier.weight(1f)
+                )
+
+                AnimatedMiniCard(
+                    title = "Peso",
+                    onClick = { navController.navigate(Screen.Weight.route) },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+
+                AnimatedMiniCard(
+                    title = "GPS",
+                    onClick = { navController.navigate(Screen.Gps.route) },
+                    modifier = Modifier.weight(1f)
+                )
+
+                AnimatedMiniCard(
+                    title = "Progreso",
+                    onClick = { },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun AnimatedCard(
+    onClick: () -> Unit,
+    backgroundColor: Color,
+    height: Dp,
+    content: @Composable ColumnScope.() -> Unit
+) {
+
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+
+    val scale by animateFloatAsState(if (pressed) 0.96f else 1f)
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(height)
+            .scale(scale)
+            .shadow(
+                elevation = if (pressed) 4.dp else 10.dp,
+                shape = RoundedCornerShape(22.dp)
             )
-        ) {
-            Text("GPS y Telemetría Garmin")
-        }
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick
+            ),
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = backgroundColor)
+    ) {
 
-        Button(onClick = { navController.navigate(Screen.Weight.route) }) {
-            Text("Peso")
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(20.dp),
+            verticalArrangement = Arrangement.Center
+        ) {
+            content()
         }
-        // --- FIN DE TU PARTE ---
+    }
+}
+
+@Composable
+fun AnimatedMiniCard(
+    title: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+
+    val scale by animateFloatAsState(if (pressed) 0.95f else 1f)
+
+    Card(
+        modifier = modifier
+            .height(120.dp)
+            .scale(scale)
+            .shadow(
+                elevation = if (pressed) 3.dp else 6.dp,
+                shape = RoundedCornerShape(18.dp)
+            )
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick
+            ),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White)
+    ) {
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.Center
+        ) {
+
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xFF1C1C1C)
+            )
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Text(
+                text = "Abrir",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color(0xFF9E9E9E)
+            )
+        }
     }
 }
