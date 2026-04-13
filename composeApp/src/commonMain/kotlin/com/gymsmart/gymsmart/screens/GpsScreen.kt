@@ -2,15 +2,52 @@ package com.gymsmart.gymsmart.screens
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import io.ktor.client.*
+import io.ktor.client.call.*
+import io.ktor.client.request.*
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
+data class GpsData(
+    val lat: Double,
+    val lon: Double,
+    val timestamp: Long
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GpsScreen(navController: NavController) {
+
+    var lat by remember { mutableStateOf("--") }
+    var lon by remember { mutableStateOf("--") }
+    var status by remember { mutableStateOf("Buscando señal...") }
+
+    val scope = rememberCoroutineScope()
+    val client = remember { HttpClient() }
+
+    // 🔁 Polling automático
+    LaunchedEffect(Unit) {
+        while (true) {
+            try {
+                val data: GpsData = client.get("http://localhost:8080/gps").body()
+
+                lat = data.lat.toString()
+                lon = data.lon.toString()
+                status = "Señal recibida ✅"
+
+            } catch (e: Exception) {
+                status = "Sin datos ❌"
+            }
+
+            delay(3000)
+        }
+    }
+
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
@@ -25,17 +62,25 @@ fun GpsScreen(navController: NavController) {
                 .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Tarjeta de estado del GPS
+
+            // 📍 ESTADO GPS
             ElevatedCard(
-                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 16.dp)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text("📍 Estado del GPS", style = MaterialTheme.typography.titleMedium)
-                    Text("Buscando satélites...", style = MaterialTheme.typography.bodySmall)
+                    Text(status, style = MaterialTheme.typography.bodySmall)
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text("Latitud: $lat")
+                    Text("Longitud: $lon")
                 }
             }
 
-            // Tarjeta de Telemetría Garmin
+            // ⌚ GARMIN (lo dejamos igual)
             ElevatedCard(
                 modifier = Modifier.fillMaxWidth()
             ) {

@@ -1,6 +1,7 @@
 package com.gymsmart.gymsmart.plugins
 
 import com.gymsmart.gymsmart.routes.foodRoute
+import com.gymsmart.gymsmart.routes.gpsRoute
 import com.gymsmart.gymsmart.routes.healthRoute
 import com.gymsmart.gymsmart.services.FoodService
 import io.ktor.server.application.*
@@ -16,5 +17,6 @@ fun Application.configureRouting() {
         }
         healthRoute()
         foodRoute(foodService)
+        gpsRoute()
     }
 }

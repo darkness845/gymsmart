@@ -112,6 +112,8 @@ android {
 
 dependencies {
     debugImplementation(libs.compose.uiTooling)
+    implementation("io.ktor:ktor-client-core:2.3.7")
+    implementation("io.ktor:ktor-client-cio:2.3.7")
 }
 
 compose.desktop {
