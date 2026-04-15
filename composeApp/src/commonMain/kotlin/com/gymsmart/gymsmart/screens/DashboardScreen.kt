@@ -8,6 +8,8 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -19,6 +21,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.gymsmart.gymsmart.navigation.Screen
+import com.gymsmart.gymsmart.services.AuthService
+import kotlinx.coroutines.launch
 
 @Composable
 fun DashboardScreen(navController: NavController) {
@@ -27,6 +31,9 @@ fun DashboardScreen(navController: NavController) {
     val accent = Color(0xFFFFC107)
     val textPrimary = Color(0xFF1C1C1C)
     val textSecondary = Color(0xFF6B6B6B)
+
+    val authService = remember { AuthService() }
+    val scope = rememberCoroutineScope()
 
     Column(
         modifier = Modifier
@@ -37,18 +44,41 @@ fun DashboardScreen(navController: NavController) {
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        Text(
-            text = "GymSmart",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            color = textPrimary
-        )
+        // Título + botón logout
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text(
+                    text = "GymSmart",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = textPrimary
+                )
+                Text(
+                    text = "Tu progreso diario",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = textSecondary
+                )
+            }
 
-        Text(
-            text = "Tu progreso diario",
-            style = MaterialTheme.typography.bodyMedium,
-            color = textSecondary
-        )
+            IconButton(onClick = {
+                scope.launch {
+                    authService.logout()
+                    navController.navigate(Screen.Login.route) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                }
+            }) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.Logout,
+                    contentDescription = "Cerrar sesión",
+                    tint = textSecondary
+                )
+            }
+        }
 
         Spacer(modifier = Modifier.height(28.dp))
 

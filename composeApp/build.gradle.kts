@@ -46,6 +46,7 @@ kotlin {
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.androidx.activity.compose)
             implementation(libs.ktor.clientAndroid)
+            implementation("io.ktor:ktor-client-okhttp:3.3.3")
         }
 
         commonMain.dependencies {
@@ -79,6 +80,10 @@ kotlin {
             implementation(compose.desktop.currentOs)
             implementation(libs.kotlinx.coroutinesSwing)
             implementation(libs.ktor.clientJava)
+        }
+
+        iosMain.dependencies {
+            implementation("io.ktor:ktor-client-darwin:3.3.3")
         }
     }
 }
@@ -115,8 +120,6 @@ android {
 
 dependencies {
     debugImplementation(libs.compose.uiTooling)
-    implementation("io.ktor:ktor-client-core:2.3.7")
-    implementation("io.ktor:ktor-client-cio:2.3.7")
 }
 
 compose.desktop {
