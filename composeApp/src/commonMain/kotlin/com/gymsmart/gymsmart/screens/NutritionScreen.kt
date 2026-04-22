@@ -30,6 +30,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import com.gymsmart.gymsmart.config.AppConfig
 import io.ktor.client.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
@@ -452,7 +453,7 @@ private fun FoodSearchSheet(
                     scope.launch {
                         isLoading = true; errorMsg = null; results = emptyList()
                         try {
-                            val raw = httpClient.get("http://localhost:8080/food/search") {
+                            val raw = httpClient.get("${AppConfig.BASE_URL}/food/search") {
                                 parameter("q", query)
                             }.bodyAsText()
                             results = Json { ignoreUnknownKeys = true }

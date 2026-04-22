@@ -7,6 +7,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import com.gymsmart.gymsmart.config.AppConfig
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.request.*
@@ -34,7 +35,7 @@ fun GpsScreen(navController: NavController) {
     LaunchedEffect(Unit) {
         while (true) {
             try {
-                val data: GpsData = client.get("http://localhost:8080/gps").body()
+                val data: GpsData = client.get("${AppConfig.BASE_URL}/gps").body()
 
                 lat = data.lat.toString()
                 lon = data.lon.toString()

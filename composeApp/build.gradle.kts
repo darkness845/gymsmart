@@ -47,6 +47,7 @@ kotlin {
             implementation(libs.androidx.activity.compose)
             implementation(libs.ktor.clientAndroid)
             implementation("io.ktor:ktor-client-okhttp:3.3.3")
+            implementation("com.google.android.gms:play-services-location:21.3.0")
         }
 
         commonMain.dependencies {

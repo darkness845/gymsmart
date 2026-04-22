@@ -1,5 +1,6 @@
 package com.gymsmart.gymsmart.services
 
+import com.gymsmart.gymsmart.config.AppConfig
 import com.gymsmart.gymsmart.model.TrainingItem
 import io.ktor.client.*
 import io.ktor.client.call.*
@@ -15,7 +16,7 @@ private val client = HttpClient {
     }
 }
 
-private const val API_URL = "http://localhost:8000"
+private const val API_URL = AppConfig.BASE_URL
 
 @Serializable
 data class TrainingResponse(val history: List<TrainingItem> = emptyList())

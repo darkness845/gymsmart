@@ -1,5 +1,6 @@
 package com.gymsmart.gymsmart.services
 
+import com.gymsmart.gymsmart.config.AppConfig
 import com.gymsmart.gymsmart.model.*
 import io.ktor.client.*
 import io.ktor.client.call.*
@@ -18,7 +19,7 @@ class AuthService {
         }
     }
 
-    private val base = "http://localhost:8080"
+    private val base = AppConfig.BASE_URL
 
     suspend fun register(name: String, email: String, password: String): AuthResponse {
         return try {
