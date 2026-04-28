@@ -7,12 +7,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
-import com.gymsmart.gymsmart.config.AppConfig
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.request.*
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 data class GpsData(
     val lat: Double,
@@ -28,21 +26,27 @@ fun GpsScreen(navController: NavController) {
     var lon by remember { mutableStateOf("--") }
     var status by remember { mutableStateOf("Buscando señal...") }
 
-    val scope = rememberCoroutineScope()
     val client = remember { HttpClient() }
 
-    // 🔁 Polling automático
+    // 🔁 Polling automático (FIX incluido)
     LaunchedEffect(Unit) {
         while (true) {
             try {
-                val data: GpsData = client.get("${AppConfig.BASE_URL}/gps").body()
+                val response = client.get("http://localhost:8080/gps")
 
-                lat = data.lat.toString()
-                lon = data.lon.toString()
-                status = "Señal recibida ✅"
+                if (response.status.value == 200) {
+                    val data: GpsData = response.body()
+
+                    lat = data.lat.toString()
+                    lon = data.lon.toString()
+                    status = "Señal recibida ✅"
+
+                } else {
+                    status = "Esperando datos del móvil..."
+                }
 
             } catch (e: Exception) {
-                status = "Sin datos ❌"
+                status = "Sin conexión ❌"
             }
 
             delay(3000)
@@ -81,7 +85,7 @@ fun GpsScreen(navController: NavController) {
                 }
             }
 
-            // ⌚ GARMIN (lo dejamos igual)
+            // ⌚ GARMIN
             ElevatedCard(
                 modifier = Modifier.fillMaxWidth()
             ) {
