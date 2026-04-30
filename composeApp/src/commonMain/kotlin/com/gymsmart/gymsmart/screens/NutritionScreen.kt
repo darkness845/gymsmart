@@ -31,6 +31,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.gymsmart.gymsmart.config.AppConfig
+import com.gymsmart.gymsmart.services.NutritionService
+import com.gymsmart.gymsmart.model.MealEntry
 import io.ktor.client.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
@@ -77,25 +79,6 @@ data class FoodSearchResponse(
     val products: List<Product> = emptyList()
 )
 
-// MealEntry ahora guarda los valores por 100g para poder recalcular al editar
-private var idCounter = 0L
-private fun nextId() = ++idCounter
-
-data class MealEntry(
-    val id: Long = nextId(),
-    val name: String,
-    val grams: Double,
-    val kcalPer100: Double,
-    val proteinsPer100: Double,
-    val carbsPer100: Double,
-    val fatPer100: Double
-) {
-    val kcal:     Double get() = kcalPer100     / 100.0 * grams
-    val proteins: Double get() = proteinsPer100 / 100.0 * grams
-    val carbs:    Double get() = carbsPer100    / 100.0 * grams
-    val fat:      Double get() = fatPer100      / 100.0 * grams
-}
-
 enum class MealType(val label: String, val emoji: String) {
     DESAYUNO("Desayuno", "🌅"),
     ALMUERZO("Almuerzo", "🥗"),
@@ -127,7 +110,9 @@ private val httpClient = HttpClient {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun NutritionScreen(navController: NavController) {
+fun NutritionScreen(navController: NavController,
+                    nutritionService: NutritionService
+) {
 
     val meals = remember {
         mapOf(
@@ -151,6 +136,17 @@ fun NutritionScreen(navController: NavController) {
     val totalCarbs    by remember { derivedStateOf { meals.values.flatten().sumOf { it.carbs } } }
     val totalFat      by remember { derivedStateOf { meals.values.flatten().sumOf { it.fat } } }
 
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(Unit) {
+        val remoteEntries = nutritionService.getUserMeals()
+        remoteEntries?.forEach { entryWithTarget ->
+            val mealType = MealType.entries.find { it.name == entryWithTarget.mealType }
+            if (mealType != null) {
+                meals[mealType]?.add(entryWithTarget.entry)
+            }
+        }
+    }
     // ── Bottom Sheet ──────────────────────────────────────────────────────────
     if (sheetMode != null) {
         ModalBottomSheet(
@@ -170,28 +166,45 @@ fun NutritionScreen(navController: NavController) {
                 )
 
                 is SheetMode.PortionPicker -> PortionPickerSheet(
-                    mealLabel   = mode.meal.label,
-                    product     = mode.product,
+                    mealLabel = mode.meal.label,
+                    product = mode.product,
                     initialGrams = mode.existingEntry?.grams ?: 100.0,
-                    onConfirm   = { grams ->
+                    onConfirm = { grams ->
                         val list = meals[mode.meal] ?: return@PortionPickerSheet
                         val n = mode.product.nutriments
+
+                        // 1. Creamos el objeto con los datos
                         val entry = MealEntry(
-                            id             = mode.existingEntry?.id ?: nextId(),
-                            name           = mode.product.product_name ?: "Sin nombre",
-                            grams          = grams,
-                            kcalPer100     = n?.energy_kcal_100g ?: n?.energy_kcal ?: 0.0,
+                            id = mode.existingEntry?.id ?: "",
+                            name = mode.product.product_name ?: "Sin nombre",
+                            grams = grams,
+                            kcalPer100 = n?.energy_kcal_100g ?: n?.energy_kcal ?: 0.0,
                             proteinsPer100 = n?.proteins_100g ?: 0.0,
-                            carbsPer100    = n?.carbohydrates_100g ?: 0.0,
-                            fatPer100      = n?.fat_100g ?: 0.0
+                            carbsPer100 = n?.carbohydrates_100g ?: 0.0,
+                            fatPer100 = n?.fat_100g ?: 0.0
                         )
-                        if (mode.existingEntry != null) {
-                            val idx = list.indexOfFirst { it.id == mode.existingEntry.id }
-                            if (idx >= 0) list[idx] = entry
-                        } else {
-                            list.add(entry)
+
+                        // 2. LANZAMOS EL GUARDADO A TURSO
+                        scope.launch {
+                            // mode.meal.name será "DESAYUNO", "ALMUERZO", etc.
+                            val success = nutritionService.saveMealRemote(entry, mode.meal.name)
+
+                            if (success) {
+                                // Solo si el servidor responde OK, lo añadimos a la lista visual
+                                if (mode.existingEntry != null) {
+                                    val idx = list.indexOfFirst { it.id == mode.existingEntry.id }
+                                    if (idx >= 0) list[idx] = entry
+                                } else {
+                                    list.add(entry)
+                                }
+                                closeSheet()
+                            } else {
+                                snackbarHostState.showSnackbar(
+                                    message = "Error: No se pudo guardar en la nube. Revisa tu conexión.",
+                                    duration = SnackbarDuration.Short
+                                )
+                            }
                         }
-                        closeSheet()
                     },
                     onBack = { sheetMode = SheetMode.Search(mode.meal) },
                     onClose = ::closeSheet
@@ -201,14 +214,35 @@ fun NutritionScreen(navController: NavController) {
                     mealLabel = mode.meal.label,
                     entry     = mode.entry,
                     onConfirm = { newGrams ->
-                        val list = meals[mode.meal] ?: return@EditEntrySheet
-                        val idx  = list.indexOfFirst { it.id == mode.entry.id }
-                        if (idx >= 0) list[idx] = mode.entry.copy(grams = newGrams)
-                        closeSheet()
+                        scope.launch {
+                            val updatedEntry = mode.entry.copy(grams = newGrams)
+                            val success = nutritionService.updateMealRemote(updatedEntry, mode.meal.name)
+                            if (success) {
+                                val list = meals[mode.meal] ?: return@launch
+                                val idx = list.indexOfFirst { it.id == mode.entry.id }
+                                if (idx >= 0) list[idx] = updatedEntry
+                                closeSheet()
+                            } else {
+                                snackbarHostState.showSnackbar(
+                                    message = "Error al actualizar. Revisa tu conexión.",
+                                    duration = SnackbarDuration.Short
+                                )
+                            }
+                        }
                     },
                     onDelete = {
-                        meals[mode.meal]?.removeAll { it.id == mode.entry.id }
-                        closeSheet()
+                        scope.launch {
+                            val success = nutritionService.deleteMealRemote(mode.entry.id)
+                            if (success) {
+                                meals[mode.meal]?.removeAll { it.id == mode.entry.id }
+                                closeSheet()
+                            } else {
+                                snackbarHostState.showSnackbar(
+                                    message = "Error al eliminar. Revisa tu conexión.",
+                                    duration = SnackbarDuration.Short
+                                )
+                            }
+                        }
                     },
                     onClose = ::closeSheet
                 )
@@ -267,6 +301,10 @@ fun NutritionScreen(navController: NavController) {
                 Spacer(Modifier.height(8.dp))
             }
         }
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp)
+        )
     }
 }
 

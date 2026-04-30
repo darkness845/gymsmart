@@ -11,6 +11,7 @@ import com.gymsmart.gymsmart.screens.TrainingScreen
 import com.gymsmart.gymsmart.screens.GpsScreen
 import com.gymsmart.gymsmart.screens.WeightScreen
 import com.gymsmart.gymsmart.services.AuthService
+import com.gymsmart.gymsmart.services.*
 import kotlinx.coroutines.launch
 
 sealed class Screen(val route: String) {
@@ -24,12 +25,17 @@ sealed class Screen(val route: String) {
 }
 
 @Composable
-fun NavGraph() {
+fun NavGraph(
+    locationProvider: LocationProvider,
+    onRequestLocationPermission: (onResult: (Boolean) -> Unit) -> Unit
+) {
     val navController = rememberNavController()
     val authService = remember { AuthService() }
+
+    val nutritionService = remember { NutritionService(authService.client) }
+
     val scope = rememberCoroutineScope()
 
-    // Pantalla de inicio: comprueba si hay sesión activa
     var startDestination by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
@@ -43,7 +49,6 @@ fun NavGraph() {
         }
     }
 
-    // Espera hasta saber la pantalla de inicio
     if (startDestination == null) return
 
     NavHost(navController = navController, startDestination = startDestination!!) {
@@ -57,13 +62,20 @@ fun NavGraph() {
             DashboardScreen(navController)
         }
         composable(Screen.Nutrition.route) {
-            NutritionScreen(navController)
+            NutritionScreen(
+                navController = navController,
+                nutritionService = nutritionService
+            )
         }
         composable(Screen.Training.route) {
             TrainingScreen(navController)
         }
         composable(Screen.Gps.route) {
-            GpsScreen(navController)
+            GpsScreen(
+                navController = navController,
+                locationProvider = locationProvider,
+                onRequestPermission = onRequestLocationPermission
+            )
         }
         composable(Screen.Weight.route) {
             WeightScreen(navController)

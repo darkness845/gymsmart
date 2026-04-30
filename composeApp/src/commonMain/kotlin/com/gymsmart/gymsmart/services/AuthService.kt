@@ -12,7 +12,7 @@ import io.ktor.serialization.kotlinx.json.*
 
 class AuthService {
 
-    private val client = HttpClient {
+    val client = HttpClient {
         install(ContentNegotiation) { json() }
         install(HttpCookies) {
             storage = createCookiesStorage() // ← expect/actual resuelve la plataforma

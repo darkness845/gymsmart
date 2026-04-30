@@ -3,10 +3,17 @@ package com.gymsmart.gymsmart
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import com.gymsmart.gymsmart.navigation.NavGraph
+import com.gymsmart.gymsmart.services.LocationProvider
 
 @Composable
-fun App() {
+fun App(
+    locationProvider: LocationProvider,
+    onRequestLocationPermission: (onResult: (Boolean) -> Unit) -> Unit
+) {
     MaterialTheme {
-        NavGraph()
+        NavGraph(
+            locationProvider = locationProvider,
+            onRequestLocationPermission = onRequestLocationPermission
+        )
     }
 }
