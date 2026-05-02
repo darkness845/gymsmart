@@ -2,11 +2,16 @@ package com.gymsmart.gymsmart.screens
 
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -43,6 +48,13 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.DatePeriod
+import kotlinx.datetime.plus
+import kotlinx.datetime.minus
+import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Clock
 
 // ── Design Tokens ─────────────────────────────────────────────────────────────
 
@@ -116,7 +128,16 @@ fun NutritionScreen(navController: NavController,
                     profileService: ProfileService
 ) {
 
-    val meals = remember {
+    val today = remember {
+        val tz = TimeZone.currentSystemDefault()
+        val instant = kotlinx.datetime.Instant.fromEpochMilliseconds(
+            Clock.System.now().toEpochMilliseconds()
+        )
+        instant.toLocalDateTime(tz).date
+    }
+    var selectedDate by remember { mutableStateOf(today) }
+
+    val meals = remember(selectedDate) {
         mapOf(
             MealType.DESAYUNO to mutableStateListOf(),
             MealType.ALMUERZO to mutableStateListOf(),
@@ -138,14 +159,14 @@ fun NutritionScreen(navController: NavController,
     var carbGoal    by remember { mutableStateOf(200.0) }
     var fatGoal     by remember { mutableStateOf(65.0) }
 
-    val totalKcal     by remember { derivedStateOf { meals.values.flatten().sumOf { it.kcal } } }
-    val totalProteins by remember { derivedStateOf { meals.values.flatten().sumOf { it.proteins } } }
-    val totalCarbs    by remember { derivedStateOf { meals.values.flatten().sumOf { it.carbs } } }
-    val totalFat      by remember { derivedStateOf { meals.values.flatten().sumOf { it.fat } } }
+    val totalKcal     by remember(selectedDate) { derivedStateOf { meals.values.flatten().sumOf { it.kcal } } }
+    val totalProteins by remember(selectedDate) { derivedStateOf { meals.values.flatten().sumOf { it.proteins } } }
+    val totalCarbs    by remember(selectedDate) { derivedStateOf { meals.values.flatten().sumOf { it.carbs } } }
+    val totalFat      by remember(selectedDate) { derivedStateOf { meals.values.flatten().sumOf { it.fat } } }
 
     val snackbarHostState = remember { SnackbarHostState() }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(selectedDate) {
         // Carga de perfil + targets
         profileService.getProfileResponse().onSuccess { response ->
             kcalGoal    = response.targets.targetKcal.toDouble()
@@ -155,7 +176,7 @@ fun NutritionScreen(navController: NavController,
         }
 
         // Carga de comidas
-        val remoteEntries = nutritionService.getUserMeals()
+        val remoteEntries = nutritionService.getUserMeals(selectedDate.toString())
         remoteEntries?.forEach { entryWithTarget ->
             val mealType = MealType.entries.find { it.name == entryWithTarget.mealType }
             if (mealType != null) meals[mealType]?.add(entryWithTarget.entry)
@@ -201,7 +222,7 @@ fun NutritionScreen(navController: NavController,
                         // 2. LANZAMOS EL GUARDADO A TURSO
                         scope.launch {
                             // mode.meal.name será "DESAYUNO", "ALMUERZO", etc.
-                            val success = nutritionService.saveMealRemote(entry, mode.meal.name)
+                            val success = nutritionService.saveMealRemote(entry, mode.meal.name, selectedDate.toString())
 
                             if (success) {
                                 // Solo si el servidor responde OK, lo añadimos a la lista visual
@@ -230,7 +251,7 @@ fun NutritionScreen(navController: NavController,
                     onConfirm = { newGrams ->
                         scope.launch {
                             val updatedEntry = mode.entry.copy(grams = newGrams)
-                            val success = nutritionService.updateMealRemote(updatedEntry, mode.meal.name)
+                            val success = nutritionService.updateMealRemote(updatedEntry, mode.meal.name, selectedDate.toString())
                             if (success) {
                                 val list = meals[mode.meal] ?: return@launch
                                 val idx = list.indexOfFirst { it.id == mode.entry.id }
@@ -291,6 +312,15 @@ fun NutritionScreen(navController: NavController,
                         Text("Nutrición", fontWeight = FontWeight.Bold, fontSize = 22.sp, color = TextPrimary)
                     }
                 }
+            }
+
+            item {
+                Spacer(Modifier.height(12.dp))
+                WeekDayPicker(
+                    today        = today,
+                    selectedDate = selectedDate,
+                    onDateSelected = { selectedDate = it }
+                )
             }
 
             item {
@@ -866,5 +896,113 @@ private fun searchFieldColors() = OutlinedTextFieldDefaults.colors(
     focusedContainerColor = CardColor,
     unfocusedContainerColor = CardColor
 )
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun WeekDayPicker(
+    today: LocalDate,
+    selectedDate: LocalDate,
+    onDateSelected: (LocalDate) -> Unit
+) {
+    val dayLabels = listOf("L", "M", "M", "J", "V", "S", "D")
+
+    // Semana 0 = semana actual, -2..+2 = rango de semanas (cubre 14 días atrás y adelante)
+    val weekCount = 5  // semanas -2, -1, 0, +1, +2
+    val initialPage = 2 // arranca en la semana actual
+
+    val pagerState = rememberPagerState(initialPage = initialPage) { weekCount }
+
+    // Lunes de la semana actual
+    val currentMonday = today.minus(DatePeriod(days = today.dayOfWeek.ordinal))
+
+    HorizontalPager(
+        state = pagerState,
+        modifier = Modifier.fillMaxWidth()
+    ) { pageIndex ->
+        // Offset de semanas respecto a la actual (-2, -1, 0, +1, +2)
+        val weekOffset = pageIndex - initialPage
+        val monday = currentMonday.plus(DatePeriod(days = weekOffset * 7))
+        val weekDays = (0..6).map { monday.plus(DatePeriod(days = it)) }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            weekDays.forEachIndexed { index, date ->
+                val isSelected = date == selectedDate
+                val isToday    = date == today
+                val isFuture   = date > today
+                val diffDays   = (date.toEpochDays() - today.toEpochDays()).toInt()
+                val inRange    = diffDays in -14..14
+
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable(enabled = inRange) {  // ← ya no filtra isFuture, solo inRange
+                            onDateSelected(date)
+                        }
+                        .padding(horizontal = 4.dp, vertical = 8.dp)
+                ) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .size(28.dp)
+                            .clip(CircleShape)
+                            .background(if (isSelected) AccentYellow else Color.Transparent)
+                            .then(
+                                if (isToday && !isSelected)
+                                    Modifier.border(1.5.dp, AccentYellow, CircleShape)
+                                else Modifier
+                            )
+                    ) {
+                        Text(
+                            text = dayLabels[index],
+                            fontSize = 12.sp,
+                            fontWeight = if (isSelected || isToday) FontWeight.Bold else FontWeight.Normal,
+                            color = when {
+                                isSelected -> TextPrimary
+                                isToday    -> AccentYellow
+                                !inRange   -> TextSecondary.copy(alpha = 0.3f)
+                                else       -> TextSecondary
+                            }
+                        )
+                    }
+
+                    Spacer(Modifier.height(4.dp))
+
+                    Text(
+                        text = date.dayOfMonth.toString(),
+                        fontSize = 14.sp,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                        color = when {
+                            isSelected -> TextPrimary
+                            !inRange   -> TextSecondary.copy(alpha = 0.3f)
+                            else       -> TextPrimary
+                        }
+                    )
+
+                    Spacer(Modifier.height(4.dp))
+
+                    Box(
+                        modifier = Modifier
+                            .size(5.dp)
+                            .clip(CircleShape)
+                            .background(
+                                when {
+                                    isSelected -> AccentYellow
+                                    isToday    -> AccentYellow
+                                    !inRange   -> Color.Transparent
+                                    else       -> TextSecondary.copy(alpha = 0.25f)
+                                }
+                            )
+                    )
+                }
+            }
+        }
+    }
+}
 
 fun Double.round1(): String = (kotlin.math.round(this * 10) / 10.0).toString()

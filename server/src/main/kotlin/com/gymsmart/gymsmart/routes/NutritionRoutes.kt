@@ -26,16 +26,19 @@ fun Route.nutritionRoutes(nutritionService: NutritionService) {
         val session = call.sessions.get<UserSession>()
             ?: return@get call.respond(HttpStatusCode.Unauthorized)
 
-        val rows = nutritionService.getUserMeals(session.userId)
+        val date = call.request.queryParameters["date"]
+            ?: return@get call.respond(HttpStatusCode.BadRequest, "Falta date")
+
+        val rows = nutritionService.getUserMeals(session.userId, date)
         val response = rows.map { row ->
             val entry = MealEntry(
-                id = row[7] ?: "",
-                name = row[0] ?: "",
-                grams = row[1]?.toDouble() ?: 0.0,
-                kcalPer100 = row[2]?.toDouble() ?: 0.0,
+                id             = row[7] ?: "",
+                name           = row[0] ?: "",
+                grams          = row[1]?.toDouble() ?: 0.0,
+                kcalPer100     = row[2]?.toDouble() ?: 0.0,
                 proteinsPer100 = row[3]?.toDouble() ?: 0.0,
-                carbsPer100 = row[4]?.toDouble() ?: 0.0,
-                fatPer100 = row[5]?.toDouble() ?: 0.0
+                carbsPer100    = row[4]?.toDouble() ?: 0.0,
+                fatPer100      = row[5]?.toDouble() ?: 0.0
             )
             MealEntryWithTarget(entry, row[6] ?: "DESAYUNO")
         }

@@ -10,7 +10,8 @@ data class MealEntryRequest(
     val proteinsPer100: Double,
     val carbsPer100: Double,
     val fatPer100: Double,
-    val mealType: String
+    val mealType: String,
+    val date: String
 )
 
 @Serializable
