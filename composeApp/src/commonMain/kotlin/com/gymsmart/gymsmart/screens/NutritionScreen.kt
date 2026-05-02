@@ -33,6 +33,7 @@ import androidx.navigation.NavController
 import com.gymsmart.gymsmart.config.AppConfig
 import com.gymsmart.gymsmart.services.NutritionService
 import com.gymsmart.gymsmart.model.MealEntry
+import com.gymsmart.gymsmart.services.ProfileService
 import io.ktor.client.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
@@ -111,7 +112,8 @@ private val httpClient = HttpClient {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NutritionScreen(navController: NavController,
-                    nutritionService: NutritionService
+                    nutritionService: NutritionService,
+                    profileService: ProfileService
 ) {
 
     val meals = remember {
@@ -131,6 +133,11 @@ fun NutritionScreen(navController: NavController,
         scope.launch { sheetState.hide() }.invokeOnCompletion { sheetMode = null }
     }
 
+    var kcalGoal    by remember { mutableStateOf(2000.0) }
+    var proteinGoal by remember { mutableStateOf(150.0) }
+    var carbGoal    by remember { mutableStateOf(200.0) }
+    var fatGoal     by remember { mutableStateOf(65.0) }
+
     val totalKcal     by remember { derivedStateOf { meals.values.flatten().sumOf { it.kcal } } }
     val totalProteins by remember { derivedStateOf { meals.values.flatten().sumOf { it.proteins } } }
     val totalCarbs    by remember { derivedStateOf { meals.values.flatten().sumOf { it.carbs } } }
@@ -139,12 +146,19 @@ fun NutritionScreen(navController: NavController,
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(Unit) {
+        // Carga de perfil + targets
+        profileService.getProfileResponse().onSuccess { response ->
+            kcalGoal    = response.targets.targetKcal.toDouble()
+            proteinGoal = response.targets.proteinG.toDouble()
+            carbGoal    = response.targets.carbsG.toDouble()
+            fatGoal     = response.targets.fatG.toDouble()
+        }
+
+        // Carga de comidas
         val remoteEntries = nutritionService.getUserMeals()
         remoteEntries?.forEach { entryWithTarget ->
             val mealType = MealType.entries.find { it.name == entryWithTarget.mealType }
-            if (mealType != null) {
-                meals[mealType]?.add(entryWithTarget.entry)
-            }
+            if (mealType != null) meals[mealType]?.add(entryWithTarget.entry)
         }
     }
     // ── Bottom Sheet ──────────────────────────────────────────────────────────
@@ -282,10 +296,10 @@ fun NutritionScreen(navController: NavController,
             item {
                 Spacer(Modifier.height(16.dp))
                 CalorieCard(
-                    totalKcal = totalKcal, kcalGoal = 2000.0,
-                    proteins = totalProteins, proteinGoal = 122.0,
-                    carbs = totalCarbs, carbGoal = 167.0,
-                    fat = totalFat, fatGoal = 55.0
+                    totalKcal    = totalKcal,    kcalGoal    = kcalGoal,
+                    proteins     = totalProteins, proteinGoal = proteinGoal,
+                    carbs        = totalCarbs,    carbGoal    = carbGoal,
+                    fat          = totalFat,      fatGoal     = fatGoal
                 )
             }
 

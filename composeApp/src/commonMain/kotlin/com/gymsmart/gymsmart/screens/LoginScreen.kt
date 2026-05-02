@@ -1,6 +1,5 @@
 package com.gymsmart.gymsmart.screens
 
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -17,10 +16,11 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.gymsmart.gymsmart.navigation.Screen
 import com.gymsmart.gymsmart.services.AuthService
+import com.gymsmart.gymsmart.services.ProfileService
 import kotlinx.coroutines.launch
 
 @Composable
-fun LoginScreen(navController: NavController, authService: AuthService) {
+fun LoginScreen(navController: NavController, authService: AuthService, profileService: ProfileService) {
 
     val background = Color(0xFFF5F5F5)
     val accent = Color(0xFFFFC107)
@@ -99,7 +99,13 @@ fun LoginScreen(navController: NavController, authService: AuthService) {
                     errorMsg = ""
                     val response = authService.login(email, password)
                     if (response.success) {
-                        navController.navigate(Screen.Dashboard.route) {
+                        // ← comprobar perfil antes de navegar
+                        val destination = if (profileService.hasProfile()) {
+                            Screen.Dashboard.route
+                        } else {
+                            Screen.Onboarding.route
+                        }
+                        navController.navigate(destination) {
                             popUpTo(Screen.Login.route) { inclusive = true }
                         }
                     } else {

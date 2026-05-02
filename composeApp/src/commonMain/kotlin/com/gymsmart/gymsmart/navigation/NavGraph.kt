@@ -15,13 +15,14 @@ import com.gymsmart.gymsmart.services.*
 import kotlinx.coroutines.launch
 
 sealed class Screen(val route: String) {
-    object Login : Screen("login")
-    object Register : Screen("register")
-    object Dashboard : Screen("dashboard")
-    object Nutrition : Screen("nutrition")
-    object Training : Screen("training")
-    object Gps : Screen("gps")
-    object Weight : Screen("weight")
+    object Login      : Screen("login")
+    object Register   : Screen("register")
+    object Onboarding : Screen("onboarding")
+    object Dashboard  : Screen("dashboard")
+    object Nutrition  : Screen("nutrition")
+    object Training   : Screen("training")
+    object Gps        : Screen("gps")
+    object Weight     : Screen("weight")
 }
 
 @Composable
@@ -30,22 +31,21 @@ fun NavGraph(
     onRequestLocationPermission: (onResult: (Boolean) -> Unit) -> Unit
 ) {
     val navController = rememberNavController()
-    val authService = remember { AuthService() }
-
+    val authService      = remember { AuthService() }
     val nutritionService = remember { NutritionService(authService.client) }
+    val profileService   = remember { ProfileService(authService.client) }  // ← nuevo
 
     val scope = rememberCoroutineScope()
-
     var startDestination by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
-        scope.launch {
-            val response = authService.me()
-            startDestination = if (response.success) {
-                Screen.Dashboard.route
-            } else {
-                Screen.Login.route
-            }
+        val response = authService.me()
+        startDestination = if (response.success) {
+            // Usuario logado: comprobar si ya completó el onboarding
+            if (profileService.hasProfile()) Screen.Dashboard.route
+            else Screen.Onboarding.route
+        } else {
+            Screen.Login.route
         }
     }
 
@@ -53,19 +53,28 @@ fun NavGraph(
 
     NavHost(navController = navController, startDestination = startDestination!!) {
         composable(Screen.Login.route) {
-            LoginScreen(navController, authService)
+            LoginScreen(navController, authService, profileService)
         }
         composable(Screen.Register.route) {
             RegisterScreen(navController, authService)
+        }
+        composable(Screen.Onboarding.route) {
+            OnboardingScreen(
+                profileService = profileService,
+                onComplete = {
+                    navController.navigate(Screen.Dashboard.route) {
+                        popUpTo(Screen.Onboarding.route) { inclusive = true }
+                    }
+                }
+            )
         }
         composable(Screen.Dashboard.route) {
             DashboardScreen(navController)
         }
         composable(Screen.Nutrition.route) {
-            NutritionScreen(
-                navController = navController,
-                nutritionService = nutritionService
-            )
+            NutritionScreen(navController = navController,
+                nutritionService = nutritionService,
+                profileService   = profileService)
         }
         composable(Screen.Training.route) {
             TrainingScreen(navController)

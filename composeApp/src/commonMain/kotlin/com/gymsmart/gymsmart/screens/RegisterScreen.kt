@@ -110,7 +110,7 @@ fun RegisterScreen(navController: NavController, authService: AuthService) {
                     errorMsg = ""
                     val response = authService.register(name, email, password)
                     if (response.success) {
-                        navController.navigate(Screen.Dashboard.route) {
+                        navController.navigate(Screen.Onboarding.route) {
                             popUpTo(Screen.Register.route) { inclusive = true }
                         }
                     } else {
