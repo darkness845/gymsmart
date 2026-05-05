@@ -129,11 +129,7 @@ fun NutritionScreen(navController: NavController,
 ) {
 
     val today = remember {
-        val tz = TimeZone.currentSystemDefault()
-        val instant = kotlinx.datetime.Instant.fromEpochMilliseconds(
-            Clock.System.now().toEpochMilliseconds()
-        )
-        instant.toLocalDateTime(tz).date
+        Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
     }
     var selectedDate by remember { mutableStateOf(today) }
 

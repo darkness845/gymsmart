@@ -72,7 +72,7 @@ kotlin {
 
             implementation(compose.materialIconsExtended)
 
-            implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.6.0")
+            implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.7.0")
         }
 
         commonTest.dependencies {
@@ -83,6 +83,8 @@ kotlin {
             implementation(compose.desktop.currentOs)
             implementation(libs.kotlinx.coroutinesSwing)
             implementation(libs.ktor.clientJava)
+
+            implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.7.0")
         }
 
         iosMain.dependencies {
