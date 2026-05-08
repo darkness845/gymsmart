@@ -22,10 +22,14 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.gymsmart.gymsmart.navigation.Screen
 import com.gymsmart.gymsmart.services.AuthService
+import com.gymsmart.gymsmart.services.HealthDataProvider
 import kotlinx.coroutines.launch
 
 @Composable
-fun DashboardScreen(navController: NavController) {
+fun DashboardScreen(
+    navController: NavController,
+    healthDataProvider: HealthDataProvider
+) {
 
     val background = Color(0xFFF5F5F5)
     val accent = Color(0xFFFFC107)
@@ -34,6 +38,14 @@ fun DashboardScreen(navController: NavController) {
 
     val authService = remember { AuthService() }
     val scope = rememberCoroutineScope()
+
+    var todaySteps by remember { mutableStateOf<Long?>(null) }
+
+    LaunchedEffect(Unit) {
+        runCatching {
+            todaySteps = healthDataProvider.getTodaySteps()
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -44,23 +56,33 @@ fun DashboardScreen(navController: NavController) {
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Título + botón logout
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column {
+
                 Text(
                     text = "GymSmart",
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                     color = textPrimary
                 )
+
                 Text(
                     text = "Tu progreso diario",
                     style = MaterialTheme.typography.bodyMedium,
                     color = textSecondary
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = "Pasos hoy: ${todaySteps ?: "..."}",
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = accent
                 )
             }
 
@@ -82,19 +104,20 @@ fun DashboardScreen(navController: NavController) {
 
         Spacer(modifier = Modifier.height(28.dp))
 
-        // 🔥 CARD PRINCIPAL
         AnimatedCard(
             onClick = { navController.navigate(Screen.Training.route) },
             backgroundColor = accent,
             height = 130.dp
         ) {
             Column {
+
                 Text(
                     "Entrenamiento",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     color = Color.Black
                 )
+
                 Text(
                     "Empieza tu rutina",
                     color = Color.Black.copy(alpha = 0.7f)

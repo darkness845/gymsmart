@@ -28,20 +28,19 @@ sealed class Screen(val route: String) {
 @Composable
 fun NavGraph(
     locationProvider: LocationProvider,
+    healthDataProvider: HealthDataProvider,
     onRequestLocationPermission: (onResult: (Boolean) -> Unit) -> Unit
 ) {
     val navController = rememberNavController()
-    val authService      = remember { AuthService() }
+    val authService = remember { AuthService() }
     val nutritionService = remember { NutritionService(authService.client) }
-    val profileService   = remember { ProfileService(authService.client) }  // ← nuevo
+    val profileService = remember { ProfileService(authService.client) }
 
-    val scope = rememberCoroutineScope()
     var startDestination by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         val response = authService.me()
         startDestination = if (response.success) {
-            // Usuario logado: comprobar si ya completó el onboarding
             if (profileService.hasProfile()) Screen.Dashboard.route
             else Screen.Onboarding.route
         } else {
@@ -52,12 +51,15 @@ fun NavGraph(
     if (startDestination == null) return
 
     NavHost(navController = navController, startDestination = startDestination!!) {
+
         composable(Screen.Login.route) {
             LoginScreen(navController, authService, profileService)
         }
+
         composable(Screen.Register.route) {
             RegisterScreen(navController, authService)
         }
+
         composable(Screen.Onboarding.route) {
             OnboardingScreen(
                 profileService = profileService,
@@ -68,17 +70,26 @@ fun NavGraph(
                 }
             )
         }
+
         composable(Screen.Dashboard.route) {
-            DashboardScreen(navController)
+            DashboardScreen(
+                navController = navController,
+                healthDataProvider = healthDataProvider
+            )
         }
+
         composable(Screen.Nutrition.route) {
-            NutritionScreen(navController = navController,
+            NutritionScreen(
+                navController = navController,
                 nutritionService = nutritionService,
-                profileService   = profileService)
+                profileService = profileService
+            )
         }
+
         composable(Screen.Training.route) {
             TrainingScreen(navController)
         }
+
         composable(Screen.Gps.route) {
             GpsScreen(
                 navController = navController,
@@ -86,6 +97,7 @@ fun NavGraph(
                 onRequestPermission = onRequestLocationPermission
             )
         }
+
         composable(Screen.Weight.route) {
             WeightScreen(navController)
         }

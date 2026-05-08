@@ -47,8 +47,12 @@ kotlin {
             implementation(libs.androidx.activity.compose)
             implementation(libs.ktor.clientAndroid)
             implementation("io.ktor:ktor-client-okhttp:3.3.3")
+
             implementation("com.google.android.gms:play-services-location:21.3.0")
             implementation("org.osmdroid:osmdroid-android:6.1.18")
+
+            // ✅ HEALTH CONNECT (FIX FINAL)
+            implementation("androidx.health.connect:connect-client:1.1.0-alpha11")
         }
 
         commonMain.dependencies {
@@ -72,7 +76,7 @@ kotlin {
 
             implementation(compose.materialIconsExtended)
 
-            implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.7.0")
+            implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.6.0")
         }
 
         commonTest.dependencies {
@@ -83,8 +87,6 @@ kotlin {
             implementation(compose.desktop.currentOs)
             implementation(libs.kotlinx.coroutinesSwing)
             implementation(libs.ktor.clientJava)
-
-            implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.7.0")
         }
 
         iosMain.dependencies {
