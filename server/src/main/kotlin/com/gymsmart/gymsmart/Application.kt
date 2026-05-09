@@ -13,6 +13,7 @@ import io.ktor.server.sessions.*
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.*
 import com.gymsmart.gymsmart.routes.getLocation
+import com.gymsmart.gymsmart.services.GpsService
 
 fun main() {
     embeddedServer(Netty, port = SERVER_PORT, host = "0.0.0.0", module = Application::module)
@@ -35,21 +36,14 @@ fun Application.module() {
     val userService      = UserService(turso)
     val nutritionService = NutritionService(turso)
     val profileService   = ProfileService(turso)
+    val gpsService       = GpsService(turso)
 
     runBlocking {
         userService.initTable()
         nutritionService.initTable()
         profileService.initTable()
+        gpsService.initTables()
     }
 
-    configureRouting(userService, nutritionService, profileService)
-
-    CoroutineScope(Dispatchers.IO).launch {
-        println("🛰️  GPS tracker iniciado — actualizando cada 30 segundos")
-        while (true) {
-            val loc = getLocation()
-            println("📍 [GPS] lat=${loc.lat}, lon=${loc.lon} — ${loc.city}, ${loc.country}")
-            delay(30_000)
-        }
-    }
+    configureRouting(userService, nutritionService, profileService, gpsService)
 }

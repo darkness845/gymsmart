@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">gymsmart</string>
+    <item name="map_halo_radius" type="id"/>
 </resources>

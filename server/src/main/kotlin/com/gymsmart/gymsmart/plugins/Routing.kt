@@ -2,6 +2,7 @@ package com.gymsmart.gymsmart.plugins
 
 import com.gymsmart.gymsmart.routes.*
 import com.gymsmart.gymsmart.services.FoodService
+import com.gymsmart.gymsmart.services.GpsService
 import com.gymsmart.gymsmart.services.NutritionService
 import com.gymsmart.gymsmart.services.ProfileService
 import com.gymsmart.gymsmart.services.UserService
@@ -12,7 +13,8 @@ import io.ktor.server.routing.*
 fun Application.configureRouting(
     userService:      UserService,
     nutritionService: NutritionService,
-    profileService:   ProfileService
+    profileService:   ProfileService,
+    gpsService:       GpsService
 ) {
     val foodService = FoodService()
 
@@ -20,7 +22,7 @@ fun Application.configureRouting(
         get("/") { call.respondText("GymSmart API running 🏋️") }
         healthRoute()
         foodRoute(foodService)
-        gpsRoutes()
+        gpsRoutes(gpsService)
         authRoutes(userService)
         nutritionRoutes(nutritionService)
         profileRoutes(profileService)

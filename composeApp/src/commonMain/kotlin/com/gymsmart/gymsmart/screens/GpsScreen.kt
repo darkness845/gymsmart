@@ -18,59 +18,148 @@ import androidx.navigation.NavController
 import com.gymsmart.gymsmart.MapComponent
 import com.gymsmart.gymsmart.model.ActiveRoute
 import com.gymsmart.gymsmart.model.RoutePoint
+import com.gymsmart.gymsmart.model.RoutePointDto
+import com.gymsmart.gymsmart.model.SaveRouteRequest
+import com.gymsmart.gymsmart.services.GpsService
 import com.gymsmart.gymsmart.services.LocationProvider
+import kotlinx.coroutines.launch
+import kotlin.time.Clock
 import kotlin.math.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GpsScreen(
     navController: NavController,
-    locationProvider: LocationProvider,          // ← minúscula
-    onRequestPermission: (onResult: (Boolean) -> Unit) -> Unit
+    locationProvider: LocationProvider,
+    onRequestPermission: (onResult: (Boolean) -> Unit) -> Unit,
+    gpsService: GpsService
 ) {
     val accentYellow = Color(0xFFFFC107)
     val bgCream = Color(0xFFF5F5F5)
+    val scope = rememberCoroutineScope()
 
     var activeRoute by remember { mutableStateOf(ActiveRoute()) }
+    var startedAt by remember { mutableStateOf(0L) }
     var errorMsg by remember { mutableStateOf<String?>(null) }
+
+    var showSaveDialog by remember { mutableStateOf(false) }
+    var routeName by remember { mutableStateOf("") }
+    var isSaving by remember { mutableStateOf(false) }
+    var saveSuccess by remember { mutableStateOf(false) }
 
     LaunchedEffect(activeRoute.isRecording) {
         if (activeRoute.isRecording) {
             locationProvider.getLocationUpdates().collect { punto: RoutePoint ->
-
-                // 1. FILTRO DE PRECISIÓN (Calidad de señal)
-                // Si la precisión es peor de 25m, ignoramos el punto totalmente.
                 if (punto.accuracyM > 25f) return@collect
-
-                // 2. CASO DEL PRIMER PUNTO
                 if (activeRoute.points.isEmpty()) {
-                    activeRoute = activeRoute.copy(
-                        points = listOf(punto)
-                    )
+                    activeRoute = activeRoute.copy(points = listOf(punto))
                     return@collect
                 }
-
-                // 3. CÁLCULO DE DIFERENCIAS
                 val ultimoPunto = activeRoute.points.last()
                 val distanciaDesdeUltimo = haversine(ultimoPunto, punto)
                 val velocidadKmH = punto.speedMs * 3.6f
-
-                // 4. FILTROS DE MOVIMIENTO REAL (Evitar saltos locos o ruido)
-                // Ignoramos si:
-                // - El usuario está casi parado (menos de 0.8 km/h)
-                // - La distancia es demasiado pequeña (ruido estático < 5m)
-                // - La distancia es humanamente imposible (> 100m en un segundo)
                 if (velocidadKmH < 0.8f) return@collect
                 if (distanciaDesdeUltimo < 5.0 || distanciaDesdeUltimo > 100.0) return@collect
-
-                // 5. ACTUALIZACIÓN FINAL
-                // Si ha pasado todos los filtros anteriores, guardamos el punto.
                 activeRoute = activeRoute.copy(
                     points = activeRoute.points + punto,
                     distanceMeters = activeRoute.distanceMeters + distanciaDesdeUltimo
                 )
             }
         }
+    }
+
+    if (showSaveDialog) {
+        AlertDialog(
+            onDismissRequest = { if (!isSaving) showSaveDialog = false },
+            title = { Text("Guardar ruta", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "${formatDouble(activeRoute.distanceMeters / 1000, 2)} km  •  ${activeRoute.points.size} puntos",
+                        fontSize = 13.sp,
+                        color = Color.Gray
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    OutlinedTextField(
+                        value = routeName,
+                        onValueChange = { routeName = it },
+                        label = { Text("Nombre de la ruta") },
+                        singleLine = true,
+                        enabled = !isSaving,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    if (saveSuccess) {
+                        Text("✅ Ruta guardada correctamente", color = Color(0xFF4CAF50), fontSize = 13.sp)
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (routeName.isBlank()) return@Button
+                        isSaving = true
+                        scope.launch {
+                            val ahora = Clock.System.now().toEpochMilliseconds()
+                            val req = SaveRouteRequest(
+                                name = routeName.trim(),
+                                distanceMeters = activeRoute.distanceMeters,
+                                durationSeconds = (ahora - startedAt) / 1000L,
+                                startedAt = startedAt,
+                                points = activeRoute.points.map { p ->
+                                    RoutePointDto(
+                                        lat       = p.lat,
+                                        lon       = p.lon,
+                                        timestamp = p.timestamp,
+                                        speedMs   = p.speedMs,
+                                        altitudeM = p.altitudeM,
+                                        accuracyM = p.accuracyM
+                                    )
+                                }
+                            )
+                            val result = gpsService.saveRoute(req)
+                            isSaving = false
+                            if (result.isSuccess) {
+                                saveSuccess = true
+                                kotlinx.coroutines.delay(1200)
+                                showSaveDialog = false
+                                saveSuccess = false
+                                routeName = ""
+                                activeRoute = ActiveRoute()
+                                startedAt = 0L
+                            } else {
+                                errorMsg = "Error al guardar: ${result.exceptionOrNull()?.message}"
+                                showSaveDialog = false
+                            }
+                        }
+                    },
+                    enabled = routeName.isNotBlank() && !isSaving,
+                    colors = ButtonDefaults.buttonColors(containerColor = accentYellow)
+                ) {
+                    if (isSaving) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = Color.Black
+                        )
+                    } else {
+                        Text("Guardar", color = Color.Black, fontWeight = FontWeight.Bold)
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showSaveDialog = false
+                        routeName = ""
+                        activeRoute = ActiveRoute()
+                        startedAt = 0L
+                    },
+                    enabled = !isSaving
+                ) {
+                    Text("Descartar")
+                }
+            }
+        )
     }
 
     Scaffold(
@@ -137,6 +226,7 @@ fun GpsScreen(
                         onRequestPermission { granted ->
                             if (granted) {
                                 errorMsg = null
+                                startedAt = Clock.System.now().toEpochMilliseconds()
                                 activeRoute = activeRoute.copy(isRecording = true)
                             } else {
                                 errorMsg = "Permiso de ubicación denegado"
@@ -144,6 +234,9 @@ fun GpsScreen(
                         }
                     } else {
                         activeRoute = activeRoute.copy(isRecording = false)
+                        if (activeRoute.points.isNotEmpty()) {
+                            showSaveDialog = true
+                        }
                     }
                 },
                 colors = ButtonDefaults.buttonColors(
@@ -163,12 +256,14 @@ fun GpsScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f) // Esto hace que el mapa crezca y ocupe el resto de la pantalla
+                    .weight(1f)
                     .clip(RoundedCornerShape(16.dp))
                     .border(1.dp, Color.LightGray, RoundedCornerShape(16.dp))
             ) {
                 MapComponent(
                     points = activeRoute.points,
+                    completedPoints = activeRoute.points,
+                    userLocation = activeRoute.points.lastOrNull(),
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -178,12 +273,7 @@ fun GpsScreen(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = Color(0xFFFFEBEE))
                 ) {
-                    Text(
-                        "⚠️ $it",
-                        modifier = Modifier.padding(12.dp),
-                        color = Color.Red,
-                        fontSize = 13.sp
-                    )
+                    Text("⚠️ $it", modifier = Modifier.padding(12.dp), color = Color.Red, fontSize = 13.sp)
                 }
             }
 
@@ -212,24 +302,6 @@ fun GpsScreen(
     }
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-private fun formatDouble(value: Double, decimals: Int): String {
-    val factor = 10.0.pow(decimals)
-    val rounded = round(value * factor) / factor
-    val intPart = rounded.toLong()
-    return if (decimals == 0) {
-        "$intPart"
-    } else {
-        val decPart = ((rounded - intPart) * factor).toLong()
-            .let { abs(it).toString().padStart(decimals, '0') }
-        "$intPart.$decPart"
-    }
-}
-
-private fun formatFloat(value: Float, decimals: Int): String =
-    formatDouble(value.toDouble(), decimals)
-
 fun calcularDistancia(points: List<RoutePoint>, nuevo: RoutePoint): Double {
     if (points.isEmpty()) return 0.0
     return calcularDistanciaTotal(points) + haversine(points.last(), nuevo)
@@ -249,12 +321,4 @@ internal fun haversine(a: RoutePoint, b: RoutePoint): Double {
     val lat2 = b.lat * PI / 180.0
     val x = sin(dLat / 2).pow(2) + cos(lat1) * cos(lat2) * sin(dLon / 2).pow(2)
     return 2 * R * atan2(sqrt(x), sqrt(1 - x))
-}
-
-@Composable
-private fun MetricBox(label: String, value: String, accent: Color) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(label, fontSize = 11.sp, color = Color.Gray)
-        Text(value, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = accent)
-    }
 }

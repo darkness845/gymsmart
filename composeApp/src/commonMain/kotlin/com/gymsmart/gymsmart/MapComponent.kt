@@ -7,5 +7,7 @@ import com.gymsmart.gymsmart.model.RoutePoint
 @Composable
 expect fun MapComponent(
     points: List<RoutePoint>,
+    completedPoints: List<RoutePoint> = emptyList(),
+    userLocation: RoutePoint? = null,
     modifier: Modifier = Modifier
 )

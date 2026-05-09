@@ -7,6 +7,8 @@ import com.gymsmart.gymsmart.model.RoutePoint
 @Composable
 actual fun MapComponent(
     points: List<RoutePoint>,
+    completedPoints: List<RoutePoint>,
+    userLocation: RoutePoint?,
     modifier: Modifier
 ) {
 }

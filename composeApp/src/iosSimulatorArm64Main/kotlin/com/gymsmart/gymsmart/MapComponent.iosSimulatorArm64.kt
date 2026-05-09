@@ -1,8 +1,14 @@
 package com.gymsmart.gymsmart
 
-@androidx.compose.runtime.Composable
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import com.gymsmart.gymsmart.model.RoutePoint
+
+@Composable
 actual fun MapComponent(
-    points: List<com.gymsmart.gymsmart.model.RoutePoint>,
-    modifier: androidx.compose.ui.Modifier
+    points: List<RoutePoint>,
+    completedPoints: List<RoutePoint>,
+    userLocation: RoutePoint?,
+    modifier: Modifier
 ) {
 }

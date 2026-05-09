@@ -145,16 +145,14 @@ fun DashboardScreen(
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-
                 AnimatedMiniCard(
                     title = "GPS",
                     onClick = { navController.navigate(Screen.Gps.route) },
                     modifier = Modifier.weight(1f)
                 )
-
                 AnimatedMiniCard(
-                    title = "Progreso",
-                    onClick = { },
+                    title = "Mis Rutas",
+                    onClick = { navController.navigate(Screen.MyRoutes.route) },
                     modifier = Modifier.weight(1f)
                 )
             }
