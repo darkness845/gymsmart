@@ -1,7 +1,7 @@
-FROM gradle:8.5-jdk21 AS build
+FROM gradle:8.13-jdk21 AS build
 WORKDIR /app
 COPY . .
-RUN gradle :server:installDist --no-daemon --stacktrace --info 2>&1 | tail -100
+RUN gradle :server:installDist --no-daemon
 
 FROM eclipse-temurin:21-jre
 WORKDIR /app
