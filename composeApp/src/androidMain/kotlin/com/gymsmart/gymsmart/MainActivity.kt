@@ -42,32 +42,41 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             val client = HealthConnectClient.getOrCreate(this@MainActivity)
             val granted = client.permissionController.getGrantedPermissions()
-            println("🔑 Permisos concedidos: $granted")
             if (!granted.containsAll(healthPermissions)) {
-                println("⚠️ Pidiendo permisos Health Connect...")
                 requestHealthPermissions.launch(healthPermissions)
-            } else {
-                println("✅ Permisos ya concedidos")
             }
         }
 
         setContent {
             val locationService = remember { LocationService(this) }
-            var pendingPermissionCallback: ((Boolean) -> Unit)? = null
+            var pendingLocationCallback: ((Boolean) -> Unit)? = null
+            var pendingCameraCallback: ((Boolean) -> Unit)? = null  // ← NUEVO
 
-            val permLauncher = rememberLauncherForActivityResult(
+            val locationPermLauncher = rememberLauncherForActivityResult(
                 ActivityResultContracts.RequestPermission()
             ) { granted ->
-                pendingPermissionCallback?.invoke(granted)
-                pendingPermissionCallback = null
+                pendingLocationCallback?.invoke(granted)
+                pendingLocationCallback = null
+            }
+
+            // ← NUEVO: launcher para cámara
+            val cameraPermLauncher = rememberLauncherForActivityResult(
+                ActivityResultContracts.RequestPermission()
+            ) { granted ->
+                pendingCameraCallback?.invoke(granted)
+                pendingCameraCallback = null
             }
 
             App(
                 locationProvider = locationService,
                 healthDataProvider = healthProvider,
                 onRequestLocationPermission = { callback ->
-                    pendingPermissionCallback = callback
-                    permLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+                    pendingLocationCallback = callback
+                    locationPermLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+                },
+                onRequestCameraPermission = { callback ->   // ← NUEVO
+                    pendingCameraCallback = callback
+                    cameraPermLauncher.launch(Manifest.permission.CAMERA)
                 }
             )
         }

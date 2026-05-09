@@ -53,6 +53,19 @@ kotlin {
 
             // ✅ HEALTH CONNECT (FIX FINAL)
             implementation("androidx.health.connect:connect-client:1.1.0-alpha11")
+
+            // CameraX
+            implementation("androidx.camera:camera-camera2:1.4.2")
+            implementation("androidx.camera:camera-lifecycle:1.4.2")
+            implementation("androidx.camera:camera-view:1.4.2")
+
+            // ML Kit
+            implementation("com.google.mlkit:barcode-scanning:17.3.0")
+
+            // Guava (necesario para ListenableFuture de CameraX)
+            implementation("com.google.guava:guava:33.4.0-android")
+
+            implementation("androidx.concurrent:concurrent-futures-ktx:1.2.0")
         }
 
         commonMain.dependencies {
@@ -110,6 +123,7 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += "META-INF/gradle/incremental.annotation.processors"
         }
     }
 

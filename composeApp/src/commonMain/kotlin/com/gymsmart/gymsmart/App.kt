@@ -10,13 +10,15 @@ import com.gymsmart.gymsmart.services.LocationProvider
 fun App(
     locationProvider: LocationProvider,
     healthDataProvider: HealthDataProvider,
-    onRequestLocationPermission: (onResult: (Boolean) -> Unit) -> Unit
+    onRequestLocationPermission: (callback: (Boolean) -> Unit) -> Unit,
+    onRequestCameraPermission: (callback: (Boolean) -> Unit) -> Unit = {}
 ) {
     MaterialTheme {
         NavGraph(
             locationProvider = locationProvider,
             healthDataProvider = healthDataProvider,
-            onRequestLocationPermission = onRequestLocationPermission
+            onRequestLocationPermission = onRequestLocationPermission,
+            onRequestCameraPermission = onRequestCameraPermission
         )
     }
 }

@@ -7,14 +7,30 @@ import io.ktor.server.routing.*
 
 fun Route.foodRoute(foodService: FoodService) {
     route("/food") {
+
+        // Búsqueda por texto
         get("/search") {
             val query = call.request.queryParameters["q"]
             if (query.isNullOrBlank()) {
                 call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Parámetro q requerido"))
                 return@get
             }
-            val results = foodService.searchFood(query)
-            call.respond(results)
+            call.respond(foodService.searchFood(query))
+        }
+
+        // Búsqueda por código de barras EAN-13
+        get("/barcode/{code}") {
+            val code = call.parameters["code"]
+            if (code.isNullOrBlank()) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Código requerido"))
+                return@get
+            }
+            val product = foodService.lookupBarcode(code)
+            if (product != null) {
+                call.respond(product)
+            } else {
+                call.respond(HttpStatusCode.NotFound, mapOf("error" to "Producto no encontrado"))
+            }
         }
     }
 }

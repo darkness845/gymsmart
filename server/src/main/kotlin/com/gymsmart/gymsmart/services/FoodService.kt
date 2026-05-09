@@ -11,33 +11,12 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
-// Modelos USDA
-@Serializable
-data class UsdaNutrient(
-    val nutrientId: Int = 0,
-    val nutrientName: String = "",
-    val value: Double = 0.0
-)
+// ── Modelos Open Food Facts ────────────────────────────────────────────────────
 
-@Serializable
-data class UsdaFood(
-    val fdcId: Int = 0,
-    val description: String = "",
-    val brandOwner: String? = null,
-    val foodNutrients: List<UsdaNutrient> = emptyList()
-)
-
-@Serializable
-data class UsdaSearchResponse(
-    val foods: List<UsdaFood> = emptyList(),
-    val totalHits: Int = 0
-)
-
-// Modelos que ya usa tu frontend (los mantenemos igual)
 @Serializable
 data class Nutriments(
     @SerialName("energy-kcal_100g") val energy_kcal_100g: Double? = null,
-    @SerialName("energy-kcal") val energy_kcal: Double? = null,
+    @SerialName("energy-kcal")      val energy_kcal: Double? = null,
     val proteins_100g: Double? = null,
     val carbohydrates_100g: Double? = null,
     val fat_100g: Double? = null
@@ -51,80 +30,83 @@ data class Product(
     val brands: String? = null
 )
 
+// Respuesta de búsqueda por texto
 @Serializable
 data class FoodSearchResponse(
     val products: List<Product> = emptyList(),
     val count: Int = 0
 )
 
+// Respuesta de búsqueda por código de barras
+@Serializable
+data class BarcodeResponse(
+    val status: Int = 0,          // 1 = encontrado, 0 = no encontrado
+    val product: Product? = null
+)
+
 class FoodService {
-    private val API_KEY = "1QB9LaZgb5dK5M6y9gK9SCuCtEu3JQXEvQTDeGRq"
 
     private val client = HttpClient(CIO) {
         install(ContentNegotiation) {
-            json(Json {
-                ignoreUnknownKeys = true
-                isLenient = true
-            })
+            json(Json { ignoreUnknownKeys = true; isLenient = true })
         }
         install(HttpTimeout) {
             requestTimeoutMillis = 30000
             connectTimeoutMillis = 10000
-            socketTimeoutMillis = 30000
+            socketTimeoutMillis  = 30000
         }
         defaultRequest {
             headers.append("User-Agent", "GymSmart/1.0 (contact@gymsmart.com)")
         }
     }
 
+    // ── Búsqueda por texto (prioriza ES) ──────────────────────────────────────
     suspend fun searchFood(query: String): FoodSearchResponse {
         return try {
-            val response = client.get("https://api.nal.usda.gov/fdc/v1/foods/search") {
-                parameter("query", query)
-                parameter("pageSize", 10)
-                parameter("api_key", API_KEY)
-                parameter("dataType", "Foundation,SR Legacy")
-            }
+            // Primero intenta en el índice español (más resultados Hacendado, Carrefour, Aldi)
+            val esResponse = fetchSearch(query, "world", "countries_tags_en" to "spain")
+            if (esResponse.products.isNotEmpty()) return esResponse
 
-            println(">>> Status USDA: ${response.status.value}")
-
-            if (response.status.value != 200) {
-                return FoodSearchResponse(products = emptyList(), count = 0)
-            }
-
-            val usdaResponse = response.body<UsdaSearchResponse>()
-
-            // ← AÑADE ESTO
-            println(">>> USDA foods: ${usdaResponse.foods.size}")
-            usdaResponse.foods.firstOrNull()?.let {
-                println(">>> Primer alimento: ${it.description}")
-                println(">>> Nutrientes: ${it.foodNutrients.size}")
-                it.foodNutrients.take(5).forEach { n ->
-                    println(">>>   id=${n.nutrientId} name=${n.nutrientName} value=${n.value}")
-                }
-            }
-
-            // Convertir respuesta USDA al formato que ya usa tu frontend
-            val products = usdaResponse.foods.map { food ->
-                val nutrients = food.foodNutrients
-                Product(
-                    product_name = food.description,
-                    brands = food.brandOwner,
-                    image_url = null, // USDA no tiene imágenes
-                    nutriments = Nutriments(
-                        energy_kcal_100g = nutrients.find { it.nutrientId == 1008 }?.value, // kcal
-                        proteins_100g = nutrients.find { it.nutrientId == 1003 }?.value,    // proteínas
-                        carbohydrates_100g = nutrients.find { it.nutrientId == 1005 }?.value, // carbs
-                        fat_100g = nutrients.find { it.nutrientId == 1004 }?.value           // grasa
-                    )
-                )
-            }
-
-            FoodSearchResponse(products = products, count = usdaResponse.totalHits)
+            // Fallback: índice global sin filtro de país
+            fetchSearch(query, "world")
 
         } catch (e: Exception) {
-            println(">>> ERROR: ${e::class.simpleName} - ${e.message}")
-            FoodSearchResponse(products = emptyList(), count = 0)
+            println(">>> OFF searchFood error: ${e.message}")
+            FoodSearchResponse()
+        }
+    }
+
+    private suspend fun fetchSearch(
+        query: String,
+        subdomain: String,
+        extraParam: Pair<String, String>? = null
+    ): FoodSearchResponse {
+        val response = client.get("https://$subdomain.openfoodfacts.org/cgi/search.pl") {
+            parameter("search_terms", query)
+            parameter("search_simple", 1)
+            parameter("action", "process")
+            parameter("json", 1)
+            parameter("page_size", 20)
+            parameter("fields", "product_name,brands,nutriments,image_url")
+            extraParam?.let { (k, v) -> parameter(k, v) }
+        }
+        return if (response.status.value == 200) response.body() else FoodSearchResponse()
+    }
+
+    // ── Búsqueda por código de barras EAN-13 ─────────────────────────────────
+    suspend fun lookupBarcode(code: String): Product? {
+        return try {
+            val response = client.get(
+                "https://world.openfoodfacts.org/api/v2/product/$code"
+            ) {
+                parameter("fields", "product_name,brands,nutriments,image_url")
+            }
+            if (response.status.value != 200) return null
+            val body = response.body<BarcodeResponse>()
+            if (body.status == 1) body.product else null
+        } catch (e: Exception) {
+            println(">>> OFF barcode error: ${e.message}")
+            null
         }
     }
 }

@@ -18,6 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -35,6 +36,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import com.gymsmart.gymsmart.BarcodeScannerSheet
 import com.gymsmart.gymsmart.config.AppConfig
 import com.gymsmart.gymsmart.services.NutritionService
 import com.gymsmart.gymsmart.model.MealEntry
@@ -103,6 +105,7 @@ enum class MealType(val label: String, val emoji: String) {
 // Sheet que se abre: búsqueda o edición de un entry existente
 private sealed class SheetMode {
     data class Search(val meal: MealType) : SheetMode()
+    data class Scanner(val meal: MealType) : SheetMode()
     data class PortionPicker(
         val meal: MealType,
         val product: Product,           // producto recién buscado
@@ -128,7 +131,8 @@ fun NutritionScreen(
     navController: NavController,
     nutritionService: NutritionService,
     profileService: ProfileService,
-    healthDataProvider: HealthDataProvider
+    healthDataProvider: HealthDataProvider,
+    onRequestCameraPermission: (callback: (Boolean) -> Unit) -> Unit = {}
 ) {
 
     val today = remember {
@@ -197,6 +201,30 @@ fun NutritionScreen(
             shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
         ) {
             when (val mode = sheetMode!!) {
+
+                is SheetMode.Scanner -> BarcodeScannerSheet(
+                    onBarcodeDetected = { code ->
+                        scope.launch {
+                            // Cierra el escáner inmediatamente
+                            sheetMode = null
+                            // Consulta al servidor con el código EAN
+                            try {
+                                val raw = httpClient.get("${AppConfig.BASE_URL}/food/barcode/$code")
+                                    .bodyAsText()
+                                val product = Json { ignoreUnknownKeys = true }
+                                    .decodeFromString<Product>(raw)
+                                // Abre directamente el selector de porción con el producto
+                                sheetMode = SheetMode.PortionPicker(mode.meal, product)
+                            } catch (e: Exception) {
+                                snackbarHostState.showSnackbar(
+                                    "Producto no encontrado (código: $code)",
+                                    duration = SnackbarDuration.Short
+                                )
+                            }
+                        }
+                    },
+                    onClose = ::closeSheet
+                )
 
                 is SheetMode.Search -> FoodSearchSheet(
                     mealLabel = mode.meal.label,
@@ -344,9 +372,17 @@ fun NutritionScreen(
 
             items(MealType.entries) { meal ->
                 MealSection(
-                    meal    = meal,
-                    entries = meals[meal] ?: emptyList(),
-                    onAddClick  = { sheetMode = SheetMode.Search(meal) },
+                    meal     = meal,
+                    entries  = meals[meal] ?: emptyList(),
+                    onAddClick   = { sheetMode = SheetMode.Search(meal) },
+                    onScanClick  = {                                       // ← NUEVO
+                        onRequestCameraPermission { granted ->
+                            if (granted) sheetMode = SheetMode.Scanner(meal)
+                            else scope.launch {
+                                snackbarHostState.showSnackbar("Permiso de cámara denegado")
+                            }
+                        }
+                    },
                     onEntryClick = { entry -> sheetMode = SheetMode.EditEntry(meal, entry) }
                 )
                 Spacer(Modifier.height(8.dp))
@@ -476,6 +512,7 @@ private fun MealSection(
     meal: MealType,
     entries: List<MealEntry>,
     onAddClick: () -> Unit,
+    onScanClick: (() -> Unit)? = null,
     onEntryClick: (MealEntry) -> Unit
 ) {
     Box(
@@ -504,6 +541,21 @@ private fun MealSection(
                         Text("${entries.sumOf { it.kcal }.toInt()} kcal",
                             color = AccentOrange, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     }
+
+                    // ← AÑADE ESTO
+                    if (onScanClick != null) {
+                        Box(
+                            modifier = Modifier.size(30.dp).clip(RoundedCornerShape(8.dp))
+                                .background(Color(0xFF2196F3)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            IconButton(onClick = onScanClick, modifier = Modifier.size(30.dp)) {
+                                Icon(Icons.Default.QrCodeScanner, contentDescription = "Escanear",
+                                    tint = Color.White, modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    }
+
                     Box(
                         modifier = Modifier.size(30.dp).clip(RoundedCornerShape(8.dp))
                             .background(AccentYellow),

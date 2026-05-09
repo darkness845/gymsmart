@@ -37,7 +37,8 @@ data class RouteDetailArgs(val routeId: String)
 fun NavGraph(
     locationProvider: LocationProvider,
     healthDataProvider: HealthDataProvider,
-    onRequestLocationPermission: (onResult: (Boolean) -> Unit) -> Unit
+    onRequestLocationPermission: (callback: (Boolean) -> Unit) -> Unit,
+    onRequestCameraPermission: (callback: (Boolean) -> Unit) -> Unit = {}  // ← AÑADE
 ) {
     val navController = rememberNavController()
     val authService      = remember { AuthService() }
@@ -86,10 +87,11 @@ fun NavGraph(
         }
         composable(Screen.Nutrition.route) {
             NutritionScreen(
-                navController    = navController,
+                navController = navController,
                 nutritionService = nutritionService,
-                profileService   = profileService,
-                healthDataProvider = healthDataProvider
+                profileService = profileService,
+                healthDataProvider = healthDataProvider,
+                onRequestCameraPermission = onRequestCameraPermission
             )
         }
         composable(Screen.Training.route) {
