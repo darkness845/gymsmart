@@ -38,6 +38,7 @@ import androidx.navigation.NavController
 import com.gymsmart.gymsmart.config.AppConfig
 import com.gymsmart.gymsmart.services.NutritionService
 import com.gymsmart.gymsmart.model.MealEntry
+import com.gymsmart.gymsmart.services.HealthDataProvider
 import com.gymsmart.gymsmart.services.ProfileService
 import io.ktor.client.*
 import io.ktor.client.plugins.contentnegotiation.*
@@ -121,16 +122,19 @@ private val httpClient = HttpClient {
 
 // ── Pantalla principal ────────────────────────────────────────────────────────
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(kotlin.time.ExperimentalTime::class, ExperimentalMaterial3Api::class)
 @Composable
-fun NutritionScreen(navController: NavController,
-                    nutritionService: NutritionService,
-                    profileService: ProfileService
+fun NutritionScreen(
+    navController: NavController,
+    nutritionService: NutritionService,
+    profileService: ProfileService,
+    healthDataProvider: HealthDataProvider
 ) {
 
     val today = remember {
         Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
     }
+
     var selectedDate by remember { mutableStateOf(today) }
 
     val meals = remember(selectedDate) {
@@ -162,6 +166,8 @@ fun NutritionScreen(navController: NavController,
 
     val snackbarHostState = remember { SnackbarHostState() }
 
+    var activeCalories by remember { mutableStateOf(0.0) }
+
     LaunchedEffect(selectedDate) {
         // Carga de perfil + targets
         profileService.getProfileResponse().onSuccess { response ->
@@ -170,6 +176,10 @@ fun NutritionScreen(navController: NavController,
             carbGoal    = response.targets.carbsG.toDouble()
             fatGoal     = response.targets.fatG.toDouble()
         }
+
+        // Calorías quemadas del reloj (solo hoy)
+        runCatching { healthDataProvider.getTodayActiveCalories() }
+            .onSuccess { activeCalories = it }
 
         // Carga de comidas
         val remoteEntries = nutritionService.getUserMeals(selectedDate.toString())
@@ -325,7 +335,8 @@ fun NutritionScreen(navController: NavController,
                     totalKcal    = totalKcal,    kcalGoal    = kcalGoal,
                     proteins     = totalProteins, proteinGoal = proteinGoal,
                     carbs        = totalCarbs,    carbGoal    = carbGoal,
-                    fat          = totalFat,      fatGoal     = fatGoal
+                    fat          = totalFat,      fatGoal     = fatGoal,
+                    activeCalories = activeCalories
                 )
             }
 
@@ -355,8 +366,12 @@ private fun CalorieCard(
     totalKcal: Double, kcalGoal: Double,
     proteins: Double, proteinGoal: Double,
     carbs: Double, carbGoal: Double,
-    fat: Double, fatGoal: Double
+    fat: Double, fatGoal: Double,
+    activeCalories: Double = 0.0
 ) {
+    // El objetivo real = objetivo base + calorías quemadas
+    val realGoal = kcalGoal + activeCalories
+
     Box(
         modifier = Modifier
             .padding(horizontal = 16.dp)
@@ -371,25 +386,70 @@ private fun CalorieCard(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Box(contentAlignment = Alignment.Center) {
-                val progress = (totalKcal / kcalGoal).coerceIn(0.0, 1.0).toFloat()
+                val progress = (totalKcal / realGoal).coerceIn(0.0, 1.0).toFloat()
+                val burnedProgress = (activeCalories / realGoal).coerceIn(0.0, 1.0).toFloat()
+
                 Canvas(modifier = Modifier.size(130.dp)) {
                     val stroke = 16.dp.toPx()
                     val inset  = stroke / 2
                     val arc    = Size(size.width - stroke, size.height - stroke)
-                    drawArc(color = Color(0xFFF0EDE8), startAngle = -90f, sweepAngle = 360f,
+
+                    // Fondo gris
+                    drawArc(
+                        color = Color(0xFFF0EDE8),
+                        startAngle = -90f, sweepAngle = 360f,
                         useCenter = false, topLeft = Offset(inset, inset),
-                        size = arc, style = Stroke(stroke, cap = StrokeCap.Round))
-                    drawArc(color = AccentYellow, startAngle = -90f,
-                        sweepAngle = 360f * progress, useCenter = false,
-                        topLeft = Offset(inset, inset), size = arc,
-                        style = Stroke(stroke, cap = StrokeCap.Round))
+                        size = arc, style = Stroke(stroke, cap = StrokeCap.Round)
+                    )
+
+                    // Arco azul — calorías extra que puede comer por haber quemado
+                    if (activeCalories > 0) {
+                        drawArc(
+                            color = Color(0xFF2196F3),
+                            startAngle = -90f,
+                            sweepAngle = 360f * burnedProgress,
+                            useCenter = false,
+                            topLeft = Offset(inset, inset),
+                            size = arc,
+                            style = Stroke(stroke, cap = StrokeCap.Round)
+                        )
+                    }
+
+                    // Arco amarillo — calorías consumidas encima del azul
+                    drawArc(
+                        color = AccentYellow,
+                        startAngle = -90f,
+                        sweepAngle = 360f * progress,
+                        useCenter = false,
+                        topLeft = Offset(inset, inset),
+                        size = arc,
+                        style = Stroke(stroke, cap = StrokeCap.Round)
+                    )
                 }
+
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("${totalKcal.toInt()}", color = TextPrimary,
-                        fontWeight = FontWeight.Bold, fontSize = 24.sp)
-                    Text("/ ${kcalGoal.toInt()} kcal", color = TextSecondary, fontSize = 10.sp)
+                    Text(
+                        "${totalKcal.toInt()}",
+                        color = TextPrimary,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 24.sp
+                    )
+                    Text(
+                        "/ ${realGoal.toInt()} kcal",
+                        color = TextSecondary,
+                        fontSize = 10.sp
+                    )
+                    if (activeCalories > 0) {
+                        Text(
+                            "+${activeCalories.toInt()} 🔥",
+                            color = Color(0xFF2196F3),
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
+
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 MacroRow("Proteínas", proteins, proteinGoal, ColorProtein)
                 MacroRow("Carbs",     carbs,    carbGoal,    ColorCarbs)

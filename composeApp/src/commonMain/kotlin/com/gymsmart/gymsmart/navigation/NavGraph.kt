@@ -85,9 +85,12 @@ fun NavGraph(
             )
         }
         composable(Screen.Nutrition.route) {
-            NutritionScreen(navController = navController,
+            NutritionScreen(
+                navController    = navController,
                 nutritionService = nutritionService,
-                profileService   = profileService)
+                profileService   = profileService,
+                healthDataProvider = healthDataProvider
+            )
         }
         composable(Screen.Training.route) {
             TrainingScreen(navController)

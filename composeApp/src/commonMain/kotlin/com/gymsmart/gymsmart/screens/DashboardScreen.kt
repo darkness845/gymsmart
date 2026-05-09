@@ -40,11 +40,16 @@ fun DashboardScreen(
     val scope = rememberCoroutineScope()
 
     var todaySteps by remember { mutableStateOf<Long?>(null) }
+    var todayCalories by remember { mutableStateOf<Double?>(null) }
 
     LaunchedEffect(Unit) {
-        runCatching {
-            todaySteps = healthDataProvider.getTodaySteps()
-        }
+        kotlinx.coroutines.delay(500)
+        runCatching { healthDataProvider.getTodaySteps() }
+            .onSuccess { todaySteps = it }
+            .onFailure { println("❌ Pasos: ${it.message}") }
+        runCatching { healthDataProvider.getTodayActiveCalories() }
+            .onSuccess { todayCalories = it }
+            .onFailure { println("❌ Calorías: ${it.message}") }
     }
 
     Column(
@@ -80,6 +85,12 @@ fun DashboardScreen(
 
                 Text(
                     text = "Pasos hoy: ${todaySteps ?: "..."}",
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = accent
+                )
+                Text(
+                    text = "Calorías activas: ${todayCalories?.toInt() ?: "..."} kcal",
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.SemiBold,
                     color = accent

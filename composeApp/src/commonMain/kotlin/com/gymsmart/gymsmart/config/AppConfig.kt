@@ -6,6 +6,6 @@ object AppConfig {
     // Android físico: "http://192.168.1.140:8080"
     // Mirar en el cmd el comando ipconfig y poner el puerto de ipv4
     //const val BASE_URL = "http://192.168.1.140:8080"
-    const val BASE_URL = "http://192.168.1.145:8080"
-    //"http://100.91.80.89:8080" JONY
+    // const val BASE_URL = "http://192.168.1.145:8080" DANI
+    const val BASE_URL = "http://100.91.80.89:8080" //JONY
 }
