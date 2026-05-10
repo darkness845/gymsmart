@@ -134,6 +134,10 @@ fun LoginScreen(navController: NavController, authService: AuthService, profileS
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        TextButton(onClick = { navController.navigate(Screen.ForgotPassword.route) }) {
+            Text("¿Olvidaste tu contraseña?", color = textSecondary)
+        }
+
         TextButton(onClick = { navController.navigate(Screen.Register.route) }) {
             Text("¿No tienes cuenta? ", color = textSecondary)
             Text("Regístrate", color = accent, fontWeight = FontWeight.Bold)

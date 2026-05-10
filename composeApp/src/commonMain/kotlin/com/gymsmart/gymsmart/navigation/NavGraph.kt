@@ -28,6 +28,8 @@ sealed class Screen(val route: String) {
     object Weight     : Screen("weight")
     object MyRoutes : Screen("my_routes")
     object CommunityRoutes : Screen("community_routes")
+    object ForgotPassword : Screen("forgot_password")
+    object ResetPassword  : Screen("reset_password")
 }
 
 @Serializable
@@ -128,6 +130,18 @@ fun NavGraph(
 
         composable(Screen.CommunityRoutes.route) {
             CommunityRoutesScreen(navController = navController, gpsService = gpsService)
+        }
+
+        composable(Screen.ForgotPassword.route) {
+            ForgotPasswordScreen(navController, authService)
+        }
+
+        composable(
+            route = "${Screen.ResetPassword.route}/{token}",
+            arguments = listOf(navArgument("token") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val token = backStackEntry.savedStateHandle.get<String>("token") ?: ""
+            ResetPasswordScreen(navController, authService, token)
         }
     }
 }

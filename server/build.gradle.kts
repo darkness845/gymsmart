@@ -53,4 +53,5 @@ if (envFile.exists()) {
 tasks.named<JavaExec>("run") {
     environment("TURSO_DB_URL", "https://gymsmart-terockd.aws-eu-west-1.turso.io")
     environment("TURSO_AUTH_TOKEN", "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3NzYyNzUzMTYsImlkIjoiMDE5Y2NkYjUtOTIwMS03ZjA2LTg2N2YtNWUzODM5MmI1YjJmIiwicmlkIjoiMTI0NTRhNjMtZDRhMi00YzljLTlkNjktYTIyZGMzNjQ0MDA2In0.6ojNyBNmlg8X93axj-roHhBSH9WuOnwblnB1RW3ETa1MBlcOD5DM-OFgjfOvcomcfYGWnA1WiLtziYRR8QwZAw")
+    environment("RESEND_API_KEY", envProps["RESEND_API_KEY"] ?: "")
 }

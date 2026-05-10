@@ -1,26 +1,27 @@
 package com.gymsmart.gymsmart.routes
 
 import com.gymsmart.gymsmart.model.*
+import com.gymsmart.gymsmart.services.EmailService
 import com.gymsmart.gymsmart.services.UserService
 import io.ktor.http.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import io.ktor.server.sessions.*
+import kotlinx.serialization.Serializable
 
-fun Route.authRoutes(userService: UserService) {
+@Serializable data class ForgotPasswordRequest(val email: String)
+@Serializable data class ResetPasswordRequest(val token: String, val newPassword: String)
+
+fun Route.authRoutes(userService: UserService, emailService: EmailService) {
 
     post("/auth/register") {
         val req = call.receive<RegisterRequest>()
-
         if (req.name.isBlank() || req.email.isBlank() || req.password.length < 6) {
-            call.respond(
-                HttpStatusCode.BadRequest,
-                AuthResponse(false, "Datos inválidos. La contraseña debe tener al menos 6 caracteres.")
-            )
+            call.respond(HttpStatusCode.BadRequest,
+                AuthResponse(false, "Datos inválidos. La contraseña debe tener al menos 6 caracteres."))
             return@post
         }
-
         userService.register(req.name, req.email, req.password)
             .onSuccess { user ->
                 call.sessions.set(UserSession(user.id, user.email, user.name))
@@ -33,7 +34,6 @@ fun Route.authRoutes(userService: UserService) {
 
     post("/auth/login") {
         val req = call.receive<LoginRequest>()
-
         userService.login(req.email, req.password)
             .onSuccess { user ->
                 call.sessions.set(UserSession(user.id, user.email, user.name))
@@ -54,8 +54,51 @@ fun Route.authRoutes(userService: UserService) {
         if (session == null) {
             call.respond(HttpStatusCode.Unauthorized, AuthResponse(false, "No hay sesión activa"))
         } else {
-            val user = User(session.userId, session.name, session.email)
-            call.respond(HttpStatusCode.OK, AuthResponse(true, "Sesión activa", user))
+            call.respond(HttpStatusCode.OK, AuthResponse(true, "Sesión activa",
+                User(session.userId, session.name, session.email)))
         }
+    }
+
+    // ── Nuevo: solicitar reseteo ──────────────────────────────────────────────
+    post("/auth/forgot-password") {
+        val req = call.receive<ForgotPasswordRequest>()
+        if (req.email.isBlank()) {
+            call.respond(HttpStatusCode.BadRequest, AuthResponse(false, "Email requerido"))
+            return@post
+        }
+        userService.createResetToken(req.email)
+            .onSuccess { (token, name) ->
+                emailService.sendPasswordReset(req.email, name, token)
+            }
+        call.respond(HttpStatusCode.OK, AuthResponse(true, "Si el email existe, recibirás un enlace en breve"))
+    }
+
+    // ── Nuevo: confirmar reseteo ──────────────────────────────────────────────
+    post("/auth/reset-password") {
+        val req = call.receive<ResetPasswordRequest>()
+        if (req.token.isBlank() || req.newPassword.length < 6) {
+            call.respond(HttpStatusCode.BadRequest,
+                AuthResponse(false, "Token y contraseña (mín. 6 caracteres) requeridos"))
+            return@post
+        }
+        userService.resetPassword(req.token, req.newPassword)
+            .onSuccess {
+                call.respond(HttpStatusCode.OK, AuthResponse(true, "Contraseña actualizada correctamente"))
+            }
+            .onFailure { e ->
+                call.respond(HttpStatusCode.BadRequest, AuthResponse(false, e.message ?: "Token inválido"))
+            }
+    }
+
+    // Verificar token sin cambiar contraseña
+    post("/auth/verify-reset-token") {
+        val req = call.receive<ResetPasswordRequest>() // reutilizamos, solo usamos el token
+        userService.verifyResetToken(req.token)
+            .onSuccess {
+                call.respond(HttpStatusCode.OK, AuthResponse(true, "Token válido"))
+            }
+            .onFailure { e ->
+                call.respond(HttpStatusCode.BadRequest, AuthResponse(false, e.message ?: "Token inválido"))
+            }
     }
 }

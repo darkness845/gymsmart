@@ -1,6 +1,7 @@
 package com.gymsmart.gymsmart.plugins
 
 import com.gymsmart.gymsmart.routes.*
+import com.gymsmart.gymsmart.services.EmailService
 import com.gymsmart.gymsmart.services.FoodService
 import com.gymsmart.gymsmart.services.GpsService
 import com.gymsmart.gymsmart.services.NutritionService
@@ -17,13 +18,14 @@ fun Application.configureRouting(
     gpsService:       GpsService
 ) {
     val foodService = FoodService()
+    val emailService = EmailService()
 
     routing {
         get("/") { call.respondText("GymSmart API running 🏋️") }
         healthRoute()
         foodRoute(foodService)
         gpsRoutes(gpsService)
-        authRoutes(userService)
+        authRoutes(userService, emailService)
         nutritionRoutes(nutritionService)
         profileRoutes(profileService)
     }
