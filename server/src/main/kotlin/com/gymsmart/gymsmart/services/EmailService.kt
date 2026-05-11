@@ -42,4 +42,28 @@ class EmailService {
 
         return response.status == HttpStatusCode.OK || response.status.value == 200
     }
+
+    suspend fun sendEmailVerification(toEmail: String, toName: String, token: String): Boolean {
+        val response = client.post("https://api.resend.com/emails") {
+            header("Authorization", "Bearer $apiKey")
+            contentType(ContentType.Application.Json)
+            setBody(buildJsonObject {
+                put("from", "GymSmart <onboarding@resend.dev>")
+                put("to", JsonArray(listOf(JsonPrimitive(toEmail))))
+                put("subject", "Verifica tu cuenta de GymSmart")
+                put("html", """
+                <div style="font-family: Arial, sans-serif; max-width: 480px; margin: auto; padding: 32px; background: #f5f3ef; border-radius: 16px;">
+                    <h2 style="color: #1a1a1a;">¡Bienvenido a GymSmart, $toName! 💪</h2>
+                    <p style="color: #444;">Para activar tu cuenta introduce este código en la app:</p>
+                    <div style="background: #1a1a1a; border-radius: 8px; padding: 14px; text-align: center; margin: 24px 0; letter-spacing: 2px;">
+                        <code style="font-size: 13px; font-weight: bold; color: #FFB800; word-break: break-all;">$token</code>
+                    </div>
+                    <p style="color: #888; font-size: 12px;">Mantén pulsado el código para copiarlo. Caduca en 24 horas.</p>
+                    <p style="color: #888; font-size: 12px;">Si no creaste esta cuenta, ignora este correo.</p>
+                </div>
+            """.trimIndent())
+            })
+        }
+        return response.status.value == 200
+    }
 }

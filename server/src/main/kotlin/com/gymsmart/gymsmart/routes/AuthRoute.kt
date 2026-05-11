@@ -11,8 +11,9 @@ import io.ktor.server.sessions.*
 import kotlinx.serialization.Serializable
 
 @Serializable data class ForgotPasswordRequest(val email: String)
-@Serializable data class ResetPasswordRequest(val token: String, val newPassword: String)
-
+@Serializable data class ResetPasswordRequest(val token: String, val newPassword: String = "")
+@Serializable data class VerifyEmailRequest(val token: String)
+@Serializable data class ResendVerificationRequest(val email: String)
 fun Route.authRoutes(userService: UserService, emailService: EmailService) {
 
     post("/auth/register") {
@@ -23,12 +24,15 @@ fun Route.authRoutes(userService: UserService, emailService: EmailService) {
             return@post
         }
         userService.register(req.name, req.email, req.password)
-            .onSuccess { user ->
-                call.sessions.set(UserSession(user.id, user.email, user.name))
-                call.respond(HttpStatusCode.Created, AuthResponse(true, "Registro exitoso", user))
+            .onSuccess { (user, token) ->
+                // NO iniciamos sesión hasta que verifique el email
+                emailService.sendEmailVerification(req.email, req.name, token)
+                call.respond(HttpStatusCode.Created,
+                    AuthResponse(true, "VERIFY_EMAIL"))
             }
             .onFailure { e ->
-                call.respond(HttpStatusCode.Conflict, AuthResponse(false, e.message ?: "Error al registrar"))
+                call.respond(HttpStatusCode.Conflict,
+                    AuthResponse(false, e.message ?: "Error al registrar"))
             }
     }
 
@@ -40,7 +44,13 @@ fun Route.authRoutes(userService: UserService, emailService: EmailService) {
                 call.respond(HttpStatusCode.OK, AuthResponse(true, "Login exitoso", user))
             }
             .onFailure { e ->
-                call.respond(HttpStatusCode.Unauthorized, AuthResponse(false, e.message ?: "Error al hacer login"))
+                val msg = e.message ?: "Error al hacer login"
+                // Código especial para que el cliente sepa que debe verificar
+                if (msg == "EMAIL_NOT_VERIFIED") {
+                    call.respond(HttpStatusCode.Forbidden, AuthResponse(false, "EMAIL_NOT_VERIFIED"))
+                } else {
+                    call.respond(HttpStatusCode.Unauthorized, AuthResponse(false, msg))
+                }
             }
     }
 
@@ -59,7 +69,34 @@ fun Route.authRoutes(userService: UserService, emailService: EmailService) {
         }
     }
 
-    // ── Nuevo: solicitar reseteo ──────────────────────────────────────────────
+    // Verificar email con código
+    post("/auth/verify-email") {
+        val req = call.receive<VerifyEmailRequest>()
+        userService.verifyEmail(req.token)
+            .onSuccess { user ->
+                // Iniciamos sesión automáticamente tras verificar
+                call.sessions.set(UserSession(user.id, user.email, user.name))
+                call.respond(HttpStatusCode.OK, AuthResponse(true, "Email verificado correctamente", user))
+            }
+            .onFailure { e ->
+                call.respond(HttpStatusCode.BadRequest, AuthResponse(false, e.message ?: "Token inválido"))
+            }
+    }
+
+    // Reenviar código de verificación
+    post("/auth/resend-verification") {
+        val req = call.receive<ResendVerificationRequest>()
+        userService.resendVerificationToken(req.email)
+            .onSuccess { (token, name) ->
+                emailService.sendEmailVerification(req.email, name, token)
+                call.respond(HttpStatusCode.OK, AuthResponse(true, "Código reenviado"))
+            }
+            .onFailure { e ->
+                call.respond(HttpStatusCode.BadRequest, AuthResponse(false, e.message ?: "Error"))
+            }
+    }
+
+    // Endpoints de reset de contraseña (igual que antes)
     post("/auth/forgot-password") {
         val req = call.receive<ForgotPasswordRequest>()
         if (req.email.isBlank()) {
@@ -73,7 +110,13 @@ fun Route.authRoutes(userService: UserService, emailService: EmailService) {
         call.respond(HttpStatusCode.OK, AuthResponse(true, "Si el email existe, recibirás un enlace en breve"))
     }
 
-    // ── Nuevo: confirmar reseteo ──────────────────────────────────────────────
+    post("/auth/verify-reset-token") {
+        val req = call.receive<ResetPasswordRequest>()
+        userService.verifyResetToken(req.token)
+            .onSuccess { call.respond(HttpStatusCode.OK, AuthResponse(true, "Token válido")) }
+            .onFailure { e -> call.respond(HttpStatusCode.BadRequest, AuthResponse(false, e.message ?: "Token inválido")) }
+    }
+
     post("/auth/reset-password") {
         val req = call.receive<ResetPasswordRequest>()
         if (req.token.isBlank() || req.newPassword.length < 6) {
@@ -82,23 +125,7 @@ fun Route.authRoutes(userService: UserService, emailService: EmailService) {
             return@post
         }
         userService.resetPassword(req.token, req.newPassword)
-            .onSuccess {
-                call.respond(HttpStatusCode.OK, AuthResponse(true, "Contraseña actualizada correctamente"))
-            }
-            .onFailure { e ->
-                call.respond(HttpStatusCode.BadRequest, AuthResponse(false, e.message ?: "Token inválido"))
-            }
-    }
-
-    // Verificar token sin cambiar contraseña
-    post("/auth/verify-reset-token") {
-        val req = call.receive<ResetPasswordRequest>() // reutilizamos, solo usamos el token
-        userService.verifyResetToken(req.token)
-            .onSuccess {
-                call.respond(HttpStatusCode.OK, AuthResponse(true, "Token válido"))
-            }
-            .onFailure { e ->
-                call.respond(HttpStatusCode.BadRequest, AuthResponse(false, e.message ?: "Token inválido"))
-            }
+            .onSuccess { call.respond(HttpStatusCode.OK, AuthResponse(true, "Contraseña actualizada correctamente")) }
+            .onFailure { e -> call.respond(HttpStatusCode.BadRequest, AuthResponse(false, e.message ?: "Token inválido")) }
     }
 }

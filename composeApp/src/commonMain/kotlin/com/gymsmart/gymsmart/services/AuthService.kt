@@ -94,8 +94,32 @@ class AuthService {
             AuthResponse(false, "Error de conexión: ${e.message}")
         }
     }
+
+    suspend fun verifyEmail(token: String): AuthResponse {
+        return try {
+            client.post("$base/auth/verify-email") {
+                contentType(ContentType.Application.Json)
+                setBody(VerifyEmailRequest(token))
+            }.body()
+        } catch (e: Exception) {
+            AuthResponse(false, "Error de conexión: ${e.message}")
+        }
+    }
+
+    suspend fun resendVerification(email: String): AuthResponse {
+        return try {
+            client.post("$base/auth/resend-verification") {
+                contentType(ContentType.Application.Json)
+                setBody(ResendVerificationRequest(email))
+            }.body()
+        } catch (e: Exception) {
+            AuthResponse(false, "Error de conexión: ${e.message}")
+        }
+    }
 }
 
+@Serializable data class VerifyEmailRequest(val token: String)
+@Serializable data class ResendVerificationRequest(val email: String)
 @Serializable
 data class ForgotPasswordRequest(val email: String)
 @Serializable

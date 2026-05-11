@@ -99,7 +99,6 @@ fun LoginScreen(navController: NavController, authService: AuthService, profileS
                     errorMsg = ""
                     val response = authService.login(email, password)
                     if (response.success) {
-                        // ← comprobar perfil antes de navegar
                         val destination = if (profileService.hasProfile()) {
                             Screen.Dashboard.route
                         } else {
@@ -108,6 +107,8 @@ fun LoginScreen(navController: NavController, authService: AuthService, profileS
                         navController.navigate(destination) {
                             popUpTo(Screen.Login.route) { inclusive = true }
                         }
+                    } else if (response.message == "EMAIL_NOT_VERIFIED") {
+                        errorMsg = "Debes verificar tu email. Revisa tu bandeja de entrada."
                     } else {
                         errorMsg = response.message
                     }
