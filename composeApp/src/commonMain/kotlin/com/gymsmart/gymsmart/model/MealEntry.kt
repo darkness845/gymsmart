@@ -35,3 +35,12 @@ data class MealEntryRequest(
     val mealType: String,
     val date: String
 )
+
+@Serializable
+data class FavoriteBody(
+    val name: String,
+    val kcalPer100: Double,
+    val proteinsPer100: Double,
+    val carbsPer100: Double,
+    val fatPer100: Double
+)

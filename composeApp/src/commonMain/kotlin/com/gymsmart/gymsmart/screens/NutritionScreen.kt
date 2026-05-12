@@ -246,6 +246,7 @@ fun NutritionScreen(
 
                 is SheetMode.Search -> FoodSearchSheet(
                     mealLabel = mode.meal.label,
+                    nutritionService = nutritionService,
                     onProductSelected = { product ->
                         sheetMode = SheetMode.PortionPicker(mode.meal, product)
                     },
@@ -256,6 +257,7 @@ fun NutritionScreen(
                     mealLabel = mode.meal.label,
                     product = mode.product,
                     initialGrams = mode.existingEntry?.grams ?: 100.0,
+                    nutritionService = nutritionService,
                     onConfirm = { grams ->
                         val list = meals[mode.meal] ?: return@PortionPickerSheet
                         val n = mode.product.nutriments
@@ -619,98 +621,173 @@ private fun MealSection(
 @Composable
 private fun FoodSearchSheet(
     mealLabel: String,
+    nutritionService: NutritionService,
     onProductSelected: (Product) -> Unit,
     onClose: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
+    var selectedTab by remember { mutableStateOf(0) }
+    val tabs = listOf("Buscar", "Historial", "Favoritos")
+
     var query     by remember { mutableStateOf("") }
     var results   by remember { mutableStateOf<List<Product>>(emptyList()) }
+    var history   by remember { mutableStateOf<List<Product>>(emptyList()) }
+    var favorites by remember { mutableStateOf<List<Product>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
     var errorMsg  by remember { mutableStateOf<String?>(null) }
+
+    // Carga historial y favoritos al abrir
+    LaunchedEffect(Unit) {
+        history   = nutritionService.getFoodHistory()
+        favorites = nutritionService.getFavorites()
+    }
 
     Column(
         modifier = Modifier.fillMaxWidth()
             .padding(horizontal = 20.dp).padding(bottom = 32.dp)
     ) {
         SheetHandle()
-        SheetHeader(title = "Añadir a $mealLabel", subtitle = "Busca el alimento", onClose = onClose)
-        Spacer(Modifier.height(16.dp))
+        SheetHeader(title = "Añadir a $mealLabel", subtitle = "Elige el alimento", onClose = onClose)
+        Spacer(Modifier.height(12.dp))
 
-        Row(modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                placeholder = { Text("ej: chicken, rice...", color = TextSecondary) },
-                leadingIcon = { Icon(Icons.Default.Search, null, tint = TextSecondary) },
-                trailingIcon = {
-                    if (query.isNotEmpty()) {
-                        IconButton(onClick = { query = ""; results = emptyList() }) {
-                            Icon(Icons.Default.Close, null, tint = TextSecondary)
-                        }
-                    }
-                },
-                modifier = Modifier.weight(1f),
-                singleLine = true,
-                shape = RoundedCornerShape(12.dp),
-                colors = searchFieldColors()
-            )
-            Button(
-                onClick = {
-                    scope.launch {
-                        isLoading = true; errorMsg = null; results = emptyList()
-                        try {
-                            val raw = httpClient.get("${AppConfig.BASE_URL}/food/search") {
-                                parameter("q", query)
-                            }.bodyAsText()
-                            results = Json { ignoreUnknownKeys = true }
-                                .decodeFromString<FoodSearchResponse>(raw).products
-                        } catch (e: Exception) { errorMsg = "Error: ${e.message}" }
-                        isLoading = false
-                    }
-                },
-                enabled = query.isNotBlank() && !isLoading,
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = AccentYellow),
-                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 14.dp)
-            ) {
-                Text(if (isLoading) "..." else "Buscar", color = Color.White, fontWeight = FontWeight.Bold)
+        // ── Tabs ──────────────────────────────────────────────────────────────
+        Row(
+            modifier = Modifier.fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color(0xFFF0EDE8))
+                .padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            tabs.forEachIndexed { index, label ->
+                Box(
+                    modifier = Modifier.weight(1f)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (selectedTab == index) CardColor else Color.Transparent)
+                        .clickable { selectedTab = index }
+                        .padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        label,
+                        fontSize = 13.sp,
+                        fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal,
+                        color = if (selectedTab == index) TextPrimary else TextSecondary
+                    )
+                }
             }
         }
 
-        Spacer(Modifier.height(8.dp))
-        errorMsg?.let { Text(it, color = Color.Red, fontSize = 12.sp) }
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(12.dp))
 
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(results) { product ->
-                val kcal = product.nutriments?.energy_kcal_100g ?: product.nutriments?.energy_kcal ?: 0.0
-                Box(
-                    modifier = Modifier.fillMaxWidth()
-                        .shadow(1.dp, RoundedCornerShape(12.dp))
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(CardColor)
-                        .clickable { onProductSelected(product) }
-                        .padding(12.dp)
-                ) {
-                    Row(modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(product.product_name ?: "Sin nombre",
-                                fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = TextPrimary)
-                            Spacer(Modifier.height(4.dp))
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                MacroChip("⚡ ${kcal.toInt()} kcal/100g", AccentYellow)
-                                MacroChip("🥩 ${(product.nutriments?.proteins_100g ?: 0.0).toInt()}g", ColorProtein)
-                                MacroChip("🍞 ${(product.nutriments?.carbohydrates_100g ?: 0.0).toInt()}g", ColorCarbs)  // ← añade
-                                MacroChip("🧈 ${(product.nutriments?.fat_100g ?: 0.0).toInt()}g", ColorFat)              // ← añade
+        when (selectedTab) {
+            // ── Tab Buscar ────────────────────────────────────────────────────
+            0 -> {
+                Row(modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        placeholder = { Text("ej: arroz, pollo...", color = TextSecondary) },
+                        leadingIcon = { Icon(Icons.Default.Search, null, tint = TextSecondary) },
+                        trailingIcon = {
+                            if (query.isNotEmpty()) {
+                                IconButton(onClick = { query = ""; results = emptyList() }) {
+                                    Icon(Icons.Default.Close, null, tint = TextSecondary)
+                                }
                             }
-                        }
-                        Icon(Icons.Default.Add, contentDescription = null,
-                            tint = AccentYellow, modifier = Modifier.size(24.dp))
+                        },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = searchFieldColors()
+                    )
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                isLoading = true; errorMsg = null; results = emptyList()
+                                try {
+                                    val raw = httpClient.get("${AppConfig.BASE_URL}/food/search") {
+                                        parameter("q", query)
+                                    }.bodyAsText()
+                                    results = Json { ignoreUnknownKeys = true }
+                                        .decodeFromString<FoodSearchResponse>(raw).products
+                                } catch (e: Exception) { errorMsg = "Error: ${e.message}" }
+                                isLoading = false
+                            }
+                        },
+                        enabled = query.isNotBlank() && !isLoading,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = AccentYellow),
+                        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 14.dp)
+                    ) {
+                        Text(if (isLoading) "..." else "Buscar", color = Color.White, fontWeight = FontWeight.Bold)
                     }
+                }
+                Spacer(Modifier.height(8.dp))
+                errorMsg?.let { Text(it, color = Color.Red, fontSize = 12.sp) }
+                Spacer(Modifier.height(4.dp))
+                ProductList(products = results, onProductSelected = onProductSelected)
+            }
+
+            // ── Tab Historial ─────────────────────────────────────────────────
+            1 -> {
+                if (history.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxWidth().padding(32.dp),
+                        contentAlignment = Alignment.Center) {
+                        Text("Aún no has añadido ningún alimento",
+                            color = TextSecondary, fontSize = 13.sp)
+                    }
+                } else {
+                    ProductList(products = history, onProductSelected = onProductSelected)
+                }
+            }
+
+            // ── Tab Favoritos ─────────────────────────────────────────────────
+            2 -> {
+                if (favorites.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxWidth().padding(32.dp),
+                        contentAlignment = Alignment.Center) {
+                        Text("No tienes favoritos aún. Pulsa ❤️ en un alimento para añadirlo.",
+                            color = TextSecondary, fontSize = 13.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    }
+                } else {
+                    ProductList(products = favorites, onProductSelected = onProductSelected)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProductList(products: List<Product>, onProductSelected: (Product) -> Unit) {
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        items(products) { product ->
+            val kcal = product.nutriments?.energy_kcal_100g ?: product.nutriments?.energy_kcal ?: 0.0
+            Box(
+                modifier = Modifier.fillMaxWidth()
+                    .shadow(1.dp, RoundedCornerShape(12.dp))
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(CardColor)
+                    .clickable { onProductSelected(product) }
+                    .padding(12.dp)
+            ) {
+                Row(modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(product.product_name ?: "Sin nombre",
+                            fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = TextPrimary)
+                        Spacer(Modifier.height(4.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            MacroChip("⚡ ${kcal.toInt()} kcal/100g", AccentYellow)
+                            MacroChip("🥩 ${(product.nutriments?.proteins_100g ?: 0.0).toInt()}g", ColorProtein)
+                            MacroChip("🍞 ${(product.nutriments?.carbohydrates_100g ?: 0.0).toInt()}g", ColorCarbs)
+                            MacroChip("🧈 ${(product.nutriments?.fat_100g ?: 0.0).toInt()}g", ColorFat)
+                        }
+                    }
+                    Icon(Icons.Default.Add, contentDescription = null,
+                        tint = AccentYellow, modifier = Modifier.size(24.dp))
                 }
             }
         }
@@ -724,6 +801,7 @@ private fun PortionPickerSheet(
     mealLabel: String,
     product: Product,
     initialGrams: Double,
+    nutritionService: NutritionService,
     onConfirm: (Double) -> Unit,
     onBack: () -> Unit,
     onClose: () -> Unit
@@ -741,16 +819,58 @@ private fun PortionPickerSheet(
     val carbs    = carbsPer100    / 100.0 * grams
     val fat      = fatPer100      / 100.0 * grams
 
+    val scope = rememberCoroutineScope()
+    var isFavorite by remember { mutableStateOf(false) }
+
+    // Carga si ya es favorito
+    LaunchedEffect(product.product_name) {
+        isFavorite = nutritionService.getFavorites()
+            .any { it.product_name == product.product_name }
+    }
+
     Column(
         modifier = Modifier.fillMaxWidth()
             .padding(horizontal = 20.dp).padding(bottom = 32.dp)
     ) {
         SheetHandle()
-        SheetHeader(
-            title = product.product_name ?: "Sin nombre",
-            subtitle = "Ajusta la cantidad",
-            onClose = onClose
-        )
+        Row(modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(product.product_name ?: "Sin nombre",
+                    fontWeight = FontWeight.Bold, fontSize = 20.sp, color = TextPrimary)
+                Text("Ajusta la cantidad", fontSize = 13.sp, color = TextSecondary)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Botón corazón
+                IconButton(
+                    onClick = {
+                        scope.launch {
+                            if (isFavorite) {
+                                nutritionService.removeFavorite(product.product_name ?: "")
+                                isFavorite = false
+                            } else {
+                                nutritionService.addFavorite(product)
+                                isFavorite = true
+                            }
+                        }
+                    },
+                    modifier = Modifier.size(36.dp).clip(RoundedCornerShape(10.dp))
+                        .background(if (isFavorite) Color(0xFFFFEEEE) else Color(0xFFEEEEEE))
+                ) {
+                    Text(if (isFavorite) "❤️" else "🤍", fontSize = 18.sp)
+                }
+                // Botón cerrar
+                IconButton(
+                    onClick = onClose,
+                    modifier = Modifier.size(36.dp).clip(RoundedCornerShape(10.dp))
+                        .background(Color(0xFFEEEEEE))
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = "Cerrar",
+                        tint = TextPrimary, modifier = Modifier.size(18.dp))
+                }
+            }
+        }
         Spacer(Modifier.height(20.dp))
 
         // Input de gramos
