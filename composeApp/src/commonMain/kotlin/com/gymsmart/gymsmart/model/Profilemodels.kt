@@ -10,7 +10,8 @@ data class ProfileRequest(
     val sex:           String,
     val activityLevel: String,
     val goal:          String,
-    val goalRate:      Double
+    val goalRate:      Double,
+    val hasWearable:   Boolean = false
 )
 
 @Serializable

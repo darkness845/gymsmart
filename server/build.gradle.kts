@@ -36,6 +36,7 @@ dependencies {
     implementation("org.mindrot:jbcrypt:0.4")
     testImplementation(libs.ktor.serverTestHost)
     testImplementation(libs.kotlin.testJunit)
+    implementation("com.sun.mail:jakarta.mail:2.0.1")
 }
 
 // Leer variables del .env
@@ -51,7 +52,9 @@ if (envFile.exists()) {
 }
 
 tasks.named<JavaExec>("run") {
-    environment("TURSO_DB_URL", "https://gymsmart-terockd.aws-eu-west-1.turso.io")
-    environment("TURSO_AUTH_TOKEN", "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3NzYyNzUzMTYsImlkIjoiMDE5Y2NkYjUtOTIwMS03ZjA2LTg2N2YtNWUzODM5MmI1YjJmIiwicmlkIjoiMTI0NTRhNjMtZDRhMi00YzljLTlkNjktYTIyZGMzNjQ0MDA2In0.6ojNyBNmlg8X93axj-roHhBSH9WuOnwblnB1RW3ETa1MBlcOD5DM-OFgjfOvcomcfYGWnA1WiLtziYRR8QwZAw")
+    environment("TURSO_DB_URL", envProps["TURSO_DB_URL"] ?: "")
+    environment("TURSO_AUTH_TOKEN", envProps["TURSO_AUTH_TOKEN"] ?: "")
     environment("RESEND_API_KEY", envProps["RESEND_API_KEY"] ?: "")
+    environment("GMAIL_USER", envProps["GMAIL_USER"] ?: "")  // ← AÑADE
+    environment("GMAIL_PASS", envProps["GMAIL_PASS"] ?: "")  // ← AÑADE
 }

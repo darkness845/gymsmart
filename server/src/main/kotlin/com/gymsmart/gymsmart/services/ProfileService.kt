@@ -66,8 +66,8 @@ class ProfileService(private val turso: TursoService) {
         turso.execute(
             """
             INSERT OR REPLACE INTO user_profiles
-                (user_id, weight_kg, height_cm, age, sex, activity_level, goal, goal_rate, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (user_id, weight_kg, height_cm, age, sex, activity_level, goal, goal_rate, has_wearable, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """.trimIndent(),
             listOf(
                 userId,
@@ -78,6 +78,7 @@ class ProfileService(private val turso: TursoService) {
                 activityLevel,
                 goal,
                 goalRate.toString(),
+                if (activityLevel == "wearable") "1" else "0",
                 now.toString()
             )
         )
@@ -122,21 +123,23 @@ class ProfileService(private val turso: TursoService) {
         else
             10.0 * profile.weightKg + 6.25 * profile.heightCm - 5.0 * profile.age - 161.0
 
-        val multiplier = when (profile.activityLevel) {
-            "sedentary"   -> 1.2
-            "light"       -> 1.375
-            "moderate"    -> 1.55
-            "active"      -> 1.725
-            "very_active" -> 1.9
-            else          -> 1.2
+        // Con pulsera usamos BMR directamente — la pulsera añade el resto en tiempo real
+        val tdee = if (profile.activityLevel == "wearable") {
+            bmr.roundToInt()
+        } else {
+            val multiplier = when (profile.activityLevel) {
+                "sedentary"   -> 1.2
+                "light"       -> 1.375
+                "moderate"    -> 1.55
+                "active"      -> 1.725
+                "very_active" -> 1.9
+                else          -> 1.2
+            }
+            (bmr * multiplier).roundToInt()
         }
-        val tdee = (bmr * multiplier).roundToInt()
 
-        // 1 kg grasa ≈ 7700 kcal → delta diario = rate × 7700 / 7
-        val dailyDelta = when (profile.goal) {
-            "maintain" -> 0
-            else       -> (profile.goalRate * 7700.0 / 7.0).roundToInt()
-        }
+        // goalRate ahora es directamente kcal con signo: -300, -400, -500, 0, 300, 400, 500
+        val dailyDelta = profile.goalRate.roundToInt()
         val minKcal    = if (profile.sex == "male") 1500 else 1200
         val targetKcal = (tdee + dailyDelta).coerceAtLeast(minKcal)
 

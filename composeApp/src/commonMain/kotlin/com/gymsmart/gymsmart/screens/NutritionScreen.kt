@@ -158,10 +158,29 @@ fun NutritionScreen(
         scope.launch { sheetState.hide() }.invokeOnCompletion { sheetMode = null }
     }
 
-    var kcalGoal    by remember { mutableStateOf(2000.0) }
-    var proteinGoal by remember { mutableStateOf(150.0) }
-    var carbGoal    by remember { mutableStateOf(200.0) }
-    var fatGoal     by remember { mutableStateOf(65.0) }
+    var activeCalories  by remember { mutableStateOf(0.0) }
+    var proteinGoalBase by remember { mutableStateOf(150.0) }
+    var fatGoalBase     by remember { mutableStateOf(65.0) }
+    var carbGoalBase    by remember { mutableStateOf(200.0) }
+    var kcalGoal        by remember { mutableStateOf(2000.0) }
+    var hasWearable     by remember { mutableStateOf(false) }
+
+    // Macros dinámicos — se recalculan cuando cambia activeCalories
+    val proteinGoal by remember { derivedStateOf { proteinGoalBase } }
+    val fatGoal     by remember { derivedStateOf {
+        if (hasWearable && activeCalories > 0)
+            ((kcalGoal + activeCalories) * 0.25 / 9.0)
+        else
+            fatGoalBase
+    }}
+    val carbGoal    by remember { derivedStateOf {
+        if (hasWearable && activeCalories > 0) {
+            val kcalTotal = kcalGoal + activeCalories
+            ((kcalTotal - proteinGoalBase * 4.0 - fatGoal * 9.0) / 4.0).coerceAtLeast(0.0)
+        } else {
+            carbGoalBase
+        }
+    }}
 
     val totalKcal     by remember(selectedDate) { derivedStateOf { meals.values.flatten().sumOf { it.kcal } } }
     val totalProteins by remember(selectedDate) { derivedStateOf { meals.values.flatten().sumOf { it.proteins } } }
@@ -170,22 +189,21 @@ fun NutritionScreen(
 
     val snackbarHostState = remember { SnackbarHostState() }
 
-    var activeCalories by remember { mutableStateOf(0.0) }
-
     LaunchedEffect(selectedDate) {
-        // Carga de perfil + targets
         profileService.getProfileResponse().onSuccess { response ->
-            kcalGoal    = response.targets.targetKcal.toDouble()
-            proteinGoal = response.targets.proteinG.toDouble()
-            carbGoal    = response.targets.carbsG.toDouble()
-            fatGoal     = response.targets.fatG.toDouble()
+            kcalGoal        = response.targets.targetKcal.toDouble()
+            proteinGoalBase = response.targets.proteinG.toDouble()
+            carbGoalBase    = response.targets.carbsG.toDouble()
+            fatGoalBase     = response.targets.fatG.toDouble()
+            hasWearable     = response.profile.activityLevel == "wearable"
         }
 
-        // Calorías quemadas del reloj (solo hoy)
-        runCatching { healthDataProvider.getTodayActiveCalories() }
-            .onSuccess { activeCalories = it }
+        // Solo lee la pulsera si tiene wearable
+        if (hasWearable) {
+            runCatching { healthDataProvider.getTodayActiveCalories() }
+                .onSuccess { activeCalories = it }
+        }
 
-        // Carga de comidas
         val remoteEntries = nutritionService.getUserMeals(selectedDate.toString())
         remoteEntries?.forEach { entryWithTarget ->
             val mealType = MealType.entries.find { it.name == entryWithTarget.mealType }
@@ -360,11 +378,11 @@ fun NutritionScreen(
             item {
                 Spacer(Modifier.height(16.dp))
                 CalorieCard(
-                    totalKcal    = totalKcal,    kcalGoal    = kcalGoal,
-                    proteins     = totalProteins, proteinGoal = proteinGoal,
-                    carbs        = totalCarbs,    carbGoal    = carbGoal,
-                    fat          = totalFat,      fatGoal     = fatGoal,
-                    activeCalories = activeCalories
+                    totalKcal      = totalKcal,    kcalGoal    = kcalGoal,
+                    proteins       = totalProteins, proteinGoal = proteinGoal,
+                    carbs          = totalCarbs,    carbGoal    = carbGoal,
+                    fat            = totalFat,      fatGoal     = fatGoal,
+                    activeCalories = if (hasWearable) activeCalories else 0.0
                 )
             }
 

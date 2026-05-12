@@ -24,11 +24,12 @@ fun Route.authRoutes(userService: UserService, emailService: EmailService) {
             return@post
         }
         userService.register(req.name, req.email, req.password)
-            .onSuccess { (user, token) ->
-                // NO iniciamos sesión hasta que verifique el email
-                emailService.sendEmailVerification(req.email, req.name, token)
-                call.respond(HttpStatusCode.Created,
-                    AuthResponse(true, "VERIFY_EMAIL"))
+            .onSuccess { pair ->
+                val user  = pair.first
+                val token = pair.second
+                val emailSent = emailService.sendEmailVerification(req.email, req.name, token)
+                println(">>> Email enviado: $emailSent — destino: ${req.email}")  // ← AÑADE ESTO
+                call.respond(HttpStatusCode.Created, AuthResponse(true, "VERIFY_EMAIL"))
             }
             .onFailure { e ->
                 call.respond(HttpStatusCode.Conflict,

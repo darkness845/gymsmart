@@ -19,7 +19,8 @@ data class ProfileRequest(
     val sex:           String,
     val activityLevel: String,
     val goal:          String,
-    val goalRate:      Double
+    val goalRate:      Double,
+    val hasWearable:   Boolean = false
 )
 
 fun Route.profileRoutes(profileService: ProfileService) {
@@ -88,7 +89,7 @@ fun Route.profileRoutes(profileService: ProfileService) {
                 return@post call.respond(HttpStatusCode.BadRequest, "Edad fuera de rango (14–100)")
             if (req.sex !in listOf("male", "female"))
                 return@post call.respond(HttpStatusCode.BadRequest, "Sexo inválido")
-            if (req.activityLevel !in listOf("sedentary", "light", "moderate", "active", "very_active"))
+            if (req.activityLevel !in listOf("sedentary", "light", "moderate", "active", "very_active", "wearable"))
                 return@post call.respond(HttpStatusCode.BadRequest, "Nivel de actividad inválido")
             if (req.goal !in listOf("lose_fat", "maintain", "gain_muscle"))
                 return@post call.respond(HttpStatusCode.BadRequest, "Objetivo inválido")
