@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -41,6 +43,7 @@ fun DashboardScreen(
 
     var todaySteps by remember { mutableStateOf<Long?>(null) }
     var todayCalories by remember { mutableStateOf<Double?>(null) }
+    var menuExpanded by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         kotlinx.coroutines.delay(500)
@@ -97,19 +100,47 @@ fun DashboardScreen(
                 )
             }
 
-            IconButton(onClick = {
-                scope.launch {
-                    authService.logout()
-                    navController.navigate(Screen.Login.route) {
-                        popUpTo(0) { inclusive = true }
-                    }
+            Box {
+                IconButton(onClick = { menuExpanded = true }) {
+                    Icon(
+                        imageVector = Icons.Default.Menu,
+                        contentDescription = "Menú",
+                        tint = textSecondary
+                    )
                 }
-            }) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.Logout,
-                    contentDescription = "Cerrar sesión",
-                    tint = textSecondary
-                )
+                DropdownMenu(
+                    expanded = menuExpanded,
+                    onDismissRequest = { menuExpanded = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Mi perfil") },
+                        leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
+                        onClick = {
+                            menuExpanded = false
+                            navController.navigate(Screen.Profile.route)
+                        }
+                    )
+                    HorizontalDivider()
+                    DropdownMenuItem(
+                        text = { Text("Cerrar sesión", color = Color(0xFFE53935)) },
+                        leadingIcon = {
+                            Icon(
+                                Icons.AutoMirrored.Filled.Logout,
+                                contentDescription = null,
+                                tint = Color(0xFFE53935)
+                            )
+                        },
+                        onClick = {
+                            menuExpanded = false
+                            scope.launch {
+                                authService.logout()
+                                navController.navigate(Screen.Login.route) {
+                                    popUpTo(0) { inclusive = true }
+                                }
+                            }
+                        }
+                    )
+                }
             }
         }
 

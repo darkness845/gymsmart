@@ -116,7 +116,25 @@ class AuthService {
             AuthResponse(false, "Error de conexión: ${e.message}")
         }
     }
+
+    suspend fun changePassword(currentPassword: String, newPassword: String): Boolean {
+        return try {
+            val response = client.post("${AppConfig.BASE_URL}/auth/change-password") {
+                contentType(ContentType.Application.Json)
+                setBody(ChangePasswordRequest(currentPassword, newPassword))
+            }
+            response.status.value == 200
+        } catch (e: Exception) {
+            false
+        }
+    }
 }
+
+@Serializable
+data class ChangePasswordRequest(
+    val currentPassword: String,
+    val newPassword: String
+)
 
 @Serializable data class VerifyEmailRequest(val token: String)
 @Serializable data class ResendVerificationRequest(val email: String)

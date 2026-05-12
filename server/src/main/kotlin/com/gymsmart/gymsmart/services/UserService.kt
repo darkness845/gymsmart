@@ -196,4 +196,29 @@ class UserService(private val turso: TursoService) {
         turso.execute("UPDATE password_reset_tokens SET used = 1 WHERE token = ?", listOf(token))
         return Result.success(Unit)
     }
+
+    suspend fun changePassword(userId: String, currentPassword: String, newPassword: String): Result<Unit> {
+        // Recupera el hash actual
+        val result = turso.execute(
+            "SELECT password_hash FROM users WHERE id = ?",
+            listOf(userId)
+        )
+        val row = turso.extractRows(result).firstOrNull()
+            ?: return Result.failure(Exception("Usuario no encontrado"))
+
+        val hash = row[0] ?: return Result.failure(Exception("Error leyendo contraseña"))
+
+        // Verifica que la contraseña actual es correcta
+        if (!BCrypt.checkpw(currentPassword, hash)) {
+            return Result.failure(Exception("La contraseña actual es incorrecta"))
+        }
+
+        // Guarda el nuevo hash
+        val newHash = BCrypt.hashpw(newPassword, BCrypt.gensalt())
+        turso.execute(
+            "UPDATE users SET password_hash = ? WHERE id = ?",
+            listOf(newHash, userId)
+        )
+        return Result.success(Unit)
+    }
 }

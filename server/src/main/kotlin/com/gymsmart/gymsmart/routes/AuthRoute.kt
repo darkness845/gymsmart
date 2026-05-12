@@ -14,6 +14,13 @@ import kotlinx.serialization.Serializable
 @Serializable data class ResetPasswordRequest(val token: String, val newPassword: String = "")
 @Serializable data class VerifyEmailRequest(val token: String)
 @Serializable data class ResendVerificationRequest(val email: String)
+
+@Serializable
+data class ChangePasswordRequest(
+    val currentPassword: String,
+    val newPassword: String
+)
+
 fun Route.authRoutes(userService: UserService, emailService: EmailService) {
 
     post("/auth/register") {
@@ -128,5 +135,29 @@ fun Route.authRoutes(userService: UserService, emailService: EmailService) {
         userService.resetPassword(req.token, req.newPassword)
             .onSuccess { call.respond(HttpStatusCode.OK, AuthResponse(true, "Contraseña actualizada correctamente")) }
             .onFailure { e -> call.respond(HttpStatusCode.BadRequest, AuthResponse(false, e.message ?: "Token inválido")) }
+    }
+
+    post("/auth/change-password") {
+        val session = call.sessions.get<UserSession>()
+            ?: return@post call.respond(HttpStatusCode.Unauthorized, AuthResponse(false, "Sin sesión"))
+
+        println(">>> change-password session=$session")
+
+        val req = try {
+            call.receive<ChangePasswordRequest>()
+        } catch (e: Exception) {
+            return@post call.respond(HttpStatusCode.BadRequest, AuthResponse(false, "Cuerpo inválido"))
+        }
+
+        if (req.currentPassword.isBlank() || req.newPassword.length < 6) {
+            return@post call.respond(
+                HttpStatusCode.BadRequest,
+                AuthResponse(false, "Mínimo 6 caracteres en la nueva contraseña")
+            )
+        }
+
+        userService.changePassword(session.userId, req.currentPassword, req.newPassword)
+            .onSuccess { call.respond(HttpStatusCode.OK, AuthResponse(true, "Contraseña actualizada")) }
+            .onFailure { e -> call.respond(HttpStatusCode.BadRequest, AuthResponse(false, e.message ?: "Error")) }
     }
 }
