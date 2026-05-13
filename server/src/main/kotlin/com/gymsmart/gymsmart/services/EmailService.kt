@@ -14,9 +14,9 @@ class EmailService {
     private val session: Session by lazy {
         val props = Properties().apply {
             put("mail.smtp.auth", "true")
-            put("mail.smtp.starttls.enable", "true")
+            put("mail.smtp.ssl.enable", "true")
             put("mail.smtp.host", "smtp.gmail.com")
-            put("mail.smtp.port", "587")
+            put("mail.smtp.port", "465")
             put("mail.smtp.ssl.trust", "smtp.gmail.com")
         }
         Session.getInstance(props, object : Authenticator() {
