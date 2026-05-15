@@ -135,7 +135,7 @@ fun LoginScreen(navController: NavController, authService: AuthService, profileS
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        TextButton(onClick = { navController.navigate(Screen.ForgotPassword.route) }) {
+        TextButton(onClick = { navController.navigate(Screen.ForgotPassword.route(fromProfile = false, email = "")) }) {
             Text("¿Olvidaste tu contraseña?", color = textSecondary)
         }
 

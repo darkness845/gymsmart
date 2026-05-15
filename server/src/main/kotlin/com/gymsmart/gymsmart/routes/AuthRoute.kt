@@ -21,6 +21,15 @@ data class ChangePasswordRequest(
     val newPassword: String
 )
 
+@Serializable
+data class UpdatePersonalDataRequest(
+    val name: String,
+    val phone: String,
+    val country: String,
+    val birthDate: String
+)
+
+
 fun Route.authRoutes(userService: UserService, emailService: EmailService) {
 
     post("/auth/register") {
@@ -72,8 +81,9 @@ fun Route.authRoutes(userService: UserService, emailService: EmailService) {
         if (session == null) {
             call.respond(HttpStatusCode.Unauthorized, AuthResponse(false, "No hay sesión activa"))
         } else {
-            call.respond(HttpStatusCode.OK, AuthResponse(true, "Sesión activa",
-                User(session.userId, session.name, session.email)))
+            val user = userService.findById(session.userId)
+                ?: User(session.userId, session.name, session.email)
+            call.respond(HttpStatusCode.OK, AuthResponse(true, "Sesión activa", user))
         }
     }
 
@@ -159,5 +169,32 @@ fun Route.authRoutes(userService: UserService, emailService: EmailService) {
         userService.changePassword(session.userId, req.currentPassword, req.newPassword)
             .onSuccess { call.respond(HttpStatusCode.OK, AuthResponse(true, "Contraseña actualizada")) }
             .onFailure { e -> call.respond(HttpStatusCode.BadRequest, AuthResponse(false, e.message ?: "Error")) }
+    }
+
+    put("/auth/profile") {
+        val session = call.sessions.get<UserSession>()
+            ?: return@put call.respond(HttpStatusCode.Unauthorized, AuthResponse(false, "Sin sesión"))
+
+        println(">>> PUT /auth/profile session=$session")
+
+        val req = try {
+            call.receive<UpdatePersonalDataRequest>()
+        } catch (e: Exception) {
+            println(">>> ERROR recibiendo body: ${e.message}")
+            return@put call.respond(HttpStatusCode.BadRequest, AuthResponse(false, "Cuerpo inválido"))
+        }
+
+        println(">>> req=$req")
+
+        userService.updatePersonalData(session.userId, req.name, req.phone, req.country, req.birthDate)
+            .onSuccess {
+                println(">>> updatePersonalData OK")
+                call.sessions.set(UserSession(session.userId, session.email, req.name))
+                call.respond(HttpStatusCode.OK, AuthResponse(true, "Datos actualizados"))
+            }
+            .onFailure { e ->
+                println(">>> updatePersonalData ERROR: ${e.message}")
+                call.respond(HttpStatusCode.InternalServerError, AuthResponse(false, e.message ?: "Error"))
+            }
     }
 }

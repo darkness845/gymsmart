@@ -128,6 +128,21 @@ class AuthService {
             false
         }
     }
+
+    suspend fun updatePersonalData(name: String, phone: String, country: String, birthDate: String): Boolean {
+        return try {
+            println(">>> AuthService.updatePersonalData llamando a $base/auth/profile")
+            val response = client.put("$base/auth/profile") {
+                contentType(ContentType.Application.Json)
+                setBody(UpdatePersonalDataRequest(name, phone, country, birthDate))
+            }
+            println(">>> AuthService.updatePersonalData status=${response.status.value}")
+            response.status.value == 200
+        } catch (e: Exception) {
+            println(">>> AuthService.updatePersonalData ERROR: ${e.message}")
+            false
+        }
+    }
 }
 
 @Serializable
@@ -142,3 +157,12 @@ data class ChangePasswordRequest(
 data class ForgotPasswordRequest(val email: String)
 @Serializable
 data class ResetPasswordRequest(val token: String, val newPassword: String)
+
+@Serializable
+data class UpdatePersonalDataRequest(
+    val name: String,
+    val phone: String,
+    val country: String,
+    val birthDate: String
+)
+

@@ -2,8 +2,10 @@ package com.gymsmart.gymsmart.routes
 
 import com.gymsmart.gymsmart.model.UserSession
 import com.gymsmart.gymsmart.services.ProfileService
+import com.gymsmart.gymsmart.services.UserService
 import io.ktor.http.*
-import io.ktor.server.application.*
+import java.time.LocalDate
+import java.time.Period
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
@@ -23,7 +25,7 @@ data class ProfileRequest(
     val hasWearable:   Boolean = false
 )
 
-fun Route.profileRoutes(profileService: ProfileService) {
+fun Route.profileRoutes(profileService: ProfileService, userService: UserService) {
 
     route("/profile") {
 
@@ -94,11 +96,24 @@ fun Route.profileRoutes(profileService: ProfileService) {
             if (req.goal !in listOf("lose_fat", "maintain", "gain_muscle"))
                 return@post call.respond(HttpStatusCode.BadRequest, "Objetivo inválido")
 
+            val resolvedAge: Int = run {
+                val user = userService.findById(session.userId)
+                val bd = user?.birthDate?.takeIf { it.isNotBlank() }
+                if (bd != null) {
+                    try {
+                        val formatter = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")
+                        Period.between(LocalDate.parse(bd, formatter), LocalDate.now()).years
+                    } catch (_: Exception) { req.age }
+                } else {
+                    req.age
+                }
+            }
+
             val profile = profileService.upsertProfile(
                 userId        = session.userId,
                 weightKg      = req.weightKg,
                 heightCm      = req.heightCm,
-                age           = req.age,
+                age           = resolvedAge,
                 sex           = req.sex,
                 activityLevel = req.activityLevel,
                 goal          = req.goal,

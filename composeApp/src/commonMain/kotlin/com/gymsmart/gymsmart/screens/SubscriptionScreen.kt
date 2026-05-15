@@ -34,11 +34,51 @@ import io.ktor.http.*
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.*
 import kotlin.time.Clock
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
 
 private val Accent     = Color(0xFFFFB800)
 private val Background = Color(0xFFF5F3EF)
 private val TextPrimary   = Color(0xFF1C1C1C)
 private val TextSecondary = Color(0xFF6B6B6B)
+
+class CardNumberVisualTransformation : VisualTransformation {
+    override fun filter(text: AnnotatedString): TransformedText {
+        val trimmed = text.text.take(16)
+        val formatted = trimmed.chunked(4).joinToString(" ")
+        val offsetMapping = object : OffsetMapping {
+            override fun originalToTransformed(offset: Int): Int {
+                if (offset <= 0) return 0
+                val spaces = (offset - 1) / 4
+                return (offset + spaces).coerceAtMost(formatted.length)
+            }
+            override fun transformedToOriginal(offset: Int): Int {
+                if (offset <= 0) return 0
+                val spaces = (offset - 1) / 4
+                return (offset - spaces).coerceAtMost(trimmed.length)
+            }
+        }
+        return TransformedText(AnnotatedString(formatted), offsetMapping)
+    }
+}
+
+class ExpiryVisualTransformation : VisualTransformation {
+    override fun filter(text: AnnotatedString): TransformedText {
+        val trimmed = text.text.take(4)
+        val formatted = if (trimmed.length > 2) "${trimmed.take(2)}/${trimmed.drop(2)}" else trimmed
+        val offsetMapping = object : OffsetMapping {
+            override fun originalToTransformed(offset: Int): Int {
+                return if (offset <= 2) offset else (offset + 1).coerceAtMost(formatted.length)
+            }
+            override fun transformedToOriginal(offset: Int): Int {
+                return if (offset <= 2) offset else (offset - 1).coerceAtMost(trimmed.length)
+            }
+        }
+        return TransformedText(AnnotatedString(formatted), offsetMapping)
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -59,6 +99,9 @@ fun SubscriptionScreen(navController: NavController) {
     var cardExpiry  by remember { mutableStateOf("") }  // MM/YY
     var cardCvc     by remember { mutableStateOf("") }
     var cardName    by remember { mutableStateOf("") }
+
+    var cardNumberRaw by remember { mutableStateOf("") }
+    var cardExpiryRaw by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
         subService.getStatus().onSuccess { status = it }
@@ -170,23 +213,29 @@ fun SubscriptionScreen(navController: NavController) {
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         PaymentTextField(cardName, { cardName = it }, "Nombre en la tarjeta")
-                        PaymentTextField(
-                            value         = cardNumber,
-                            onValueChange = { if (it.length <= 16) cardNumber = it.filter { c -> c.isDigit() } },
-                            label         = "Número de tarjeta",
-                            keyboardType  = KeyboardType.Number,
-                            placeholder   = "4242 4242 4242 4242"
+                        OutlinedTextField(
+                            value = cardNumberRaw,
+                            onValueChange = { cardNumberRaw = it.filter { c -> c.isDigit() }.take(16) },
+                            label = { Text("Número de tarjeta") },
+                            placeholder = { Text("4242 4242 4242 4242", color = Color(0xFFBBBBBB)) },
+                            visualTransformation = CardNumberVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Accent, focusedLabelColor = Accent)
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            PaymentTextField(
-                                value         = cardExpiry,
-                                onValueChange = { raw ->
-                                    val digits = raw.filter { it.isDigit() }.take(4)
-                                    cardExpiry = if (digits.length > 2) "${digits.take(2)}/${digits.drop(2)}" else digits
-                                },
-                                label        = "MM/AA",
-                                keyboardType = KeyboardType.Number,
-                                modifier     = Modifier.weight(1f)
+                            OutlinedTextField(
+                                value = cardExpiryRaw,
+                                onValueChange = { cardExpiryRaw = it.filter { c -> c.isDigit() }.take(4) },
+                                label = { Text("MM/AA") },
+                                visualTransformation = ExpiryVisualTransformation(),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                singleLine = true,
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1f),
+                                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Accent, focusedLabelColor = Accent)
                             )
                             PaymentTextField(
                                 value         = cardCvc,
@@ -215,9 +264,9 @@ fun SubscriptionScreen(navController: NavController) {
                             isLoading = true
                             errorMsg  = null
                             try {
-                                val expParts = cardExpiry.split("/")
+                                val expParts = cardExpiryRaw.chunked(2)
                                 subService.pay(
-                                    cardNumber = cardNumber.replace(" ", ""),
+                                    cardNumber = cardNumberRaw,
                                     expMonth   = expParts.getOrNull(0) ?: "",
                                     expYear    = "20${expParts.getOrNull(1) ?: ""}",
                                     cvc        = cardCvc,
@@ -233,8 +282,8 @@ fun SubscriptionScreen(navController: NavController) {
                             }
                         }
                     },
-                    enabled  = !isLoading && cardNumber.length == 16 &&
-                            cardExpiry.length == 5 && cardCvc.length >= 3 && cardName.isNotBlank(),
+                    enabled = !isLoading && cardNumberRaw.length == 16 &&
+                            cardExpiryRaw.length == 4 && cardCvc.length >= 3 && cardName.isNotBlank(),
                     colors   = ButtonDefaults.buttonColors(containerColor = Accent),
                     shape    = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()

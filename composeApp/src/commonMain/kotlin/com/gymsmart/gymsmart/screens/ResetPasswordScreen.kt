@@ -19,7 +19,7 @@ import com.gymsmart.gymsmart.services.AuthService
 import kotlinx.coroutines.launch
 
 @Composable
-fun ResetPasswordScreen(navController: NavController, authService: AuthService, token: String) {
+fun ResetPasswordScreen(navController: NavController, authService: AuthService, token: String, fromProfile: Boolean = false) {
     val background    = Color(0xFFF5F3EF)
     val accent        = Color(0xFFFFB800)
     val textPrimary   = Color(0xFF1A1A1A)
@@ -50,15 +50,22 @@ fun ResetPasswordScreen(navController: NavController, authService: AuthService, 
             Spacer(Modifier.height(24.dp))
             Button(
                 onClick = {
-                    navController.navigate(Screen.Login.route) {
-                        popUpTo(Screen.Login.route) { inclusive = true }
+                    if (fromProfile) {
+                        navController.popBackStack(Screen.Profile.route, inclusive = false)
+                    } else {
+                        navController.navigate(Screen.Login.route) {
+                            popUpTo(Screen.Login.route) { inclusive = true }
+                        }
                     }
                 },
                 modifier = Modifier.fillMaxWidth().height(52.dp),
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = accent)
             ) {
-                Text("Ir al login", color = Color.Black, fontWeight = FontWeight.Bold)
+                Text(
+                    if (fromProfile) "Volver al perfil" else "Ir al login",
+                    color = Color.Black, fontWeight = FontWeight.Bold
+                )
             }
         } else {
             OutlinedTextField(

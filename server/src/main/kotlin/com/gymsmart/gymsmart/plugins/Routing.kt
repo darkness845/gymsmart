@@ -32,7 +32,7 @@ fun Application.configureRouting(
         gpsRoutes(gpsService)
         authRoutes(userService, emailService)
         nutritionRoutes(nutritionService)
-        profileRoutes(profileService)
+        profileRoutes(profileService, userService)
         bodyAnalysisRoute()
         subscriptionRoutes(profileService, stripeService, userService, emailService)
     }

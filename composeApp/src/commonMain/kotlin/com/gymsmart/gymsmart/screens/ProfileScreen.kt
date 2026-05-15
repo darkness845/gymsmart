@@ -20,9 +20,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -33,7 +36,12 @@ import com.gymsmart.gymsmart.services.AuthService
 import com.gymsmart.gymsmart.services.HealthDataProvider
 import com.gymsmart.gymsmart.services.ProfileService
 import com.gymsmart.gymsmart.model.NutritionTargets
+import com.gymsmart.gymsmart.navigation.Screen
 import kotlinx.coroutines.launch
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.number
+import kotlinx.datetime.todayIn
 import kotlin.time.Clock
 
 // ─── Colores ────────────────────────────────────────────────────────────────
@@ -44,20 +52,43 @@ private val TextSecondary = Color(0xFF6B6B6B)
 private val CardWhite = Color.White
 private val DividerColor = Color(0xFFE0E0E0)
 
+class BirthDateVisualTransformation : VisualTransformation {
+    override fun filter(text: AnnotatedString): TransformedText {
+        val trimmed = text.text.take(8) // DDMMAAAA
+        val formatted = buildString {
+            trimmed.forEachIndexed { i, c ->
+                if (i == 2 || i == 4) append('/')
+                append(c)
+            }
+        }
+        val offsetMapping = object : OffsetMapping {
+            override fun originalToTransformed(offset: Int): Int {
+                return when {
+                    offset <= 2 -> offset
+                    offset <= 4 -> offset + 1
+                    offset <= 8 -> offset + 2
+                    else        -> formatted.length
+                }.coerceAtMost(formatted.length)
+            }
+            override fun transformedToOriginal(offset: Int): Int {
+                return when {
+                    offset <= 2 -> offset
+                    offset <= 5 -> offset - 1
+                    offset <= 10 -> offset - 2
+                    else        -> trimmed.length
+                }.coerceAtMost(trimmed.length)
+            }
+        }
+        return TransformedText(AnnotatedString(formatted), offsetMapping)
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(
     navController: NavController,
     healthDataProvider: HealthDataProvider
 ) {
-
-    var currentPassword by remember { mutableStateOf("") }
-    var newPassword     by remember { mutableStateOf("") }
-    var confirmPassword by remember { mutableStateOf("") }
-    var showPasswords   by remember { mutableStateOf(false) }
-    var passwordError   by remember { mutableStateOf<String?>(null) }
-    var showPasswordSuccessDialog by remember { mutableStateOf(false) }
-    var isSavingPassword by remember { mutableStateOf(false) }
 
     val authService = remember { AuthService() }
     val profileService = remember { ProfileService(authService.client) }
@@ -66,6 +97,11 @@ fun ProfileScreen(
     // Usuario
     var userName by remember { mutableStateOf("Usuario") }
     var userEmail by remember { mutableStateOf("") }
+    var userPhone     by remember { mutableStateOf("") }
+    var userCountry   by remember { mutableStateOf("") }
+    var userBirthDate by remember { mutableStateOf("") }
+    var isSavingPersonal by remember { mutableStateOf(false) }
+    var personalSuccess  by remember { mutableStateOf(false) }
 
     // Wearable
     var steps by remember { mutableStateOf<Long?>(null) }
@@ -87,12 +123,22 @@ fun ProfileScreen(
 
     var rateError by remember { mutableStateOf(false) }
 
+    data class OriginalPersonal(val name: String, val phone: String, val country: String, val birthDate: String)
+    var originalPersonal by remember { mutableStateOf<OriginalPersonal?>(null) }
+
     data class OriginalProfile(
         val weight: String, val height: String, val age: String,
         val sex: String, val activityLevel: String, val goal: String, val goalRate: String
     )
 
     var originalProfile by remember { mutableStateOf<OriginalProfile?>(null) }
+
+    val hasPersonalChanges by derivedStateOf {
+        originalPersonal?.let {
+            userName != it.name || userPhone != it.phone ||
+                    userCountry != it.country || userBirthDate != it.birthDate
+        } ?: false
+    }
 
     val hasChanges by derivedStateOf {
         originalProfile?.let {
@@ -115,8 +161,17 @@ fun ProfileScreen(
         runCatching {
             authService.me()
         }.onSuccess { response ->
-            userName  = response.user?.name  ?: response.message
-            userEmail = response.user?.email ?: ""
+            userName      = response.user?.name      ?: response.message
+            userEmail     = response.user?.email     ?: ""
+            userPhone     = response.user?.phone     ?: ""
+            userCountry   = response.user?.country   ?: ""
+            userBirthDate = response.user?.birthDate ?: ""
+            originalPersonal = OriginalPersonal(
+                name      = response.user?.name      ?: "",
+                phone     = response.user?.phone     ?: "",
+                country   = response.user?.country   ?: "",
+                birthDate = response.user?.birthDate ?: ""
+            )
         }
 
         // Perfil
@@ -216,35 +271,55 @@ fun ProfileScreen(
             HorizontalDivider(color = DividerColor)
 
             ProfileSection(
-                icon  = Icons.Default.Lock,
-                title = "Cambiar contraseña"
+                icon  = Icons.Default.Person,
+                title = "Datos personales"
             ) {
-                PasswordField(
-                    value         = currentPassword,
-                    onValueChange = { currentPassword = it; passwordError = null },
-                    label         = "Contraseña actual",
-                    show          = showPasswords,
-                    onToggleShow  = { showPasswords = !showPasswords }
+                ProfileTextField(
+                    value         = userName,
+                    onValueChange = { userName = it; personalSuccess = false },
+                    label         = "Nombre"
                 )
-                PasswordField(
-                    value         = newPassword,
-                    onValueChange = { newPassword = it; passwordError = null },
-                    label         = "Nueva contraseña",
-                    show          = showPasswords,
-                    onToggleShow  = { showPasswords = !showPasswords }
+                ProfileTextField(
+                    value         = userPhone,
+                    onValueChange = { if (it.filter { c -> c.isDigit() }.length <= 9) userPhone = it.filter { c -> c.isDigit() }; personalSuccess = false },
+                    label         = "Teléfono",
+                    keyboardType  = KeyboardType.Phone
                 )
-                PasswordField(
-                    value         = confirmPassword,
-                    onValueChange = { confirmPassword = it; passwordError = null },
-                    label         = "Confirmar nueva contraseña",
-                    show          = showPasswords,
-                    onToggleShow  = { showPasswords = !showPasswords }
+                CountryPickerField(
+                    selected = userCountry,
+                    onSelect = { userCountry = it; personalSuccess = false }
+                )
+                OutlinedTextField(
+                    value         = userBirthDate,
+                    onValueChange = {
+                        val digits = it.filter { c -> c.isDigit() }.take(8)
+                        // Si ya tiene 8 dígitos, validar que el año no sea anterior a (hoy - 100 años)
+                        if (digits.length == 8) {
+                            val year = digits.substring(4, 8).toIntOrNull() ?: 0
+                            val today = Clock.System.todayIn(TimeZone.currentSystemDefault())
+                            if (year < today.year - 100 || year > today.year) return@OutlinedTextField
+                        }
+                        userBirthDate = digits
+                        personalSuccess = false
+                    },
+                    label                = { Text("Fecha de nacimiento") },
+                    placeholder          = { Text("DD/MM/AAAA", color = Color(0xFFBBBBBB)) },
+                    visualTransformation = BirthDateVisualTransformation(),
+                    keyboardOptions      = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine           = true,
+                    shape                = RoundedCornerShape(12.dp),
+                    modifier             = Modifier.fillMaxWidth(),
+                    colors               = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Accent,
+                        focusedLabelColor  = Accent,
+                        cursorColor        = Accent
+                    )
                 )
 
-                AnimatedVisibility(visible = passwordError != null) {
+                AnimatedVisibility(visible = personalSuccess) {
                     Text(
-                        passwordError ?: "",
-                        color    = MaterialTheme.colorScheme.error,
+                        "✅ Datos guardados correctamente",
+                        color    = Color(0xFF388E3C),
                         fontSize = 13.sp
                     )
                 }
@@ -252,46 +327,78 @@ fun ProfileScreen(
                 Button(
                     onClick = {
                         scope.launch {
-                            passwordError = null
-                            when {
-                                currentPassword.isBlank() || newPassword.isBlank() || confirmPassword.isBlank() ->
-                                    passwordError = "Rellena todos los campos"
-                                newPassword != confirmPassword ->
-                                    passwordError = "Las contraseñas no coinciden"
-                                newPassword.length < 6 ->
-                                    passwordError = "Mínimo 6 caracteres"
-                                newPassword == currentPassword ->
-                                    passwordError = "La nueva contraseña debe ser diferente"
-                                else -> {
-                                    isSavingPassword = true
-                                    val ok = authService.changePassword(currentPassword, newPassword)
-                                    if (ok) {
-                                        currentPassword = ""
-                                        newPassword     = ""
-                                        confirmPassword = ""
-                                        showPasswordSuccessDialog = true
-                                    } else {
-                                        passwordError = "La contraseña actual es incorrecta"
-                                    }
-                                    isSavingPassword = false
+                            isSavingPersonal = true
+                            personalSuccess  = false
+                            val ok = authService.updatePersonalData(userName, userPhone, userCountry, userBirthDate)
+                            if (ok) {
+                                originalPersonal = OriginalPersonal(userName, userPhone, userCountry, userBirthDate)
+                                personalSuccess  = true
+
+                                // Si hay fecha de nacimiento completa, recalcular edad y actualizar perfil físico
+                                if (userBirthDate.length == 8) {
+                                    try {
+                                        val day   = userBirthDate.substring(0, 2).toInt()
+                                        val month = userBirthDate.substring(2, 4).toInt()
+                                        val year  = userBirthDate.substring(4, 8).toInt()
+                                        val birth = LocalDate(year, month, day)
+                                        val today = Clock.System.todayIn(TimeZone.currentSystemDefault())
+                                        var calculatedAge = today.year - birth.year
+                                        if (today.month.number < birth.month.number ||
+                                            (today.month.number == birth.month.number && today.day < birth.day)) {
+                                            calculatedAge--
+                                        }
+                                        if (calculatedAge in 14..100 && weight.isNotBlank() && height.isNotBlank()) {
+                                            age = calculatedAge.toString()
+                                            val request = ProfileRequest(
+                                                weightKg      = weight.toDoubleOrNull() ?: 0.0,
+                                                heightCm      = height.toDoubleOrNull() ?: 0.0,
+                                                age           = calculatedAge,
+                                                sex           = sex,
+                                                activityLevel = activityLevel,
+                                                goal          = goal,
+                                                goalRate      = if (goal == "maintain") 0.0 else goalRate.toDoubleOrNull() ?: 0.0,
+                                                hasWearable   = steps != null
+                                            )
+                                            profileService.saveProfile(request).onSuccess { response ->
+                                                savedTargets = response.targets
+                                                originalProfile = OriginalProfile(weight, height, calculatedAge.toString(), sex, activityLevel, goal, goalRate)
+                                            }
+                                        }
+                                    } catch (_: Exception) { }
                                 }
                             }
+                            isSavingPersonal = false
                         }
                     },
-                    enabled  = !isSavingPassword,
-                    colors   = ButtonDefaults.buttonColors(containerColor = Accent),
+                    enabled  = !isSavingPersonal && hasPersonalChanges,
+                    colors   = ButtonDefaults.buttonColors(
+                        containerColor         = Accent,
+                        disabledContainerColor = Color(0xFFE0E0E0)
+                    ),
                     shape    = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    if (isSavingPassword) {
-                        CircularProgressIndicator(
-                            modifier    = Modifier.size(18.dp),
-                            color       = Color.Black,
-                            strokeWidth = 2.dp
-                        )
+                    if (isSavingPersonal) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.Black, strokeWidth = 2.dp)
                     } else {
-                        Text("Actualizar contraseña", color = Color.Black, fontWeight = FontWeight.SemiBold)
+                        Text("Guardar cambios", color = Color.Black, fontWeight = FontWeight.SemiBold)
                     }
+                }
+
+                HorizontalDivider(color = DividerColor)
+                Spacer(Modifier.height(2.dp))
+
+                Button(
+                    onClick = {
+                        navController.navigate(Screen.ForgotPassword.route(fromProfile = true, email = userEmail))
+                    },
+                    colors   = ButtonDefaults.buttonColors(containerColor = Color(0xFFF0F0F0)),
+                    shape    = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Lock, contentDescription = null, tint = TextPrimary, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Cambiar contraseña", color = TextPrimary, fontWeight = FontWeight.SemiBold)
                 }
             }
 
@@ -383,12 +490,8 @@ fun ProfileScreen(
                         "gain_muscle" to "Ganar músculo"
                     ),
                     onSelect = {
-                        val anterior = goal
                         goal = it
-                        // Si cambia entre perder/ganar, resetea el ritmo
-                        if (anterior != it && it != "maintain") {
-                            goalRate = ""
-                        }
+                        goalRate = if (it == "maintain") "0.0" else ""
                     }
                 )
 
@@ -447,14 +550,14 @@ fun ProfileScreen(
                             saveSuccess = false
 
                             val request = ProfileRequest(
-                                weightKg = weight.toDoubleOrNull() ?: 0.0,
-                                heightCm = height.toDoubleOrNull() ?: 0.0,
-                                age = age.toIntOrNull() ?: 0,
-                                sex = sex,
+                                weightKg      = weight.toDoubleOrNull() ?: 0.0,
+                                heightCm      = height.toDoubleOrNull() ?: 0.0,
+                                age           = age.toIntOrNull() ?: 0,
+                                sex           = sex,
                                 activityLevel = activityLevel,
-                                goal = goal,
-                                goalRate = goalRate.toDoubleOrNull() ?: 0.5,
-                                hasWearable = steps != null
+                                goal          = goal,
+                                goalRate      = if (goal == "maintain") 0.0 else goalRate.toDoubleOrNull() ?: 0.0,
+                                hasWearable   = steps != null
                             )
 
                             profileService.saveProfile(request)
@@ -567,48 +670,6 @@ fun ProfileScreen(
 
             Spacer(Modifier.height(20.dp))
         }
-    }
-
-    if (showPasswordSuccessDialog) {
-        AlertDialog(
-            onDismissRequest = { showPasswordSuccessDialog = false },
-            containerColor   = Color.White,
-            shape            = RoundedCornerShape(20.dp),
-            title = {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("🔒", fontSize = 36.sp)
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        "Contraseña actualizada",
-                        fontWeight = FontWeight.Bold,
-                        fontSize   = 18.sp,
-                        color      = TextPrimary
-                    )
-                }
-            },
-            text = {
-                Text(
-                    "Tu contraseña se ha cambiado correctamente. La próxima vez que inicies sesión usa la nueva.",
-                    fontSize   = 14.sp,
-                    color      = TextSecondary,
-                    textAlign  = TextAlign.Center,
-                    modifier   = Modifier.fillMaxWidth()
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick  = { showPasswordSuccessDialog = false },
-                    colors   = ButtonDefaults.buttonColors(containerColor = Accent),
-                    shape    = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Entendido", color = Color.Black, fontWeight = FontWeight.Bold)
-                }
-            }
-        )
     }
 
     if (showSummaryDialog) {
@@ -839,7 +900,7 @@ private fun ProfileTextField(
     value: String,
     onValueChange: (String) -> Unit,
     label: String,
-    modifier: Modifier = Modifier,
+    modifier: Modifier = Modifier.fillMaxWidth(),
     keyboardType: KeyboardType = KeyboardType.Text
 ) {
 
@@ -1074,4 +1135,92 @@ private fun PasswordField(
             cursorColor        = Accent
         )
     )
+}
+
+private val COUNTRIES = listOf(
+    "Afganistán", "Albania", "Alemania", "Andorra", "Angola", "Antigua y Barbuda",
+    "Arabia Saudita", "Argelia", "Argentina", "Armenia", "Australia", "Austria",
+    "Azerbaiyán", "Bahamas", "Bahrein", "Bangladesh", "Barbados", "Bélgica",
+    "Belice", "Benín", "Bielorrusia", "Bolivia", "Bosnia y Herzegovina", "Botsuana",
+    "Brasil", "Brunéi", "Bulgaria", "Burkina Faso", "Burundi", "Bután", "Cabo Verde",
+    "Camboya", "Camerún", "Canadá", "Catar", "Chad", "Chile", "China", "Chipre",
+    "Colombia", "Comoras", "Corea del Norte", "Corea del Sur", "Costa Rica", "Croacia",
+    "Cuba", "Dinamarca", "Dominica", "Ecuador", "Egipto", "El Salvador",
+    "Emiratos Árabes Unidos", "Eritrea", "Eslovaquia", "Eslovenia", "España",
+    "Estados Unidos", "Estonia", "Etiopía", "Filipinas", "Finlandia", "Fiyi",
+    "Francia", "Gabón", "Gambia", "Georgia", "Ghana", "Granada", "Grecia",
+    "Guatemala", "Guinea", "Guinea Ecuatorial", "Guinea-Bisáu", "Guyana", "Haití",
+    "Honduras", "Hungría", "India", "Indonesia", "Irak", "Irán", "Irlanda",
+    "Islandia", "Islas Marshall", "Islas Salomón", "Israel", "Italia", "Jamaica",
+    "Japón", "Jordania", "Kazajistán", "Kenia", "Kirguistán", "Kiribati", "Kuwait",
+    "Laos", "Lesoto", "Letonia", "Líbano", "Liberia", "Libia", "Liechtenstein",
+    "Lituania", "Luxemburgo", "Macedonia del Norte", "Madagascar", "Malasia",
+    "Malaui", "Maldivas", "Malí", "Malta", "Marruecos", "Mauricio", "Mauritania",
+    "México", "Micronesia", "Moldavia", "Mónaco", "Mongolia", "Montenegro",
+    "Mozambique", "Myanmar", "Namibia", "Nauru", "Nepal", "Nicaragua", "Níger",
+    "Nigeria", "Noruega", "Nueva Zelanda", "Omán", "Países Bajos", "Pakistán",
+    "Palaos", "Palestina", "Panamá", "Papúa Nueva Guinea", "Paraguay", "Perú",
+    "Polonia", "Portugal", "Reino Unido", "República Centroafricana",
+    "República Checa", "República del Congo", "República Democrática del Congo",
+    "República Dominicana", "Ruanda", "Rumanía", "Rusia", "Samoa", "San Cristóbal y Nieves",
+    "San Marino", "San Vicente y las Granadinas", "Santa Lucía",
+    "Santo Tomé y Príncipe", "Senegal", "Serbia", "Seychelles", "Sierra Leona",
+    "Singapur", "Somalia", "Sri Lanka", "Suazilandia", "Sudáfrica", "Sudán",
+    "Sudán del Sur", "Suecia", "Suiza", "Surinam", "Tailandia", "Taiwán",
+    "Tanzania", "Tayikistán", "Timor Oriental", "Togo", "Tonga",
+    "Trinidad y Tobago", "Túnez", "Turkmenistán", "Turquía", "Tuvalu", "Ucrania",
+    "Uganda", "Uruguay", "Uzbekistán", "Vanuatu", "Ciudad del Vaticano",
+    "Venezuela", "Vietnam", "Yemen", "Yibuti", "Zambia", "Zimbabue"
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CountryPickerField(
+    selected: String,
+    onSelect: (String) -> Unit
+) {
+    var query    by remember { mutableStateOf("") }
+    var expanded by remember { mutableStateOf(false) }
+
+    val filtered = remember(query) {
+        if (query.isBlank()) COUNTRIES
+        else COUNTRIES.filter { it.contains(query, ignoreCase = true) }
+    }
+
+    ExposedDropdownMenuBox(
+        expanded         = expanded,
+        onExpandedChange = { expanded = it; if (!it) query = "" }
+    ) {
+        OutlinedTextField(
+            value         = selected,
+            onValueChange = {},
+            readOnly      = true,
+            label         = { Text("País") },
+            placeholder   = { Text("Selecciona un país", color = Color(0xFFBBBBBB)) },
+            trailingIcon  = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+            singleLine    = true,
+            shape         = RoundedCornerShape(12.dp),
+            modifier      = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable),
+            colors        = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = Accent,
+                focusedLabelColor  = Accent,
+                cursorColor        = Accent
+            )
+        )
+        ExposedDropdownMenu(
+            expanded         = expanded,
+            onDismissRequest = { expanded = false; query = "" }
+        ) {
+            filtered.forEach { country ->
+                DropdownMenuItem(
+                    text    = { Text(country) },
+                    onClick = {
+                        onSelect(country)
+                        expanded = false
+                        query    = ""
+                    }
+                )
+            }
+        }
+    }
 }

@@ -19,19 +19,34 @@ import com.gymsmart.gymsmart.services.AuthService
 import kotlinx.coroutines.launch
 
 @Composable
-fun ForgotPasswordScreen(navController: NavController, authService: AuthService) {
+fun ForgotPasswordScreen(
+        navController: NavController,
+        authService:   AuthService,
+        fromProfile:   Boolean = false,
+        prefillEmail:  String  = ""
+    ) {
+
     val background    = Color(0xFFF5F3EF)
     val accent        = Color(0xFFFFB800)
     val textPrimary   = Color(0xFF1A1A1A)
     val textSecondary = Color(0xFF888888)
 
-    var email       by remember { mutableStateOf("") }
+    var email     by remember { mutableStateOf(prefillEmail) }
+    var emailSent by remember { mutableStateOf(false) }
     var token       by remember { mutableStateOf("") }
     var isLoading   by remember { mutableStateOf(false) }
     var errorMsg    by remember { mutableStateOf("") }
-    var emailSent   by remember { mutableStateOf(false) }
     var verifiedToken by remember { mutableStateOf("") }  // token verificado que pasamos a la siguiente pantalla
     val scope = rememberCoroutineScope()
+
+    LaunchedEffect(prefillEmail) {
+        if (prefillEmail.isNotBlank()) {
+            isLoading = true
+            authService.forgotPassword(prefillEmail)
+            emailSent = true
+            isLoading = false
+        }
+    }
 
     Column(
         modifier = Modifier.fillMaxSize().background(background).padding(28.dp),
@@ -116,7 +131,7 @@ fun ForgotPasswordScreen(navController: NavController, authService: AuthService)
                         val result = authService.verifyResetToken(token.trim())
                         if (result.success) {
                             // Token válido → navega a cambiar contraseña pasando el token
-                            navController.navigate("${Screen.ResetPassword.route}/${token.trim()}")
+                            navController.navigate(Screen.ResetPassword.route(token.trim(), fromProfile))
                         } else {
                             errorMsg = result.message
                         }
@@ -133,8 +148,14 @@ fun ForgotPasswordScreen(navController: NavController, authService: AuthService)
                 else Text("Verificar código", color = Color.Black, fontWeight = FontWeight.Bold)
             }
             Spacer(Modifier.height(12.dp))
-            TextButton(onClick = { emailSent = false; token = ""; errorMsg = "" }) {
-                Text("← Cambiar email", color = textSecondary)
+            if (fromProfile) {
+                TextButton(onClick = { navController.popBackStack() }) {
+                    Text("← Volver al perfil", color = textSecondary)
+                }
+            } else {
+                TextButton(onClick = { emailSent = false; token = ""; errorMsg = "" }) {
+                    Text("← Cambiar email", color = textSecondary)
+                }
             }
         }
     }

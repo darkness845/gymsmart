@@ -442,8 +442,6 @@ private fun CalorieCard(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Box(contentAlignment = Alignment.Center) {
-                val progress = (totalKcal / realGoal).coerceIn(0.0, 1.0).toFloat()
-                val burnedProgress = (activeCalories / realGoal).coerceIn(0.0, 1.0).toFloat()
 
                 Canvas(modifier = Modifier.size(130.dp)) {
                     val stroke = 16.dp.toPx()
@@ -455,31 +453,46 @@ private fun CalorieCard(
                         color = Color(0xFFF0EDE8),
                         startAngle = -90f, sweepAngle = 360f,
                         useCenter = false, topLeft = Offset(inset, inset),
-                        size = arc, style = Stroke(stroke, cap = StrokeCap.Round)
+                        size = arc, style = Stroke(stroke, cap = StrokeCap.Butt)
                     )
 
-                    // Arco azul — calorías extra que puede comer por haber quemado
-                    if (activeCalories > 0) {
-                        drawArc(
-                            color = Color(0xFF2196F3),
-                            startAngle = -90f,
-                            sweepAngle = 360f * burnedProgress,
-                            useCenter = false,
-                            topLeft = Offset(inset, inset),
-                            size = arc,
-                            style = Stroke(stroke, cap = StrokeCap.Round)
-                        )
-                    }
+                    val proteinKcal  = proteins * 4.0
+                    val carbsKcal    = carbs   * 4.0
+                    val fatKcal      = fat     * 9.0
+                    val totalKcalRaw = proteinKcal + carbsKcal + fatKcal
 
-                    // Arco amarillo — calorías consumidas encima del azul
-                    drawArc(
-                        color = AccentYellow,
+                    // Total limitado a realGoal — nunca pasa de 360°
+                    val totalCapped  = totalKcalRaw.coerceAtMost(realGoal)
+
+                    // Cada macro ocupa su proporción del total consumido, escalado al espacio disponible
+                    val totalSweep   = ((totalCapped / realGoal) * 360.0).toFloat()
+
+                    val proteinSweep = if (totalKcalRaw > 0) (proteinKcal / totalKcalRaw).toFloat() * totalSweep else 0f
+                    val carbsSweep   = if (totalKcalRaw > 0) (carbsKcal   / totalKcalRaw).toFloat() * totalSweep else 0f
+                    val fatSweep     = if (totalKcalRaw > 0) (fatKcal     / totalKcalRaw).toFloat() * totalSweep else 0f
+
+                    if (proteinSweep > 0f) drawArc(
+                        color = ColorProtein,
                         startAngle = -90f,
-                        sweepAngle = 360f * progress,
-                        useCenter = false,
-                        topLeft = Offset(inset, inset),
-                        size = arc,
-                        style = Stroke(stroke, cap = StrokeCap.Round)
+                        sweepAngle = proteinSweep,
+                        useCenter = false, topLeft = Offset(inset, inset),
+                        size = arc, style = Stroke(stroke, cap = StrokeCap.Butt)
+                    )
+
+                    if (carbsSweep > 0f) drawArc(
+                        color = ColorCarbs,
+                        startAngle = -90f + proteinSweep,
+                        sweepAngle = carbsSweep,
+                        useCenter = false, topLeft = Offset(inset, inset),
+                        size = arc, style = Stroke(stroke, cap = StrokeCap.Butt)
+                    )
+
+                    if (fatSweep > 0f) drawArc(
+                        color = ColorFat,
+                        startAngle = -90f + proteinSweep + carbsSweep,
+                        sweepAngle = fatSweep,
+                        useCenter = false, topLeft = Offset(inset, inset),
+                        size = arc, style = Stroke(stroke, cap = StrokeCap.Butt)
                     )
                 }
 
@@ -498,7 +511,7 @@ private fun CalorieCard(
                     if (activeCalories > 0) {
                         Text(
                             "+${activeCalories.toInt()} 🔥",
-                            color = Color(0xFF2196F3),
+                            color = Color(0xFFFFB800),
                             fontSize = 9.sp,
                             fontWeight = FontWeight.Bold
                         )

@@ -28,8 +28,12 @@ sealed class Screen(val route: String) {
     object Weight     : Screen("weight")
     object MyRoutes : Screen("my_routes")
     object CommunityRoutes : Screen("community_routes")
-    object ForgotPassword : Screen("forgot_password")
-    object ResetPassword  : Screen("reset_password")
+    object ForgotPassword : Screen("forgot_password/{fromProfile}/{email}") {
+        fun route(fromProfile: Boolean = false, email: String = "") = "forgot_password/$fromProfile/$email"
+    }
+    object ResetPassword : Screen("reset_password/{token}/{fromProfile}") {
+        fun route(token: String, fromProfile: Boolean = false) = "reset_password/$token/$fromProfile"
+    }
     object Profile : Screen("profile")
     object Subscription : Screen("subscription")
 }
@@ -134,16 +138,28 @@ fun NavGraph(
             CommunityRoutesScreen(navController = navController, gpsService = gpsService)
         }
 
-        composable(Screen.ForgotPassword.route) {
-            ForgotPasswordScreen(navController, authService)
+        composable(
+            route = "forgot_password/{fromProfile}/{email}",
+            arguments = listOf(
+                navArgument("fromProfile") { type = NavType.StringType; defaultValue = "false" },
+                navArgument("email")       { type = NavType.StringType; defaultValue = "" }
+            )
+        ) { backStackEntry ->
+            val fromProfile = backStackEntry.savedStateHandle.get<String>("fromProfile").toBoolean()
+            val email       = backStackEntry.savedStateHandle.get<String>("email") ?: ""
+            ForgotPasswordScreen(navController, authService, fromProfile, email)
         }
 
         composable(
-            route = "${Screen.ResetPassword.route}/{token}",
-            arguments = listOf(navArgument("token") { type = NavType.StringType })
+            route = "reset_password/{token}/{fromProfile}",
+            arguments = listOf(
+                navArgument("token")       { type = NavType.StringType },
+                navArgument("fromProfile") { type = NavType.StringType; defaultValue = "false" }
+            )
         ) { backStackEntry ->
-            val token = backStackEntry.savedStateHandle.get<String>("token") ?: ""
-            ResetPasswordScreen(navController, authService, token)
+            val token       = backStackEntry.savedStateHandle.get<String>("token") ?: ""
+            val fromProfile = backStackEntry.savedStateHandle.get<String>("fromProfile").toBoolean()
+            ResetPasswordScreen(navController, authService, token, fromProfile)
         }
 
         composable(Screen.Profile.route) {

@@ -9,15 +9,18 @@ class UserService(private val turso: TursoService) {
     suspend fun initTable() {
         turso.execute(
             """
-        CREATE TABLE IF NOT EXISTS users (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            email TEXT NOT NULL UNIQUE,
-            password_hash TEXT NOT NULL,
-            email_verified INTEGER NOT NULL DEFAULT 0,
-            created_at INTEGER NOT NULL
-        )
-        """.trimIndent()
+    CREATE TABLE IF NOT EXISTS users (
+        id             TEXT    PRIMARY KEY,
+        name           TEXT    NOT NULL,
+        email          TEXT    NOT NULL UNIQUE,
+        password_hash  TEXT    NOT NULL,
+        email_verified INTEGER NOT NULL DEFAULT 0,
+        created_at     INTEGER NOT NULL,
+        phone          TEXT    NOT NULL DEFAULT '',
+        country        TEXT    NOT NULL DEFAULT '',
+        birth_date     TEXT    NOT NULL DEFAULT ''
+    )
+    """.trimIndent()
         )
         turso.execute(
             """
@@ -224,14 +227,35 @@ class UserService(private val turso: TursoService) {
 
     suspend fun findById(userId: String): User? {
         val result = turso.execute(
-            "SELECT id, name, email FROM users WHERE id = ?",
+            "SELECT id, name, email, phone, country, birth_date FROM users WHERE id = ?",
             listOf(userId)
         )
         val row = turso.extractRows(result).firstOrNull() ?: return null
         return User(
-            id    = row[0] ?: return null,
-            name  = row[1] ?: "",
-            email = row[2] ?: ""
+            id        = row[0] ?: return null,
+            name      = row[1] ?: "",
+            email     = row[2] ?: "",
+            phone     = row[3] ?: "",
+            country   = row[4] ?: "",
+            birthDate = row[5] ?: ""
         )
+    }
+
+    suspend fun updatePersonalData(
+        userId: String,
+        name: String,
+        phone: String,
+        country: String,
+        birthDate: String
+    ): Result<Unit> {
+        return try {
+            turso.execute(
+                "UPDATE users SET name = ?, phone = ?, country = ?, birth_date = ? WHERE id = ?",
+                listOf(name, phone, country, birthDate, userId)
+            )
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
 }
