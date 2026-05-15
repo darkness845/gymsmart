@@ -221,4 +221,17 @@ class UserService(private val turso: TursoService) {
         )
         return Result.success(Unit)
     }
+
+    suspend fun findById(userId: String): User? {
+        val result = turso.execute(
+            "SELECT id, name, email FROM users WHERE id = ?",
+            listOf(userId)
+        )
+        val row = turso.extractRows(result).firstOrNull() ?: return null
+        return User(
+            id    = row[0] ?: return null,
+            name  = row[1] ?: "",
+            email = row[2] ?: ""
+        )
+    }
 }

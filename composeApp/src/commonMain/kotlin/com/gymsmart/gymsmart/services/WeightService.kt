@@ -1,6 +1,8 @@
 package com.gymsmart.gymsmart.services
 
 import com.gymsmart.gymsmart.config.AppConfig
+import com.gymsmart.gymsmart.model.BodyAnalysisRequest
+import com.gymsmart.gymsmart.model.BodyAnalysisResponse
 import com.gymsmart.gymsmart.model.WeightEntry
 import io.ktor.client.*
 import io.ktor.client.call.*
@@ -9,16 +11,27 @@ import io.ktor.http.*
 
 class WeightService(private val client: HttpClient) {
 
-    suspend fun getWeights(): List<WeightEntry> {
-        return client.get("${AppConfig.BASE_URL}/weight").body()
+    suspend fun getHistory(): List<WeightEntry> =
+        client.get("${AppConfig.BASE_URL}/weight/history").body()
+
+    suspend fun addWeight(weightKg: Float) {
+        client.post("${AppConfig.BASE_URL}/profile/save") {
+        }
     }
 
-    suspend fun addWeight(day: Int, weight: Float): WeightEntry {
-        val payload = WeightEntry(day, weight)
+    suspend fun analyzeBody(
+        imageBase64: String
+    ): BodyAnalysisResponse {
 
-        return client.post("${AppConfig.BASE_URL}/weight") {
-            contentType(io.ktor.http.ContentType.Application.Json)
-            setBody(payload)
+        return client.post("${AppConfig.BASE_URL}/ai/body-analysis") {
+
+            contentType(ContentType.Application.Json)
+
+            setBody(
+                BodyAnalysisRequest(
+                    imageBase64 = imageBase64
+                )
+            )
         }.body()
     }
 }

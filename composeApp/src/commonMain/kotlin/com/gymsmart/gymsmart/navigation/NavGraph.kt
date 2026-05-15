@@ -31,6 +31,7 @@ sealed class Screen(val route: String) {
     object ForgotPassword : Screen("forgot_password")
     object ResetPassword  : Screen("reset_password")
     object Profile : Screen("profile")
+    object Subscription : Screen("subscription")
 }
 
 @Serializable
@@ -150,6 +151,10 @@ fun NavGraph(
                 navController      = navController,
                 healthDataProvider = healthDataProvider
             )
+        }
+
+        composable(Screen.Subscription.route) {
+            SubscriptionScreen(navController)
         }
     }
 }

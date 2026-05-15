@@ -147,21 +147,21 @@ fun DashboardScreen(
         Spacer(modifier = Modifier.height(28.dp))
 
         AnimatedCard(
-            onClick = { navController.navigate(Screen.Training.route) },
+            onClick = { navController.navigate(Screen.Subscription.route) },
             backgroundColor = accent,
             height = 130.dp
         ) {
             Column {
 
                 Text(
-                    "Entrenamiento",
+                    "Planes",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     color = Color.Black
                 )
 
                 Text(
-                    "Empieza tu rutina",
+                    "Free · Premium",
                     color = Color.Black.copy(alpha = 0.7f)
                 )
             }

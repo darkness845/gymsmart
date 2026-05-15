@@ -55,6 +55,10 @@ tasks.named<JavaExec>("run") {
     environment("TURSO_DB_URL", envProps["TURSO_DB_URL"] ?: "")
     environment("TURSO_AUTH_TOKEN", envProps["TURSO_AUTH_TOKEN"] ?: "")
     environment("RESEND_API_KEY", envProps["RESEND_API_KEY"] ?: "")
-    environment("GMAIL_USER", envProps["GMAIL_USER"] ?: "")  // ← AÑADE
-    environment("GMAIL_PASS", envProps["GMAIL_PASS"] ?: "")  // ← AÑADE
+    environment("GMAIL_USER", envProps["GMAIL_USER"] ?: "")
+    environment("GMAIL_PASS", envProps["GMAIL_PASS"] ?: "")
+    environment("OPENAI_API_KEY", envProps["OPENAI_API_KEY"] ?: "")
+    environment("STRIPE_SECRET_KEY", envProps["STRIPE_SECRET_KEY"] ?: "")
+    environment("BREVO_USER", envProps["BREVO_USER"] ?: "")
+    environment("BREVO_SMTP_KEY", envProps["BREVO_SMTP_KEY"] ?: "")
 }

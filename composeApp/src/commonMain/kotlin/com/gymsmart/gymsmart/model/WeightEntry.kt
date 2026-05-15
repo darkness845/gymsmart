@@ -4,6 +4,6 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class WeightEntry(
-    val day: Int,
-    val weight: Float
+    val day: String,
+    val weightKg: Float
 )

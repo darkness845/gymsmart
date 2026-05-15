@@ -129,4 +129,14 @@ fun Route.profileRoutes(profileService: ProfileService) {
             })
         }
     }
+
+    route("/weight") {
+        get("/history") {
+            val session = call.sessions.get<UserSession>()
+                ?: return@get call.respond(HttpStatusCode.Unauthorized, "Sin sesión")
+
+            val result = profileService.getWeightHistory(session.userId)
+            call.respond(HttpStatusCode.OK, result)
+        }
+    }
 }

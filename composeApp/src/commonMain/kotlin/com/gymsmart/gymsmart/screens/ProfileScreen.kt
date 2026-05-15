@@ -34,6 +34,7 @@ import com.gymsmart.gymsmart.services.HealthDataProvider
 import com.gymsmart.gymsmart.services.ProfileService
 import com.gymsmart.gymsmart.model.NutritionTargets
 import kotlinx.coroutines.launch
+import kotlin.time.Clock
 
 // ─── Colores ────────────────────────────────────────────────────────────────
 private val Background = Color(0xFFF5F3EF)
@@ -536,6 +537,32 @@ fun ProfileScreen(
                         else
                             TextSecondary
                 )
+            }
+
+            HorizontalDivider(color = DividerColor)
+
+            ProfileSection(icon = Icons.Default.Star, title = "Suscripción") {
+                var subStatus by remember { mutableStateOf<com.gymsmart.gymsmart.model.SubscriptionStatus?>(null) }
+                val subService = remember { com.gymsmart.gymsmart.services.SubscriptionService(authService.client) }
+
+                LaunchedEffect(Unit) {
+                    subService.getStatus().onSuccess { subStatus = it }
+                }
+
+                if (subStatus?.active == true) {
+                    val remaining = ((subStatus!!.expiresAt - Clock.System.now().toEpochMilliseconds()) / 60000).coerceAtLeast(0)
+                    Text("⭐ Plan Premium activo", fontWeight = FontWeight.Bold, color = Accent)
+                    Text("Caduca en $remaining minutos", fontSize = 13.sp, color = TextSecondary)
+                } else {
+                    Text("Plan actual: Free", color = TextSecondary, fontSize = 14.sp)
+                    Spacer(Modifier.height(4.dp))
+                    Button(
+                        onClick = { navController.navigate(com.gymsmart.gymsmart.navigation.Screen.Subscription.route) },
+                        colors  = ButtonDefaults.buttonColors(containerColor = Accent),
+                        shape   = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Mejorar a Premium ⭐", color = Color.Black, fontWeight = FontWeight.Bold) }
+                }
             }
 
             Spacer(Modifier.height(20.dp))

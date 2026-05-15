@@ -49,6 +49,32 @@ class ProfileService(private val turso: TursoService) {
         )
     }
 
+    suspend fun initWeightHistoryTable() {
+        turso.execute(
+            """
+        CREATE TABLE IF NOT EXISTS weight_history (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id    TEXT    NOT NULL,
+            weight_kg  REAL    NOT NULL,
+            day        TEXT    NOT NULL,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+        """.trimIndent()
+        )
+    }
+
+    suspend fun initSubscriptionTable() {
+        turso.execute("""
+        CREATE TABLE IF NOT EXISTS subscriptions (
+            user_id    TEXT    PRIMARY KEY,
+            plan       TEXT    NOT NULL DEFAULT 'free',
+            expires_at INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+    """.trimIndent())
+    }
+
     // ── CRUD ──────────────────────────────────────────────────────────────────
 
     suspend fun upsertProfile(
@@ -62,26 +88,46 @@ class ProfileService(private val turso: TursoService) {
         goalRate:      Double
     ): UserProfile {
         val now = System.currentTimeMillis()
-        // INSERT OR REPLACE funciona en Turso/libSQL (SQLite 3.x) por PK
+
+        // Obtener peso anterior
+        val previous = getProfile(userId)
+
         turso.execute(
             """
-            INSERT OR REPLACE INTO user_profiles
-                (user_id, weight_kg, height_cm, age, sex, activity_level, goal, goal_rate, has_wearable, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """.trimIndent(),
+        INSERT OR REPLACE INTO user_profiles
+            (user_id, weight_kg, height_cm, age, sex, activity_level, goal, goal_rate, has_wearable, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """.trimIndent(),
             listOf(
-                userId,
-                weightKg.toString(),
-                heightCm.toString(),
-                age.toString(),
-                sex,
-                activityLevel,
-                goal,
-                goalRate.toString(),
-                if (activityLevel == "wearable") "1" else "0",
-                now.toString()
+                userId, weightKg.toString(), heightCm.toString(), age.toString(),
+                sex, activityLevel, goal, goalRate.toString(),
+                if (activityLevel == "wearable") "1" else "0", now.toString()
             )
         )
+
+        // Guardar historial solo si el peso cambió (o es la primera vez)
+        if (previous == null || previous.weightKg != weightKg) {
+            val today = java.time.LocalDate.now().toString() // "2025-05-14"
+
+            // Evitar duplicado del mismo día
+            val existing = turso.execute(
+                "SELECT id FROM weight_history WHERE user_id = ? AND day = ?",
+                listOf(userId, today)
+            )
+            if (turso.extractRows(existing).isEmpty()) {
+                turso.execute(
+                    "INSERT INTO weight_history (user_id, weight_kg, day, created_at) VALUES (?, ?, ?, ?)",
+                    listOf(userId, weightKg.toString(), today, now.toString())
+                )
+            } else {
+                // Actualizar el registro del día si ya existe
+                turso.execute(
+                    "UPDATE weight_history SET weight_kg = ?, created_at = ? WHERE user_id = ? AND day = ?",
+                    listOf(weightKg.toString(), now.toString(), userId, today)
+                )
+            }
+        }
+
         return UserProfile(userId, weightKg, heightCm, age, sex, activityLevel, goal, goalRate, now)
     }
 
@@ -160,5 +206,40 @@ class ProfileService(private val turso: TursoService) {
         }
 
         return NutritionTargets(tdee, targetKcal, proteinG, carbsG, fatG, bmiRounded, bmiCategory)
+    }
+
+    suspend fun getWeightHistory(userId: String): List<Map<String, String>> {
+        val result = turso.execute(
+            "SELECT weight_kg, day FROM weight_history WHERE user_id = ? ORDER BY day ASC",
+            listOf(userId)
+        )
+        return turso.extractRows(result).mapNotNull { row ->
+            val w = row[0] ?: return@mapNotNull null
+            val d = row[1] ?: return@mapNotNull null
+            mapOf("weightKg" to w, "day" to d)
+        }
+    }
+
+    suspend fun getSubscription(userId: String): Pair<String, Long> {
+        val result = turso.execute(
+            "SELECT plan, expires_at FROM subscriptions WHERE user_id = ?",
+            listOf(userId)
+        )
+        val row = turso.extractRows(result).firstOrNull()
+            ?: return Pair("free", 0L)
+        return Pair(row[0] ?: "free", row[1]?.toLongOrNull() ?: 0L)
+    }
+
+    suspend fun activatePremium(userId: String, durationMs: Long) {
+        val expiresAt = System.currentTimeMillis() + durationMs
+        turso.execute("""
+        INSERT OR REPLACE INTO subscriptions (user_id, plan, expires_at)
+        VALUES (?, 'premium', ?)
+    """.trimIndent(), listOf(userId, expiresAt.toString()))
+    }
+
+    suspend fun isPremium(userId: String): Boolean {
+        val (plan, expiresAt) = getSubscription(userId)
+        return plan == "premium" && expiresAt > System.currentTimeMillis()
     }
 }

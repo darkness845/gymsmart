@@ -6,29 +6,28 @@ import jakarta.mail.internet.MimeMessage
 import java.util.Properties
 
 class EmailService {
-    private val gmailUser = System.getenv("GMAIL_USER")
-        ?: throw IllegalStateException("GMAIL_USER no definida")
-    private val gmailPass = System.getenv("GMAIL_PASS")
-        ?: throw IllegalStateException("GMAIL_PASS no definida")
+    private val brevoUser = System.getenv("BREVO_USER")
+        ?: throw IllegalStateException("BREVO_USER no definida")
+    private val brevoKey = System.getenv("BREVO_SMTP_KEY")
+        ?: throw IllegalStateException("BREVO_SMTP_KEY no definida")
 
     private val session: Session by lazy {
         val props = Properties().apply {
             put("mail.smtp.auth", "true")
-            put("mail.smtp.ssl.enable", "true")
-            put("mail.smtp.host", "smtp.gmail.com")
-            put("mail.smtp.port", "465")
-            put("mail.smtp.ssl.trust", "smtp.gmail.com")
+            put("mail.smtp.starttls.enable", "true")
+            put("mail.smtp.host", "smtp-relay.brevo.com")
+            put("mail.smtp.port", "587")
         }
         Session.getInstance(props, object : Authenticator() {
             override fun getPasswordAuthentication() =
-                PasswordAuthentication(gmailUser, gmailPass)
+                PasswordAuthentication(brevoUser, brevoKey)
         })
     }
 
     private fun sendEmail(to: String, subject: String, html: String): Boolean {
         return try {
             val message = MimeMessage(session).apply {
-                setFrom(InternetAddress(gmailUser, "GymSmart"))
+                setFrom(InternetAddress(brevoUser, "GymSmart"))
                 setRecipients(Message.RecipientType.TO, InternetAddress.parse(to))
                 setSubject(subject, "UTF-8")
                 setContent(html, "text/html; charset=UTF-8")
@@ -71,5 +70,21 @@ class EmailService {
             </div>
         """.trimIndent()
         return sendEmail(toEmail, "Restablecer contraseña de GymSmart", html)
+    }
+
+    suspend fun sendPurchaseConfirmation(toEmail: String, toName: String): Boolean {
+        val html = """
+        <div style="font-family: Arial, sans-serif; max-width: 480px; margin: auto; padding: 32px; background: #f5f3ef; border-radius: 16px;">
+            <h2 style="color: #1a1a1a;">¡Gracias por tu compra, $toName! 🎉</h2>
+            <p style="color: #444;">Tu suscripción <strong>GymSmart Premium</strong> ya está activa.</p>
+            <div style="background: #1a1a1a; border-radius: 8px; padding: 14px; text-align: center; margin: 24px 0;">
+                <span style="font-size: 32px;">💪</span>
+                <p style="color: #FFB800; font-weight: bold; margin: 8px 0;">Plan Premium activado</p>
+                <p style="color: #aaa; font-size: 12px;">Análisis de físico con IA desbloqueado</p>
+            </div>
+            <p style="color: #888; font-size: 12px;">Si tienes cualquier problema escríbenos a soporte.</p>
+        </div>
+    """.trimIndent()
+        return sendEmail(toEmail, "¡Bienvenido a GymSmart Premium! 🏆", html)
     }
 }

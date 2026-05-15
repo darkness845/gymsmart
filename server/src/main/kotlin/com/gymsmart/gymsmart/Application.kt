@@ -43,7 +43,9 @@ fun Application.module() {
         userService.initTable()
         nutritionService.initTable()
         profileService.initTable()
+        profileService.initWeightHistoryTable()
         gpsService.initTables()
+        profileService.initSubscriptionTable()
     }
 
     configureRouting(userService, nutritionService, profileService, gpsService)
