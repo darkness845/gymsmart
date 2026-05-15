@@ -14,9 +14,16 @@ class HealthConnectProvider(
     private val context: Context
 ) : HealthDataProvider {
 
-    private val client = HealthConnectClient.getOrCreate(context)
+    private val client: HealthConnectClient? = try {
+        if (HealthConnectClient.getSdkStatus(context) == HealthConnectClient.SDK_AVAILABLE) {
+            HealthConnectClient.getOrCreate(context)
+        } else null
+    } catch (e: Exception) {
+        null
+    }
 
     override suspend fun getTodaySteps(): Long {
+        val client = client ?: return 0L
         val startOfDay = Instant.now()
             .atZone(ZoneId.systemDefault())
             .toLocalDate()
@@ -39,6 +46,7 @@ class HealthConnectProvider(
     }
 
     override suspend fun getTodayActiveCalories(): Double {
+        val client = client ?: return 0.0
         val startOfDay = Instant.now()
             .atZone(ZoneId.systemDefault())
             .toLocalDate()
