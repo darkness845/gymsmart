@@ -85,7 +85,7 @@ fun Route.subscriptionRoutes(
             // No esperes al email — responde al cliente ya
             call.respond(HttpStatusCode.OK, buildJsonObject { put("ok", true) })
 
-            // Envía el email en background sin bloquear
+            // Envía el email en background sin bloquea
             CoroutineScope(Dispatchers.IO).launch {
                 try {
                     emailService.sendPurchaseConfirmation(user.email, user.name)
