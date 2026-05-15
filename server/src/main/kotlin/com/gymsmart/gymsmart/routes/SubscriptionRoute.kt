@@ -14,6 +14,7 @@ import io.ktor.server.sessions.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 
@@ -82,18 +83,17 @@ fun Route.subscriptionRoutes(
             profileService.activatePremium(session.userId, duration)
             println(">>> Premium activado para ${session.userId}")
 
-            // No esperes al email — responde al cliente ya
-            call.respond(HttpStatusCode.OK, buildJsonObject { put("ok", true) })
-
-            // Envía el email en background sin bloquea
-            CoroutineScope(Dispatchers.IO).launch {
-                try {
+            // Email con timeout de 10s, no bloquea más de eso
+            try {
+                withTimeout(10_000) {
                     emailService.sendPurchaseConfirmation(user.email, user.name)
                     println(">>> Email enviado a ${user.email}")
-                } catch (e: Exception) {
-                    println(">>> Error enviando email: ${e.message}")
                 }
+            } catch (e: Exception) {
+                println(">>> Email falló (no crítico): ${e.message}")
             }
+
+            call.respond(HttpStatusCode.OK, buildJsonObject { put("ok", true) })
         }
     }
 }
