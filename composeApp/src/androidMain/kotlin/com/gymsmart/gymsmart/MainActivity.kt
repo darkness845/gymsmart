@@ -40,10 +40,12 @@ class MainActivity : ComponentActivity() {
         val healthProvider = HealthConnectProvider(this)
 
         lifecycleScope.launch {
-            val client = HealthConnectClient.getOrCreate(this@MainActivity)
-            val granted = client.permissionController.getGrantedPermissions()
-            if (!granted.containsAll(healthPermissions)) {
-                requestHealthPermissions.launch(healthPermissions)
+            if (HealthConnectClient.getSdkStatus(this@MainActivity) == HealthConnectClient.SDK_AVAILABLE) {
+                val client = HealthConnectClient.getOrCreate(this@MainActivity)
+                val granted = client.permissionController.getGrantedPermissions()
+                if (!granted.containsAll(healthPermissions)) {
+                    requestHealthPermissions.launch(healthPermissions)
+                }
             }
         }
 
