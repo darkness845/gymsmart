@@ -61,4 +61,5 @@ tasks.named<JavaExec>("run") {
     environment("STRIPE_SECRET_KEY", envProps["STRIPE_SECRET_KEY"] ?: "")
     environment("BREVO_USER", envProps["BREVO_USER"] ?: "")
     environment("BREVO_SMTP_KEY", envProps["BREVO_SMTP_KEY"] ?: "")
+    environment("BREVO_API_KEY", envProps["BREVO_API_KEY"] ?: "")
 }

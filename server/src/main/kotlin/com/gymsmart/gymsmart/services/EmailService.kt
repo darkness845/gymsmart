@@ -1,40 +1,34 @@
 package com.gymsmart.gymsmart.services
 
-import jakarta.mail.*
-import jakarta.mail.internet.InternetAddress
-import jakarta.mail.internet.MimeMessage
-import java.util.Properties
+import io.ktor.client.*
+import io.ktor.client.engine.cio.*
+import io.ktor.client.request.*
+import io.ktor.http.*
 
 class EmailService {
-    private val brevoUser = System.getenv("BREVO_USER")
+    private val apiKey = System.getenv("BREVO_API_KEY")
+        ?: throw IllegalStateException("BREVO_API_KEY no definida")
+    private val fromEmail = System.getenv("BREVO_USER")
         ?: throw IllegalStateException("BREVO_USER no definida")
-    private val brevoKey = System.getenv("BREVO_SMTP_KEY")
-        ?: throw IllegalStateException("BREVO_SMTP_KEY no definida")
 
-    private val session: Session by lazy {
-        val props = Properties().apply {
-            put("mail.smtp.auth", "true")
-            put("mail.smtp.starttls.enable", "true")
-            put("mail.smtp.host", "smtp-relay.brevo.com")
-            put("mail.smtp.port", "587")
-        }
-        Session.getInstance(props, object : Authenticator() {
-            override fun getPasswordAuthentication() =
-                PasswordAuthentication(brevoUser, brevoKey)
-        })
-    }
+    private val client = HttpClient(CIO)
 
-    private fun sendEmail(to: String, subject: String, html: String): Boolean {
+    private suspend fun sendEmail(to: String, subject: String, html: String): Boolean {
         return try {
-            val message = MimeMessage(session).apply {
-                setFrom(InternetAddress(brevoUser, "GymSmart"))
-                setRecipients(Message.RecipientType.TO, InternetAddress.parse(to))
-                setSubject(subject, "UTF-8")
-                setContent(html, "text/html; charset=UTF-8")
+            val response = client.post("https://api.brevo.com/v3/smtp/email") {
+                header("api-key", apiKey)
+                contentType(ContentType.Application.Json)
+                setBody("""
+                    {
+                      "sender": {"name": "GymSmart", "email": "$fromEmail"},
+                      "to": [{"email": "$to"}],
+                      "subject": "$subject",
+                      "htmlContent": ${kotlinx.serialization.json.Json.encodeToString(kotlinx.serialization.json.JsonPrimitive(html))}
+                    }
+                """.trimIndent())
             }
-            Transport.send(message)
-            println(">>> Email enviado OK a $to")
-            true
+            println(">>> Brevo response: ${response.status}")
+            response.status.isSuccess()
         } catch (e: Exception) {
             println(">>> Error enviando email: ${e.message}")
             false
