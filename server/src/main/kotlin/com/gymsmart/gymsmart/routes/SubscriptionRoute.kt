@@ -11,6 +11,9 @@ import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import io.ktor.server.sessions.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 
@@ -79,10 +82,18 @@ fun Route.subscriptionRoutes(
             profileService.activatePremium(session.userId, duration)
             println(">>> Premium activado para ${session.userId}")
 
-            emailService.sendPurchaseConfirmation(user.email, user.name)
-            println(">>> Email enviado a ${user.email}")
-
+            // No esperes al email — responde al cliente ya
             call.respond(HttpStatusCode.OK, buildJsonObject { put("ok", true) })
+
+            // Envía el email en background sin bloquear
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    emailService.sendPurchaseConfirmation(user.email, user.name)
+                    println(">>> Email enviado a ${user.email}")
+                } catch (e: Exception) {
+                    println(">>> Error enviando email: ${e.message}")
+                }
+            }
         }
     }
 }
