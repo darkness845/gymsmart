@@ -4,21 +4,19 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.gymsmart.gymsmart.model.GpsRouteResponse
 import com.gymsmart.gymsmart.navigation.RouteDetailArgs
 import com.gymsmart.gymsmart.services.GpsService
+import com.gymsmart.gymsmart.ui.theme.GymSmartColors
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -26,12 +24,9 @@ fun CommunityRoutesScreen(
     navController: NavController,
     gpsService: GpsService
 ) {
-    val accentYellow = Color(0xFFFFC107)
-    val bgCream = Color(0xFFF5F5F5)
-
-    var routes by remember { mutableStateOf<List<GpsRouteResponse>>(emptyList()) }
+    var routes    by remember { mutableStateOf<List<GpsRouteResponse>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
-    var errorMsg by remember { mutableStateOf<String?>(null) }
+    var errorMsg  by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         val result = gpsService.getCommunityRoutes()
@@ -42,49 +37,77 @@ fun CommunityRoutesScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Rutas de la comunidad", fontWeight = FontWeight.Bold) },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Volver")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
-            )
+            Column {
+                TopAppBar(
+                    title = {
+                        Text(
+                            "Rutas de la comunidad",
+                            fontWeight = FontWeight.Bold,
+                            color = GymSmartColors.TextPrimary
+                        )
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = { navController.popBackStack() }) {
+                            Icon(
+                                Icons.Default.ArrowBack,
+                                contentDescription = "Volver",
+                                tint = GymSmartColors.TextPrimary
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = GymSmartColors.Background
+                    )
+                )
+            }
         },
-        containerColor = bgCream
+        containerColor = GymSmartColors.Background
     ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(16.dp)
+                .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
             when {
                 isLoading -> {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = accentYellow)
+                        CircularProgressIndicator(color = GymSmartColors.Primary)
                     }
                 }
                 errorMsg != null -> {
-                    Card(
+                    Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFEBEE))
+                        color = GymSmartColors.Error.copy(alpha = 0.12f),
+                        shape = MaterialTheme.shapes.small
                     ) {
-                        Text("⚠️ $errorMsg", modifier = Modifier.padding(12.dp), color = Color.Red)
+                        Text(
+                            "⚠ $errorMsg",
+                            modifier = Modifier.padding(12.dp),
+                            color = GymSmartColors.Error,
+                            style = MaterialTheme.typography.bodySmall
+                        )
                     }
                 }
                 routes.isEmpty() -> {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("No hay rutas públicas aún", color = Color.Gray, fontSize = 16.sp)
+                            Text(
+                                "No hay rutas públicas aún",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = GymSmartColors.TextSecondary
+                            )
                             Spacer(Modifier.height(8.dp))
-                            Text("¡Sé el primero en publicar una!", color = Color.Gray, fontSize = 13.sp)
+                            Text(
+                                "¡Sé el primero en publicar una!",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = GymSmartColors.TextDisabled
+                            )
                         }
                     }
                 }
                 else -> {
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         items(routes, key = { it.id }) { route ->
                             CommunityRouteCard(
                                 route = route,
@@ -105,26 +128,44 @@ private fun CommunityRouteCard(
     route: GpsRouteResponse,
     onClick: () -> Unit
 ) {
-    Card(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onClick() },
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(4.dp)
+        color = GymSmartColors.SurfaceCard,
+        shape = MaterialTheme.shapes.medium
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Text(route.name, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-            Spacer(Modifier.height(4.dp))
             Text(
-                "${formatDouble(route.distanceMeters / 1000, 2)} km  •  ${formatDuration(route.durationSeconds)}  •  ${route.pointCount} puntos",
-                fontSize = 12.sp,
-                color = Color.Gray
+                route.name,
+                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleMedium,
+                color = GymSmartColors.TextPrimary
             )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                MetricChip("${formatDouble(route.distanceMeters / 1000, 2)} km")
+                Text("·", color = GymSmartColors.Divider)
+                MetricChip(formatDuration(route.durationSeconds))
+                Text("·", color = GymSmartColors.Divider)
+                MetricChip("${route.pointCount} pts")
+            }
         }
     }
+}
+
+@Composable
+private fun MetricChip(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.bodySmall,
+        color = GymSmartColors.TextSecondary
+    )
 }

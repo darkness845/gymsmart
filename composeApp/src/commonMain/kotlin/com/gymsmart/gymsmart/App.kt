@@ -5,6 +5,7 @@ import androidx.compose.runtime.Composable
 import com.gymsmart.gymsmart.navigation.NavGraph
 import com.gymsmart.gymsmart.services.HealthDataProvider
 import com.gymsmart.gymsmart.services.LocationProvider
+import com.gymsmart.gymsmart.ui.theme.GymSmartTheme
 
 @Composable
 fun App(
@@ -13,7 +14,7 @@ fun App(
     onRequestLocationPermission: (callback: (Boolean) -> Unit) -> Unit,
     onRequestCameraPermission: (callback: (Boolean) -> Unit) -> Unit = {}
 ) {
-    MaterialTheme {
+    GymSmartTheme {
         NavGraph(
             locationProvider = locationProvider,
             healthDataProvider = healthDataProvider,

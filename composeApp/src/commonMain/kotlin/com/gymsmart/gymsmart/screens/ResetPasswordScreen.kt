@@ -2,13 +2,11 @@ package com.gymsmart.gymsmart.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -16,38 +14,80 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.gymsmart.gymsmart.navigation.Screen
 import com.gymsmart.gymsmart.services.AuthService
+import com.gymsmart.gymsmart.ui.theme.GymSmartColors
 import kotlinx.coroutines.launch
 
 @Composable
-fun ResetPasswordScreen(navController: NavController, authService: AuthService, token: String, fromProfile: Boolean = false) {
-    val background    = Color(0xFFF5F3EF)
-    val accent        = Color(0xFFFFB800)
-    val textPrimary   = Color(0xFF1A1A1A)
-    val textSecondary = Color(0xFF888888)
+fun ResetPasswordScreen(
+    navController: NavController,
+    authService:   AuthService,
+    token:         String,
+    fromProfile:   Boolean = false
+) {
 
     var newPassword by remember { mutableStateOf("") }
     var confirm     by remember { mutableStateOf("") }
     var isLoading   by remember { mutableStateOf(false) }
     var errorMsg    by remember { mutableStateOf("") }
     var success     by remember { mutableStateOf(false) }
+
     val scope = rememberCoroutineScope()
 
+    val fieldColors = OutlinedTextFieldDefaults.colors(
+        focusedBorderColor      = GymSmartColors.Primary,
+        unfocusedBorderColor    = GymSmartColors.Outline,
+        focusedLabelColor       = GymSmartColors.Primary,
+        unfocusedLabelColor     = GymSmartColors.TextSecondary,
+        cursorColor             = GymSmartColors.Primary,
+        focusedTextColor        = GymSmartColors.TextPrimary,
+        unfocusedTextColor      = GymSmartColors.TextPrimary,
+        focusedContainerColor   = GymSmartColors.SurfaceCard,
+        unfocusedContainerColor = GymSmartColors.SurfaceCard,
+        errorBorderColor        = GymSmartColors.Error,
+        errorLabelColor         = GymSmartColors.Error,
+        errorContainerColor     = GymSmartColors.SurfaceCard,
+    )
+
     Column(
-        modifier = Modifier.fillMaxSize().background(background).padding(28.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .background(GymSmartColors.Background)
+            .padding(horizontal = 28.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text("Nueva contraseña", style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold, color = textPrimary)
-        Spacer(Modifier.height(8.dp))
-        Text("Introduce tu nueva contraseña",
-            color = textSecondary, style = MaterialTheme.typography.bodyMedium)
-        Spacer(Modifier.height(32.dp))
 
         if (success) {
-            Text("✅ Contraseña actualizada. Ya puedes iniciar sesión.",
-                color = textPrimary, style = MaterialTheme.typography.bodyMedium)
+
+            // ── Estado de éxito ───────────────────────────────────────────────
+
+            Box(
+                modifier = Modifier
+                    .size(80.dp)
+                    .background(GymSmartColors.SurfaceCard, shape = MaterialTheme.shapes.extraLarge),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("✓", style = MaterialTheme.typography.displayLarge, color = GymSmartColors.Primary)
+            }
+
             Spacer(Modifier.height(24.dp))
+
+            Text(
+                "¡Listo!",
+                style = MaterialTheme.typography.headlineLarge,
+                color = GymSmartColors.TextPrimary
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            Text(
+                "Tu contraseña ha sido actualizada correctamente.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = GymSmartColors.TextSecondary
+            )
+
+            Spacer(Modifier.height(32.dp))
+
             Button(
                 onClick = {
                     if (fromProfile) {
@@ -58,16 +98,53 @@ fun ResetPasswordScreen(navController: NavController, authService: AuthService, 
                         }
                     }
                 },
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = accent)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+                shape = MaterialTheme.shapes.small,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = GymSmartColors.Primary,
+                    contentColor   = GymSmartColors.OnPrimary
+                )
             ) {
                 Text(
                     if (fromProfile) "Volver al perfil" else "Ir al login",
-                    color = Color.Black, fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.labelLarge
                 )
             }
+
         } else {
+
+            // ── Formulario nueva contraseña ───────────────────────────────────
+
+            Box(
+                modifier = Modifier
+                    .size(72.dp)
+                    .background(GymSmartColors.SurfaceCard, shape = MaterialTheme.shapes.extraLarge),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("🔒", style = MaterialTheme.typography.headlineLarge)
+            }
+
+            Spacer(Modifier.height(24.dp))
+
+            Text(
+                "Nueva contraseña",
+                style = MaterialTheme.typography.headlineMedium,
+                color = GymSmartColors.TextPrimary
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            Text(
+                "Introduce tu nueva contraseña",
+                style = MaterialTheme.typography.bodyMedium,
+                color = GymSmartColors.TextSecondary
+            )
+
+            Spacer(Modifier.height(32.dp))
+
             OutlinedTextField(
                 value = newPassword,
                 onValueChange = { newPassword = it },
@@ -76,25 +153,37 @@ fun ResetPasswordScreen(navController: NavController, authService: AuthService, 
                 visualTransformation = PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp)
+                shape = MaterialTheme.shapes.small,
+                colors = fieldColors
             )
+
             Spacer(Modifier.height(14.dp))
+
             OutlinedTextField(
                 value = confirm,
-                onValueChange = { confirm = it },
+                onValueChange = { confirm = it; errorMsg = "" },
                 label = { Text("Confirmar contraseña") },
                 singleLine = true,
                 visualTransformation = PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp)
+                shape = MaterialTheme.shapes.small,
+                isError = errorMsg.isNotEmpty(),
+                colors = fieldColors
             )
-            Spacer(Modifier.height(10.dp))
+
+            Spacer(Modifier.height(12.dp))
+
             if (errorMsg.isNotEmpty()) {
-                Text(errorMsg, color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall)
+                Text(
+                    errorMsg,
+                    color = GymSmartColors.Error,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.fillMaxWidth()
+                )
                 Spacer(Modifier.height(8.dp))
             }
+
             Button(
                 onClick = {
                     if (newPassword != confirm) { errorMsg = "Las contraseñas no coinciden"; return@Button }
@@ -109,13 +198,30 @@ fun ResetPasswordScreen(navController: NavController, authService: AuthService, 
                     }
                 },
                 enabled = newPassword.isNotBlank() && confirm.isNotBlank() && !isLoading,
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = accent)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+                shape = MaterialTheme.shapes.small,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor         = GymSmartColors.Primary,
+                    disabledContainerColor = GymSmartColors.Outline,
+                    contentColor           = GymSmartColors.OnPrimary,
+                    disabledContentColor   = GymSmartColors.TextDisabled
+                )
             ) {
-                if (isLoading) CircularProgressIndicator(color = Color.Black,
-                    modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
-                else Text("Cambiar contraseña", color = Color.Black, fontWeight = FontWeight.Bold)
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        color = GymSmartColors.OnPrimary,
+                        modifier = Modifier.size(22.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Text(
+                        "Cambiar contraseña",
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                }
             }
         }
     }

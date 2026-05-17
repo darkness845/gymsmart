@@ -1,6 +1,7 @@
 package com.gymsmart.gymsmart.screens
 
 import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -12,9 +13,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
@@ -25,52 +26,34 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.gymsmart.gymsmart.BarcodeScannerSheet
 import com.gymsmart.gymsmart.config.AppConfig
-import com.gymsmart.gymsmart.services.NutritionService
 import com.gymsmart.gymsmart.model.MealEntry
 import com.gymsmart.gymsmart.services.HealthDataProvider
+import com.gymsmart.gymsmart.services.NutritionService
 import com.gymsmart.gymsmart.services.ProfileService
+import com.gymsmart.gymsmart.ui.theme.GymSmartColors
 import io.ktor.client.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.serialization.kotlinx.json.*
 import kotlinx.coroutines.launch
+import kotlinx.datetime.*
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import kotlinx.datetime.LocalDate
-import kotlinx.datetime.TimeZone
-import kotlinx.datetime.DatePeriod
-import kotlinx.datetime.plus
-import kotlinx.datetime.minus
-import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Clock
-
-// ── Design Tokens ─────────────────────────────────────────────────────────────
-
-private val BgColor       = Color(0xFFF5F3EF)
-private val CardColor     = Color(0xFFFFFFFF)
-private val AccentYellow  = Color(0xFFFFB800)
-private val AccentOrange  = Color(0xFFFF8C00)
-private val TextPrimary   = Color(0xFF1A1A1A)
-private val TextSecondary = Color(0xFF888888)
-private val DividerColor  = Color(0xFFEEEEEE)
-private val ColorProtein  = Color(0xFF4CAF50)
-private val ColorCarbs    = Color(0xFF2196F3)
-private val ColorFat      = Color(0xFFFF5722)
 
 // ── Modelos ───────────────────────────────────────────────────────────────────
 
@@ -91,9 +74,7 @@ data class Product(
 )
 
 @Serializable
-data class FoodSearchResponse(
-    val products: List<Product> = emptyList()
-)
+data class FoodSearchResponse(val products: List<Product> = emptyList())
 
 enum class MealType(val label: String, val emoji: String) {
     DESAYUNO("Desayuno", "🌅"),
@@ -102,22 +83,12 @@ enum class MealType(val label: String, val emoji: String) {
     CENA    ("Cena",     "🌙")
 }
 
-// Sheet que se abre: búsqueda o edición de un entry existente
 private sealed class SheetMode {
     data class Search(val meal: MealType) : SheetMode()
     data class Scanner(val meal: MealType) : SheetMode()
-    data class PortionPicker(
-        val meal: MealType,
-        val product: Product,           // producto recién buscado
-        val existingEntry: MealEntry? = null  // si editamos uno ya añadido
-    ) : SheetMode()
-    data class EditEntry(
-        val meal: MealType,
-        val entry: MealEntry
-    ) : SheetMode()
+    data class PortionPicker(val meal: MealType, val product: Product, val existingEntry: MealEntry? = null) : SheetMode()
+    data class EditEntry(val meal: MealType, val entry: MealEntry) : SheetMode()
 }
-
-// ── HTTP Client ───────────────────────────────────────────────────────────────
 
 private val httpClient = HttpClient {
     install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
@@ -134,11 +105,7 @@ fun NutritionScreen(
     healthDataProvider: HealthDataProvider,
     onRequestCameraPermission: (callback: (Boolean) -> Unit) -> Unit = {}
 ) {
-
-    val today = remember {
-        Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
-    }
-
+    val today = remember { Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date }
     var selectedDate by remember { mutableStateOf(today) }
 
     val meals = remember(selectedDate) {
@@ -154,9 +121,7 @@ fun NutritionScreen(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
 
-    fun closeSheet() {
-        scope.launch { sheetState.hide() }.invokeOnCompletion { sheetMode = null }
-    }
+    fun closeSheet() { scope.launch { sheetState.hide() }.invokeOnCompletion { sheetMode = null } }
 
     var activeCalories  by remember { mutableStateOf(0.0) }
     var proteinGoalBase by remember { mutableStateOf(150.0) }
@@ -165,21 +130,14 @@ fun NutritionScreen(
     var kcalGoal        by remember { mutableStateOf(2000.0) }
     var hasWearable     by remember { mutableStateOf(false) }
 
-    // Macros dinámicos — se recalculan cuando cambia activeCalories
     val proteinGoal by remember { derivedStateOf { proteinGoalBase } }
-    val fatGoal     by remember { derivedStateOf {
-        if (hasWearable && activeCalories > 0)
-            ((kcalGoal + activeCalories) * 0.25 / 9.0)
-        else
-            fatGoalBase
+    val fatGoal by remember { derivedStateOf {
+        if (hasWearable && activeCalories > 0) ((kcalGoal + activeCalories) * 0.25 / 9.0) else fatGoalBase
     }}
-    val carbGoal    by remember { derivedStateOf {
+    val carbGoal by remember { derivedStateOf {
         if (hasWearable && activeCalories > 0) {
-            val kcalTotal = kcalGoal + activeCalories
-            ((kcalTotal - proteinGoalBase * 4.0 - fatGoal * 9.0) / 4.0).coerceAtLeast(0.0)
-        } else {
-            carbGoalBase
-        }
+            ((kcalGoal + activeCalories - proteinGoalBase * 4.0 - fatGoal * 9.0) / 4.0).coerceAtLeast(0.0)
+        } else carbGoalBase
     }}
 
     val totalKcal     by remember(selectedDate) { derivedStateOf { meals.values.flatten().sumOf { it.kcal } } }
@@ -197,62 +155,43 @@ fun NutritionScreen(
             fatGoalBase     = response.targets.fatG.toDouble()
             hasWearable     = response.profile.activityLevel == "wearable"
         }
-
-        // Solo lee la pulsera si tiene wearable
-        if (hasWearable) {
-            runCatching { healthDataProvider.getTodayActiveCalories() }
-                .onSuccess { activeCalories = it }
-        }
-
-        val remoteEntries = nutritionService.getUserMeals(selectedDate.toString())
-        remoteEntries?.forEach { entryWithTarget ->
+        if (hasWearable) runCatching { healthDataProvider.getTodayActiveCalories() }.onSuccess { activeCalories = it }
+        nutritionService.getUserMeals(selectedDate.toString())?.forEach { entryWithTarget ->
             val mealType = MealType.entries.find { it.name == entryWithTarget.mealType }
             if (mealType != null) meals[mealType]?.add(entryWithTarget.entry)
         }
     }
+
     // ── Bottom Sheet ──────────────────────────────────────────────────────────
     if (sheetMode != null) {
         ModalBottomSheet(
             onDismissRequest = { sheetMode = null },
             sheetState = sheetState,
-            containerColor = BgColor,
-            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+            containerColor = GymSmartColors.SurfaceCard,
+            shape = MaterialTheme.shapes.large
         ) {
             when (val mode = sheetMode!!) {
-
                 is SheetMode.Scanner -> BarcodeScannerSheet(
                     onBarcodeDetected = { code ->
                         scope.launch {
-                            // Cierra el escáner inmediatamente
                             sheetMode = null
-                            // Consulta al servidor con el código EAN
                             try {
-                                val raw = httpClient.get("${AppConfig.BASE_URL}/food/barcode/$code")
-                                    .bodyAsText()
-                                val product = Json { ignoreUnknownKeys = true }
-                                    .decodeFromString<Product>(raw)
-                                // Abre directamente el selector de porción con el producto
+                                val raw = httpClient.get("${AppConfig.BASE_URL}/food/barcode/$code").bodyAsText()
+                                val product = Json { ignoreUnknownKeys = true }.decodeFromString<Product>(raw)
                                 sheetMode = SheetMode.PortionPicker(mode.meal, product)
                             } catch (e: Exception) {
-                                snackbarHostState.showSnackbar(
-                                    "Producto no encontrado (código: $code)",
-                                    duration = SnackbarDuration.Short
-                                )
+                                snackbarHostState.showSnackbar("Producto no encontrado (código: $code)", duration = SnackbarDuration.Short)
                             }
                         }
                     },
                     onClose = ::closeSheet
                 )
-
                 is SheetMode.Search -> FoodSearchSheet(
                     mealLabel = mode.meal.label,
                     nutritionService = nutritionService,
-                    onProductSelected = { product ->
-                        sheetMode = SheetMode.PortionPicker(mode.meal, product)
-                    },
+                    onProductSelected = { product -> sheetMode = SheetMode.PortionPicker(mode.meal, product) },
                     onClose = ::closeSheet
                 )
-
                 is SheetMode.PortionPicker -> PortionPickerSheet(
                     mealLabel = mode.meal.label,
                     product = mode.product,
@@ -261,8 +200,6 @@ fun NutritionScreen(
                     onConfirm = { grams ->
                         val list = meals[mode.meal] ?: return@PortionPickerSheet
                         val n = mode.product.nutriments
-
-                        // 1. Creamos el objeto con los datos
                         val entry = MealEntry(
                             id = mode.existingEntry?.id ?: "",
                             name = mode.product.product_name ?: "Sin nombre",
@@ -272,36 +209,23 @@ fun NutritionScreen(
                             carbsPer100 = n?.carbohydrates_100g ?: 0.0,
                             fatPer100 = n?.fat_100g ?: 0.0
                         )
-
-                        // 2. LANZAMOS EL GUARDADO A TURSO
                         scope.launch {
-                            // mode.meal.name será "DESAYUNO", "ALMUERZO", etc.
                             val success = nutritionService.saveMealRemote(entry, mode.meal.name, selectedDate.toString())
-
                             if (success) {
-                                // Solo si el servidor responde OK, lo añadimos a la lista visual
                                 if (mode.existingEntry != null) {
                                     val idx = list.indexOfFirst { it.id == mode.existingEntry.id }
                                     if (idx >= 0) list[idx] = entry
-                                } else {
-                                    list.add(entry)
-                                }
+                                } else list.add(entry)
                                 closeSheet()
-                            } else {
-                                snackbarHostState.showSnackbar(
-                                    message = "Error: No se pudo guardar en la nube. Revisa tu conexión.",
-                                    duration = SnackbarDuration.Short
-                                )
-                            }
+                            } else snackbarHostState.showSnackbar("Error: No se pudo guardar en la nube.", duration = SnackbarDuration.Short)
                         }
                     },
                     onBack = { sheetMode = SheetMode.Search(mode.meal) },
                     onClose = ::closeSheet
                 )
-
                 is SheetMode.EditEntry -> EditEntrySheet(
                     mealLabel = mode.meal.label,
-                    entry     = mode.entry,
+                    entry = mode.entry,
                     onConfirm = { newGrams ->
                         scope.launch {
                             val updatedEntry = mode.entry.copy(grams = newGrams)
@@ -311,26 +235,14 @@ fun NutritionScreen(
                                 val idx = list.indexOfFirst { it.id == mode.entry.id }
                                 if (idx >= 0) list[idx] = updatedEntry
                                 closeSheet()
-                            } else {
-                                snackbarHostState.showSnackbar(
-                                    message = "Error al actualizar. Revisa tu conexión.",
-                                    duration = SnackbarDuration.Short
-                                )
-                            }
+                            } else snackbarHostState.showSnackbar("Error al actualizar.", duration = SnackbarDuration.Short)
                         }
                     },
                     onDelete = {
                         scope.launch {
                             val success = nutritionService.deleteMealRemote(mode.entry.id)
-                            if (success) {
-                                meals[mode.meal]?.removeAll { it.id == mode.entry.id }
-                                closeSheet()
-                            } else {
-                                snackbarHostState.showSnackbar(
-                                    message = "Error al eliminar. Revisa tu conexión.",
-                                    duration = SnackbarDuration.Short
-                                )
-                            }
+                            if (success) { meals[mode.meal]?.removeAll { it.id == mode.entry.id }; closeSheet() }
+                            else snackbarHostState.showSnackbar("Error al eliminar.", duration = SnackbarDuration.Short)
                         }
                     },
                     onClose = ::closeSheet
@@ -340,78 +252,88 @@ fun NutritionScreen(
     }
 
     // ── Contenido ─────────────────────────────────────────────────────────────
-    Box(modifier = Modifier.fillMaxSize().background(BgColor)) {
+    Scaffold(
+        topBar = {
+            Column {
+                TopAppBar(
+                    title = {
+                        Text(
+                            "Nutrición",
+                            fontWeight = FontWeight.Bold,
+                            color = GymSmartColors.TextPrimary
+                        )
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = { navController.popBackStack() }) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Volver",
+                                tint = GymSmartColors.TextPrimary
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = GymSmartColors.Background
+                    )
+                )
+            }
+        },
+        containerColor = GymSmartColors.Background,
+        snackbarHost = {
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier.padding(bottom = 16.dp)
+            ) { data ->
+                Snackbar(
+                    snackbarData = data,
+                    containerColor = GymSmartColors.SurfaceElevated,
+                    contentColor = GymSmartColors.TextPrimary,
+                    actionColor = GymSmartColors.Primary
+                )
+            }
+        }
+    ) { padding ->
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .background(GymSmartColors.Background)
+                .padding(padding),
             contentPadding = PaddingValues(bottom = 32.dp)
         ) {
             item {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(CardColor)
-                        .padding(horizontal = 20.dp, vertical = 16.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(
-                            onClick = { navController.popBackStack() },
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(BgColor)
-                        ) {
-                            Text("←", fontSize = 18.sp, color = TextPrimary)
-                        }
-                        Spacer(Modifier.width(12.dp))
-                        Text("Nutrición", fontWeight = FontWeight.Bold, fontSize = 22.sp, color = TextPrimary)
-                    }
-                }
-            }
-
-            item {
-                Spacer(Modifier.height(12.dp))
                 WeekDayPicker(
-                    today        = today,
+                    today = today,
                     selectedDate = selectedDate,
                     onDateSelected = { selectedDate = it }
                 )
             }
-
             item {
                 Spacer(Modifier.height(16.dp))
                 CalorieCard(
-                    totalKcal      = totalKcal,    kcalGoal    = kcalGoal,
-                    proteins       = totalProteins, proteinGoal = proteinGoal,
-                    carbs          = totalCarbs,    carbGoal    = carbGoal,
-                    fat            = totalFat,      fatGoal     = fatGoal,
+                    totalKcal = totalKcal, kcalGoal = kcalGoal,
+                    proteins = totalProteins, proteinGoal = proteinGoal,
+                    carbs = totalCarbs, carbGoal = carbGoal,
+                    fat = totalFat, fatGoal = fatGoal,
                     activeCalories = if (hasWearable) activeCalories else 0.0
                 )
             }
-
             item { Spacer(Modifier.height(8.dp)) }
-
             items(MealType.entries) { meal ->
                 MealSection(
-                    meal     = meal,
-                    entries  = meals[meal] ?: emptyList(),
-                    onAddClick   = { sheetMode = SheetMode.Search(meal) },
-                    onScanClick  = {                                       // ← NUEVO
+                    meal = meal,
+                    entries = meals[meal] ?: emptyList(),
+                    onAddClick = { sheetMode = SheetMode.Search(meal) },
+                    onScanClick = {
                         onRequestCameraPermission { granted ->
                             if (granted) sheetMode = SheetMode.Scanner(meal)
-                            else scope.launch {
-                                snackbarHostState.showSnackbar("Permiso de cámara denegado")
-                            }
+                            else scope.launch { snackbarHostState.showSnackbar("Permiso de cámara denegado") }
                         }
                     },
                     onEntryClick = { entry -> sheetMode = SheetMode.EditEntry(meal, entry) }
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(10.dp))
             }
         }
-        SnackbarHost(
-            hostState = snackbarHostState,
-            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp)
-        )
     }
 }
 
@@ -425,116 +347,76 @@ private fun CalorieCard(
     fat: Double, fatGoal: Double,
     activeCalories: Double = 0.0
 ) {
-    // El objetivo real = objetivo base + calorías quemadas
     val realGoal = kcalGoal + activeCalories
 
-    Box(
+    Surface(
         modifier = Modifier
             .padding(horizontal = 16.dp)
-            .shadow(4.dp, RoundedCornerShape(20.dp))
-            .clip(RoundedCornerShape(20.dp))
-            .background(CardColor)
-            .padding(20.dp)
+            .fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        color = GymSmartColors.SurfaceCard
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
+            // Rueda — aquí sí usamos el gradiente permitido
             Box(contentAlignment = Alignment.Center) {
-
                 Canvas(modifier = Modifier.size(130.dp)) {
                     val stroke = 16.dp.toPx()
                     val inset  = stroke / 2
                     val arc    = Size(size.width - stroke, size.height - stroke)
 
-                    // Fondo gris
+                    // Fondo del ring
                     drawArc(
-                        color = Color(0xFFF0EDE8),
+                        color = GymSmartColors.SurfaceElevated,
                         startAngle = -90f, sweepAngle = 360f,
                         useCenter = false, topLeft = Offset(inset, inset),
                         size = arc, style = Stroke(stroke, cap = StrokeCap.Butt)
                     )
 
                     val proteinKcal  = proteins * 4.0
-                    val carbsKcal    = carbs   * 4.0
-                    val fatKcal      = fat     * 9.0
+                    val carbsKcal    = carbs    * 4.0
+                    val fatKcal      = fat      * 9.0
                     val totalKcalRaw = proteinKcal + carbsKcal + fatKcal
-
-                    // Total limitado a realGoal — nunca pasa de 360°
                     val totalCapped  = totalKcalRaw.coerceAtMost(realGoal)
-
-                    // Cada macro ocupa su proporción del total consumido, escalado al espacio disponible
                     val totalSweep   = ((totalCapped / realGoal) * 360.0).toFloat()
-
                     val proteinSweep = if (totalKcalRaw > 0) (proteinKcal / totalKcalRaw).toFloat() * totalSweep else 0f
                     val carbsSweep   = if (totalKcalRaw > 0) (carbsKcal   / totalKcalRaw).toFloat() * totalSweep else 0f
                     val fatSweep     = if (totalKcalRaw > 0) (fatKcal     / totalKcalRaw).toFloat() * totalSweep else 0f
 
-                    if (proteinSweep > 0f) drawArc(
-                        color = ColorProtein,
-                        startAngle = -90f,
-                        sweepAngle = proteinSweep,
-                        useCenter = false, topLeft = Offset(inset, inset),
-                        size = arc, style = Stroke(stroke, cap = StrokeCap.Butt)
-                    )
-
-                    if (carbsSweep > 0f) drawArc(
-                        color = ColorCarbs,
-                        startAngle = -90f + proteinSweep,
-                        sweepAngle = carbsSweep,
-                        useCenter = false, topLeft = Offset(inset, inset),
-                        size = arc, style = Stroke(stroke, cap = StrokeCap.Butt)
-                    )
-
-                    if (fatSweep > 0f) drawArc(
-                        color = ColorFat,
-                        startAngle = -90f + proteinSweep + carbsSweep,
-                        sweepAngle = fatSweep,
-                        useCenter = false, topLeft = Offset(inset, inset),
-                        size = arc, style = Stroke(stroke, cap = StrokeCap.Butt)
-                    )
+                    if (proteinSweep > 0f) drawArc(GymSmartColors.MacroProtein, -90f, proteinSweep, false, Offset(inset, inset), arc, style = Stroke(stroke, cap = StrokeCap.Butt))
+                    if (carbsSweep   > 0f) drawArc(GymSmartColors.MacroCarbs,   -90f + proteinSweep, carbsSweep, false, Offset(inset, inset), arc, style = Stroke(stroke, cap = StrokeCap.Butt))
+                    if (fatSweep     > 0f) drawArc(GymSmartColors.MacroFat,     -90f + proteinSweep + carbsSweep, fatSweep, false, Offset(inset, inset), arc, style = Stroke(stroke, cap = StrokeCap.Butt))
                 }
 
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        "${totalKcal.toInt()}",
-                        color = TextPrimary,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 24.sp
-                    )
-                    Text(
-                        "/ ${realGoal.toInt()} kcal",
-                        color = TextSecondary,
-                        fontSize = 10.sp
-                    )
+                    Text("${totalKcal.toInt()}", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = GymSmartColors.TextPrimary)
+                    Text("/ ${realGoal.toInt()} kcal", style = MaterialTheme.typography.labelSmall, color = GymSmartColors.TextSecondary)
                     if (activeCalories > 0) {
-                        Text(
-                            "+${activeCalories.toInt()} 🔥",
-                            color = Color(0xFFFFB800),
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Text("+${activeCalories.toInt()} 🔥", fontSize = 9.sp, color = GymSmartColors.Warning, fontWeight = FontWeight.Bold)
                     }
                 }
             }
 
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                MacroRow("Proteínas", proteins, proteinGoal, ColorProtein)
-                MacroRow("Carbs",     carbs,    carbGoal,    ColorCarbs)
-                MacroRow("Grasas",    fat,      fatGoal,     ColorFat)
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                MacroRow("Proteínas", proteins, proteinGoal, GymSmartColors.MacroProtein)
+                MacroRow("Carbs",     carbs,    carbGoal,    GymSmartColors.MacroCarbs)
+                MacroRow("Grasas",    fat,      fatGoal,     GymSmartColors.MacroFat)
             }
         }
     }
 }
 
 @Composable
-private fun MacroRow(label: String, value: Double, goal: Double, color: Color) {
+private fun MacroRow(label: String, value: Double, goal: Double, color: androidx.compose.ui.graphics.Color) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Box(modifier = Modifier.size(8.dp).clip(RoundedCornerShape(4.dp)).background(color))
-        Text(label, color = TextSecondary, fontSize = 12.sp, modifier = Modifier.width(65.dp))
-        Text("${value.toInt()} / ${goal.toInt()}g", color = TextPrimary,
-            fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(color))
+        Text(label, style = MaterialTheme.typography.bodySmall, color = GymSmartColors.TextSecondary, modifier = Modifier.width(65.dp))
+        Text("${value.toInt()} / ${goal.toInt()}g", style = MaterialTheme.typography.bodySmall, color = GymSmartColors.TextPrimary, fontWeight = FontWeight.SemiBold)
     }
 }
 
@@ -548,81 +430,69 @@ private fun MealSection(
     onScanClick: (() -> Unit)? = null,
     onEntryClick: (MealEntry) -> Unit
 ) {
-    Box(
+    Surface(
         modifier = Modifier
             .padding(horizontal = 16.dp)
-            .shadow(2.dp, RoundedCornerShape(16.dp))
-            .clip(RoundedCornerShape(16.dp))
-            .background(CardColor)
-            .padding(16.dp)
-            .animateContentSize()
+            .fillMaxWidth()
+            .animateContentSize(),
+        shape = MaterialTheme.shapes.medium,
+        color = GymSmartColors.SurfaceCard
     ) {
-        Column {
+        Column(modifier = Modifier.padding(16.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(meal.emoji, fontSize = 18.sp)
-                    Text(meal.label, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = TextPrimary)
+                    Text(meal.label, style = MaterialTheme.typography.titleMedium, color = GymSmartColors.TextPrimary)
                 }
-                Row(verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (entries.isNotEmpty()) {
                         Text("${entries.sumOf { it.kcal }.toInt()} kcal",
-                            color = AccentOrange, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            style = MaterialTheme.typography.labelMedium, color = GymSmartColors.MacroFat, fontWeight = FontWeight.SemiBold)
                     }
-
-                    // ← AÑADE ESTO
                     if (onScanClick != null) {
                         Box(
-                            modifier = Modifier.size(30.dp).clip(RoundedCornerShape(8.dp))
-                                .background(Color(0xFF2196F3)),
+                            modifier = Modifier.size(30.dp).clip(MaterialTheme.shapes.extraSmall).background(GymSmartColors.MacroCarbs),
                             contentAlignment = Alignment.Center
                         ) {
                             IconButton(onClick = onScanClick, modifier = Modifier.size(30.dp)) {
-                                Icon(Icons.Default.QrCodeScanner, contentDescription = "Escanear",
-                                    tint = Color.White, modifier = Modifier.size(18.dp))
+                                Icon(Icons.Default.QrCodeScanner, contentDescription = "Escanear", tint = GymSmartColors.TextPrimary, modifier = Modifier.size(18.dp))
                             }
                         }
                     }
-
                     Box(
-                        modifier = Modifier.size(30.dp).clip(RoundedCornerShape(8.dp))
-                            .background(AccentYellow),
+                        modifier = Modifier.size(30.dp).clip(MaterialTheme.shapes.extraSmall).background(GymSmartColors.Primary),
                         contentAlignment = Alignment.Center
                     ) {
                         IconButton(onClick = onAddClick, modifier = Modifier.size(30.dp)) {
-                            Icon(Icons.Default.Add, contentDescription = "Añadir",
-                                tint = Color.White, modifier = Modifier.size(18.dp))
+                            Icon(Icons.Default.Add, contentDescription = "Añadir", tint = GymSmartColors.OnPrimary, modifier = Modifier.size(18.dp))
                         }
                     }
                 }
             }
 
             entries.forEach { entry ->
-                Divider(color = DividerColor, modifier = Modifier.padding(vertical = 8.dp))
+                HorizontalDivider(color = GymSmartColors.Divider, modifier = Modifier.padding(vertical = 8.dp))
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(MaterialTheme.shapes.extraSmall)
                         .clickable { onEntryClick(entry) }
                         .padding(vertical = 4.dp, horizontal = 2.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(entry.name, color = TextPrimary, fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium)
+                        Text(entry.name, style = MaterialTheme.typography.bodyMedium, color = GymSmartColors.TextPrimary, fontWeight = FontWeight.Medium)
                         Text(
                             "${entry.grams.toInt()}g · P: ${entry.proteins.toInt()}g · C: ${entry.carbs.toInt()}g · G: ${entry.fat.toInt()}g",
-                            color = TextSecondary, fontSize = 11.sp
+                            style = MaterialTheme.typography.bodySmall, color = GymSmartColors.TextSecondary
                         )
                     }
-                    Text("${entry.kcal.toInt()} kcal", color = TextSecondary,
-                        fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                    Text("${entry.kcal.toInt()} kcal", style = MaterialTheme.typography.bodySmall, color = GymSmartColors.TextSecondary, fontWeight = FontWeight.Medium)
                 }
             }
         }
@@ -641,7 +511,6 @@ private fun FoodSearchSheet(
     val scope = rememberCoroutineScope()
     var selectedTab by remember { mutableStateOf(0) }
     val tabs = listOf("Buscar", "Historial", "Favoritos")
-
     var query     by remember { mutableStateOf("") }
     var results   by remember { mutableStateOf<List<Product>>(emptyList()) }
     var history   by remember { mutableStateOf<List<Product>>(emptyList()) }
@@ -649,42 +518,41 @@ private fun FoodSearchSheet(
     var isLoading by remember { mutableStateOf(false) }
     var errorMsg  by remember { mutableStateOf<String?>(null) }
 
-    // Carga historial y favoritos al abrir
     LaunchedEffect(Unit) {
         history   = nutritionService.getFoodHistory()
         favorites = nutritionService.getFavorites()
     }
 
-    Column(
-        modifier = Modifier.fillMaxWidth()
-            .padding(horizontal = 20.dp).padding(bottom = 32.dp)
-    ) {
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 32.dp)) {
         SheetHandle()
         SheetHeader(title = "Añadir a $mealLabel", subtitle = "Elige el alimento", onClose = onClose)
         Spacer(Modifier.height(12.dp))
 
-        // ── Tabs ──────────────────────────────────────────────────────────────
+        // Tabs
         Row(
-            modifier = Modifier.fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .background(Color(0xFFF0EDE8))
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(MaterialTheme.shapes.small)
+                .background(GymSmartColors.SurfaceElevated)
                 .padding(4.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             tabs.forEachIndexed { index, label ->
                 Box(
-                    modifier = Modifier.weight(1f)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(if (selectedTab == index) CardColor else Color.Transparent)
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(MaterialTheme.shapes.extraSmall)
+                        .background(if (selectedTab == index) GymSmartColors.SurfaceCard else androidx.compose.ui.graphics.Color.Transparent)
+                        .border(if (selectedTab == index) 1.dp else 0.dp, if (selectedTab == index) GymSmartColors.Primary else androidx.compose.ui.graphics.Color.Transparent, MaterialTheme.shapes.extraSmall)
                         .clickable { selectedTab = index }
                         .padding(vertical = 8.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         label,
-                        fontSize = 13.sp,
+                        style = MaterialTheme.typography.labelMedium,
                         fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal,
-                        color = if (selectedTab == index) TextPrimary else TextSecondary
+                        color = if (selectedTab == index) GymSmartColors.Primary else GymSmartColors.TextSecondary
                     )
                 }
             }
@@ -693,114 +561,94 @@ private fun FoodSearchSheet(
         Spacer(Modifier.height(12.dp))
 
         when (selectedTab) {
-            // ── Tab Buscar ────────────────────────────────────────────────────
             0 -> {
-                Row(modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
-                        value = query,
-                        onValueChange = { query = it },
-                        placeholder = { Text("ej: arroz, pollo...", color = TextSecondary) },
-                        leadingIcon = { Icon(Icons.Default.Search, null, tint = TextSecondary) },
+                        value = query, onValueChange = { query = it },
+                        placeholder = { Text("ej: arroz, pollo...", color = GymSmartColors.TextSecondary) },
+                        leadingIcon = { Icon(Icons.Default.Search, null, tint = GymSmartColors.TextSecondary) },
                         trailingIcon = {
-                            if (query.isNotEmpty()) {
-                                IconButton(onClick = { query = ""; results = emptyList() }) {
-                                    Icon(Icons.Default.Close, null, tint = TextSecondary)
-                                }
+                            if (query.isNotEmpty()) IconButton(onClick = { query = ""; results = emptyList() }) {
+                                Icon(Icons.Default.Close, null, tint = GymSmartColors.TextSecondary)
                             }
                         },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true,
-                        shape = RoundedCornerShape(12.dp),
-                        colors = searchFieldColors()
+                        modifier = Modifier.weight(1f), singleLine = true,
+                        shape = MaterialTheme.shapes.small,
+                        colors = sheetFieldColors()
                     )
                     Button(
                         onClick = {
                             scope.launch {
                                 isLoading = true; errorMsg = null; results = emptyList()
                                 try {
-                                    val raw = httpClient.get("${AppConfig.BASE_URL}/food/search") {
-                                        parameter("q", query)
-                                    }.bodyAsText()
-                                    results = Json { ignoreUnknownKeys = true }
-                                        .decodeFromString<FoodSearchResponse>(raw).products
+                                    val raw = httpClient.get("${AppConfig.BASE_URL}/food/search") { parameter("q", query) }.bodyAsText()
+                                    results = Json { ignoreUnknownKeys = true }.decodeFromString<FoodSearchResponse>(raw).products
                                 } catch (e: Exception) { errorMsg = "Error: ${e.message}" }
                                 isLoading = false
                             }
                         },
                         enabled = query.isNotBlank() && !isLoading,
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = AccentYellow),
+                        shape = MaterialTheme.shapes.small,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = GymSmartColors.Primary,
+                            contentColor = GymSmartColors.OnPrimary,
+                            disabledContainerColor = GymSmartColors.Outline
+                        ),
                         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 14.dp)
                     ) {
-                        Text(if (isLoading) "..." else "Buscar", color = Color.White, fontWeight = FontWeight.Bold)
+                        Text(if (isLoading) "..." else "Buscar", fontWeight = FontWeight.Bold)
                     }
                 }
                 Spacer(Modifier.height(8.dp))
-                errorMsg?.let { Text(it, color = Color.Red, fontSize = 12.sp) }
+                errorMsg?.let { Text(it, color = GymSmartColors.Error, style = MaterialTheme.typography.bodySmall) }
                 Spacer(Modifier.height(4.dp))
                 ProductList(products = results, onProductSelected = onProductSelected)
             }
-
-            // ── Tab Historial ─────────────────────────────────────────────────
             1 -> {
-                if (history.isEmpty()) {
-                    Box(modifier = Modifier.fillMaxWidth().padding(32.dp),
-                        contentAlignment = Alignment.Center) {
-                        Text("Aún no has añadido ningún alimento",
-                            color = TextSecondary, fontSize = 13.sp)
-                    }
-                } else {
-                    ProductList(products = history, onProductSelected = onProductSelected)
-                }
+                if (history.isEmpty()) EmptySheetState("Aún no has añadido ningún alimento")
+                else ProductList(products = history, onProductSelected = onProductSelected)
             }
-
-            // ── Tab Favoritos ─────────────────────────────────────────────────
             2 -> {
-                if (favorites.isEmpty()) {
-                    Box(modifier = Modifier.fillMaxWidth().padding(32.dp),
-                        contentAlignment = Alignment.Center) {
-                        Text("No tienes favoritos aún. Pulsa ❤️ en un alimento para añadirlo.",
-                            color = TextSecondary, fontSize = 13.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                    }
-                } else {
-                    ProductList(products = favorites, onProductSelected = onProductSelected)
-                }
+                if (favorites.isEmpty()) EmptySheetState("No tienes favoritos. Pulsa ❤️ en un alimento para añadirlo.")
+                else ProductList(products = favorites, onProductSelected = onProductSelected)
             }
         }
     }
 }
 
 @Composable
+private fun EmptySheetState(text: String) {
+    Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+        Text(text, style = MaterialTheme.typography.bodyMedium, color = GymSmartColors.TextSecondary, textAlign = TextAlign.Center)
+    }
+}
+
+@Composable
 private fun ProductList(products: List<Product>, onProductSelected: (Product) -> Unit) {
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    androidx.compose.foundation.lazy.LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         items(products) { product ->
             val kcal = product.nutriments?.energy_kcal_100g ?: product.nutriments?.energy_kcal ?: 0.0
-            Box(
-                modifier = Modifier.fillMaxWidth()
-                    .shadow(1.dp, RoundedCornerShape(12.dp))
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(CardColor)
-                    .clickable { onProductSelected(product) }
-                    .padding(12.dp)
+            Surface(
+                modifier = Modifier.fillMaxWidth().clickable { onProductSelected(product) },
+                shape = MaterialTheme.shapes.small,
+                color = GymSmartColors.SurfaceElevated
             ) {
-                Row(modifier = Modifier.fillMaxWidth(),
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(12.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically) {
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(product.product_name ?: "Sin nombre",
-                            fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = TextPrimary)
+                        Text(product.product_name ?: "Sin nombre", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = GymSmartColors.TextPrimary)
                         Spacer(Modifier.height(4.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            MacroChip("⚡ ${kcal.toInt()} kcal/100g", AccentYellow)
-                            MacroChip("🥩 ${(product.nutriments?.proteins_100g ?: 0.0).toInt()}g", ColorProtein)
-                            MacroChip("🍞 ${(product.nutriments?.carbohydrates_100g ?: 0.0).toInt()}g", ColorCarbs)
-                            MacroChip("🧈 ${(product.nutriments?.fat_100g ?: 0.0).toInt()}g", ColorFat)
+                            MacroChip("⚡ ${kcal.toInt()} kcal", GymSmartColors.Primary)
+                            MacroChip("🥩 ${(product.nutriments?.proteins_100g ?: 0.0).toInt()}g", GymSmartColors.MacroProtein)
+                            MacroChip("🍞 ${(product.nutriments?.carbohydrates_100g ?: 0.0).toInt()}g", GymSmartColors.MacroCarbs)
+                            MacroChip("🧈 ${(product.nutriments?.fat_100g ?: 0.0).toInt()}g", GymSmartColors.MacroFat)
                         }
                     }
-                    Icon(Icons.Default.Add, contentDescription = null,
-                        tint = AccentYellow, modifier = Modifier.size(24.dp))
+                    Icon(Icons.Default.Add, contentDescription = null, tint = GymSmartColors.Primary, modifier = Modifier.size(24.dp))
                 }
             }
         }
@@ -811,142 +659,95 @@ private fun ProductList(products: List<Product>, onProductSelected: (Product) ->
 
 @Composable
 private fun PortionPickerSheet(
-    mealLabel: String,
-    product: Product,
-    initialGrams: Double,
+    mealLabel: String, product: Product, initialGrams: Double,
     nutritionService: NutritionService,
-    onConfirm: (Double) -> Unit,
-    onBack: () -> Unit,
-    onClose: () -> Unit
+    onConfirm: (Double) -> Unit, onBack: () -> Unit, onClose: () -> Unit
 ) {
     var gramsText by remember { mutableStateOf(initialGrams.toInt().toString()) }
     val grams = gramsText.toDoubleOrNull() ?: 0.0
     val n = product.nutriments
-    val kcalPer100     = n?.energy_kcal_100g ?: n?.energy_kcal ?: 0.0
-    val proteinsPer100 = n?.proteins_100g ?: 0.0
-    val carbsPer100    = n?.carbohydrates_100g ?: 0.0
-    val fatPer100      = n?.fat_100g ?: 0.0
-
-    val kcal     = kcalPer100     / 100.0 * grams
-    val proteins = proteinsPer100 / 100.0 * grams
-    val carbs    = carbsPer100    / 100.0 * grams
-    val fat      = fatPer100      / 100.0 * grams
+    val kcalPer100 = n?.energy_kcal_100g ?: n?.energy_kcal ?: 0.0
+    val kcal     = kcalPer100               / 100.0 * grams
+    val proteins = (n?.proteins_100g ?: 0.0)        / 100.0 * grams
+    val carbs    = (n?.carbohydrates_100g ?: 0.0)   / 100.0 * grams
+    val fat      = (n?.fat_100g ?: 0.0)             / 100.0 * grams
 
     val scope = rememberCoroutineScope()
     var isFavorite by remember { mutableStateOf(false) }
 
-    // Carga si ya es favorito
     LaunchedEffect(product.product_name) {
-        isFavorite = nutritionService.getFavorites()
-            .any { it.product_name == product.product_name }
+        isFavorite = nutritionService.getFavorites().any { it.product_name == product.product_name }
     }
 
-    Column(
-        modifier = Modifier.fillMaxWidth()
-            .padding(horizontal = 20.dp).padding(bottom = 32.dp)
-    ) {
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 32.dp)) {
         SheetHandle()
-        Row(modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically) {
+
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(product.product_name ?: "Sin nombre",
-                    fontWeight = FontWeight.Bold, fontSize = 20.sp, color = TextPrimary)
-                Text("Ajusta la cantidad", fontSize = 13.sp, color = TextSecondary)
+                Text(product.product_name ?: "Sin nombre", style = MaterialTheme.typography.titleLarge, color = GymSmartColors.TextPrimary)
+                Text("Ajusta la cantidad", style = MaterialTheme.typography.bodySmall, color = GymSmartColors.TextSecondary)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                // Botón corazón
                 IconButton(
                     onClick = {
                         scope.launch {
-                            if (isFavorite) {
-                                nutritionService.removeFavorite(product.product_name ?: "")
-                                isFavorite = false
-                            } else {
-                                nutritionService.addFavorite(product)
-                                isFavorite = true
-                            }
+                            if (isFavorite) { nutritionService.removeFavorite(product.product_name ?: ""); isFavorite = false }
+                            else { nutritionService.addFavorite(product); isFavorite = true }
                         }
                     },
-                    modifier = Modifier.size(36.dp).clip(RoundedCornerShape(10.dp))
-                        .background(if (isFavorite) Color(0xFFFFEEEE) else Color(0xFFEEEEEE))
-                ) {
-                    Text(if (isFavorite) "❤️" else "🤍", fontSize = 18.sp)
-                }
-                // Botón cerrar
+                    modifier = Modifier.size(36.dp).clip(MaterialTheme.shapes.extraSmall)
+                        .background(if (isFavorite) GymSmartColors.Error.copy(alpha = 0.12f) else GymSmartColors.SurfaceElevated)
+                ) { Text(if (isFavorite) "❤️" else "🤍", fontSize = 18.sp) }
                 IconButton(
                     onClick = onClose,
-                    modifier = Modifier.size(36.dp).clip(RoundedCornerShape(10.dp))
-                        .background(Color(0xFFEEEEEE))
-                ) {
-                    Icon(Icons.Default.Close, contentDescription = "Cerrar",
-                        tint = TextPrimary, modifier = Modifier.size(18.dp))
-                }
+                    modifier = Modifier.size(36.dp).clip(MaterialTheme.shapes.extraSmall).background(GymSmartColors.SurfaceElevated)
+                ) { Icon(Icons.Default.Close, contentDescription = "Cerrar", tint = GymSmartColors.TextPrimary, modifier = Modifier.size(18.dp)) }
             }
         }
+
         Spacer(Modifier.height(20.dp))
 
-        // Input de gramos
         OutlinedTextField(
             value = gramsText,
             onValueChange = { if (it.length <= 5) gramsText = it.filter { c -> c.isDigit() } },
-            label = { Text("Cantidad (g)", color = TextSecondary) },
-            suffix = { Text("g", color = TextSecondary, fontWeight = FontWeight.Bold) },
+            label = { Text("Cantidad (g)") },
+            suffix = { Text("g", color = GymSmartColors.TextSecondary, fontWeight = FontWeight.Bold) },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-            colors = searchFieldColors(),
-            textStyle = LocalTextStyle.current.copy(
-                color = TextPrimary,
-                fontWeight = FontWeight.Bold,
-                fontSize = 18.sp
-            )
+            shape = MaterialTheme.shapes.small,
+            colors = sheetFieldColors(),
+            textStyle = LocalTextStyle.current.copy(color = GymSmartColors.TextPrimary, fontWeight = FontWeight.Bold, fontSize = 18.sp)
         )
 
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(16.dp))
 
-        // Preview de macros en tiempo real
-        Box(
-            modifier = Modifier.fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(CardColor)
-                .padding(16.dp)
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Valores nutricionales para ${grams.toInt()}g",
-                    fontSize = 13.sp, color = TextSecondary)
-                Row(modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceAround) {
-                    NutrientPreview("Calorías", "${kcal.toInt()}", "kcal", AccentYellow)
-                    NutrientPreview("Proteínas", "${proteins.toInt()}", "g", ColorProtein)
-                    NutrientPreview("Carbs", "${carbs.toInt()}", "g", ColorCarbs)
-                    NutrientPreview("Grasas", "${fat.toInt()}", "g", ColorFat)
+        Surface(shape = MaterialTheme.shapes.medium, color = GymSmartColors.SurfaceElevated, modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Valores nutricionales para ${grams.toInt()}g", style = MaterialTheme.typography.bodySmall, color = GymSmartColors.TextSecondary)
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
+                    NutrientPreview("Calorías",  "${kcal.toInt()}",     "kcal", GymSmartColors.Primary)
+                    NutrientPreview("Proteínas", "${proteins.toInt()}", "g",    GymSmartColors.MacroProtein)
+                    NutrientPreview("Carbs",     "${carbs.toInt()}",    "g",    GymSmartColors.MacroCarbs)
+                    NutrientPreview("Grasas",    "${fat.toInt()}",      "g",    GymSmartColors.MacroFat)
                 }
             }
         }
 
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(16.dp))
 
-        // Accesos rápidos de gramos
-        Row(modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf(50, 100, 150, 200).forEach { preset ->
+                val isSelected = gramsText == preset.toString()
                 OutlinedButton(
                     onClick = { gramsText = preset.toString() },
                     modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        contentColor = if (gramsText == preset.toString()) AccentYellow else TextSecondary,
-                        containerColor = if (gramsText == preset.toString()) AccentYellow.copy(alpha = 0.1f) else Color.Transparent
+                    shape = MaterialTheme.shapes.extraSmall,
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = if (isSelected) GymSmartColors.Primary else GymSmartColors.TextSecondary,
+                        containerColor = if (isSelected) GymSmartColors.Primary.copy(alpha = 0.1f) else androidx.compose.ui.graphics.Color.Transparent
                     ),
-                    border = ButtonDefaults.outlinedButtonBorder.copy(
-                        brush = androidx.compose.ui.graphics.SolidColor(
-                            if (gramsText == preset.toString()) AccentYellow else Color(0xFFDDDDDD)
-                        )
-                    )
-                ) {
-                    Text("${preset}g", fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                }
+                    border = BorderStroke(1.dp, if (isSelected) GymSmartColors.Primary else GymSmartColors.Outline)
+                ) { Text("${preset}g", style = MaterialTheme.typography.labelMedium) }
             }
         }
 
@@ -954,73 +755,46 @@ private fun PortionPickerSheet(
 
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             OutlinedButton(
-                onClick = onBack,
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(contentColor = TextSecondary)
-            ) {
-                Text("← Volver")
-            }
+                onClick = onBack, modifier = Modifier.weight(1f), shape = MaterialTheme.shapes.small,
+                border = BorderStroke(1.dp, GymSmartColors.Outline),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = GymSmartColors.TextSecondary)
+            ) { Text("← Volver") }
             Button(
                 onClick = { if (grams > 0) onConfirm(grams) },
-                enabled = grams > 0,
-                modifier = Modifier.weight(2f),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = AccentYellow)
-            ) {
-                Text("Añadir a $mealLabel", color = Color.White, fontWeight = FontWeight.Bold)
-            }
+                enabled = grams > 0, modifier = Modifier.weight(2f), shape = MaterialTheme.shapes.small,
+                colors = ButtonDefaults.buttonColors(containerColor = GymSmartColors.Primary, contentColor = GymSmartColors.OnPrimary, disabledContainerColor = GymSmartColors.Outline)
+            ) { Text("Añadir a $mealLabel", fontWeight = FontWeight.Bold) }
         }
     }
 }
 
-// ── Sheet: Editar entrada existente ──────────────────────────────────────────
+// ── Sheet: Editar entrada ─────────────────────────────────────────────────────
 
 @Composable
 private fun EditEntrySheet(
-    mealLabel: String,
-    entry: MealEntry,
-    onConfirm: (Double) -> Unit,
-    onDelete: () -> Unit,
-    onClose: () -> Unit
+    mealLabel: String, entry: MealEntry,
+    onConfirm: (Double) -> Unit, onDelete: () -> Unit, onClose: () -> Unit
 ) {
     var gramsText by remember { mutableStateOf(entry.grams.toInt().toString()) }
     val grams = gramsText.toDoubleOrNull() ?: 0.0
-
     val kcal     = entry.kcalPer100     / 100.0 * grams
     val proteins = entry.proteinsPer100 / 100.0 * grams
     val carbs    = entry.carbsPer100    / 100.0 * grams
     val fat      = entry.fatPer100      / 100.0 * grams
 
-    Column(
-        modifier = Modifier.fillMaxWidth()
-            .padding(horizontal = 20.dp).padding(bottom = 32.dp)
-    ) {
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 32.dp)) {
         SheetHandle()
-
-        Row(modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Column {
-                Text(entry.name, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = TextPrimary)
-                Text("Editar porción en $mealLabel", fontSize = 13.sp, color = TextSecondary)
+                Text(entry.name, style = MaterialTheme.typography.titleLarge, color = GymSmartColors.TextPrimary)
+                Text("Editar porción en $mealLabel", style = MaterialTheme.typography.bodySmall, color = GymSmartColors.TextSecondary)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                IconButton(
-                    onClick = onDelete,
-                    modifier = Modifier.size(36.dp).clip(RoundedCornerShape(10.dp))
-                        .background(Color(0xFFFFEEEE))
-                ) {
-                    Icon(Icons.Default.Delete, contentDescription = "Eliminar",
-                        tint = Color(0xFFE53935), modifier = Modifier.size(18.dp))
+                IconButton(onClick = onDelete, modifier = Modifier.size(36.dp).clip(MaterialTheme.shapes.extraSmall).background(GymSmartColors.Error.copy(alpha = 0.12f))) {
+                    Icon(Icons.Default.Delete, contentDescription = "Eliminar", tint = GymSmartColors.Error, modifier = Modifier.size(18.dp))
                 }
-                IconButton(
-                    onClick = onClose,
-                    modifier = Modifier.size(36.dp).clip(RoundedCornerShape(10.dp))
-                        .background(Color(0xFFEEEEEE))
-                ) {
-                    Icon(Icons.Default.Close, contentDescription = "Cerrar",
-                        tint = TextPrimary, modifier = Modifier.size(18.dp))
+                IconButton(onClick = onClose, modifier = Modifier.size(36.dp).clip(MaterialTheme.shapes.extraSmall).background(GymSmartColors.SurfaceElevated)) {
+                    Icon(Icons.Default.Close, contentDescription = "Cerrar", tint = GymSmartColors.TextPrimary, modifier = Modifier.size(18.dp))
                 }
             }
         }
@@ -1030,68 +804,48 @@ private fun EditEntrySheet(
         OutlinedTextField(
             value = gramsText,
             onValueChange = { if (it.length <= 5) gramsText = it.filter { c -> c.isDigit() } },
-            label = { Text("Cantidad (g)", color = TextSecondary) },
-            suffix = { Text("g", color = TextSecondary, fontWeight = FontWeight.Bold) },
+            label = { Text("Cantidad (g)") },
+            suffix = { Text("g", color = GymSmartColors.TextSecondary, fontWeight = FontWeight.Bold) },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-            colors = searchFieldColors(),
-            textStyle = LocalTextStyle.current.copy(
-                color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 18.sp
-            )
+            modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.small,
+            colors = sheetFieldColors(),
+            textStyle = LocalTextStyle.current.copy(color = GymSmartColors.TextPrimary, fontWeight = FontWeight.Bold, fontSize = 18.sp)
         )
 
         Spacer(Modifier.height(16.dp))
 
-        Box(modifier = Modifier.fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp)).background(CardColor).padding(16.dp)) {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Valores para ${grams.toInt()}g", fontSize = 13.sp, color = TextSecondary)
-                Row(modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceAround) {
-                    NutrientPreview("Calorías", "${kcal.toInt()}", "kcal", AccentYellow)
-                    NutrientPreview("Proteínas", "${proteins.toInt()}", "g", ColorProtein)
-                    NutrientPreview("Carbs", "${carbs.toInt()}", "g", ColorCarbs)
-                    NutrientPreview("Grasas", "${fat.toInt()}", "g", ColorFat)
+        Surface(shape = MaterialTheme.shapes.medium, color = GymSmartColors.SurfaceElevated, modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Valores para ${grams.toInt()}g", style = MaterialTheme.typography.bodySmall, color = GymSmartColors.TextSecondary)
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
+                    NutrientPreview("Calorías",  "${kcal.toInt()}",     "kcal", GymSmartColors.Primary)
+                    NutrientPreview("Proteínas", "${proteins.toInt()}", "g",    GymSmartColors.MacroProtein)
+                    NutrientPreview("Carbs",     "${carbs.toInt()}",    "g",    GymSmartColors.MacroCarbs)
+                    NutrientPreview("Grasas",    "${fat.toInt()}",      "g",    GymSmartColors.MacroFat)
                 }
             }
         }
 
         Spacer(Modifier.height(16.dp))
 
-        Row(modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf(50, 100, 150, 200).forEach { preset ->
+                val isSelected = gramsText == preset.toString()
                 OutlinedButton(
-                    onClick = { gramsText = preset.toString() },
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        contentColor = if (gramsText == preset.toString()) AccentYellow else TextSecondary,
-                        containerColor = if (gramsText == preset.toString()) AccentYellow.copy(alpha = 0.1f) else Color.Transparent
-                    ),
-                    border = ButtonDefaults.outlinedButtonBorder.copy(
-                        brush = androidx.compose.ui.graphics.SolidColor(
-                            if (gramsText == preset.toString()) AccentYellow else Color(0xFFDDDDDD)
-                        )
-                    )
-                ) {
-                    Text("${preset}g", fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                }
+                    onClick = { gramsText = preset.toString() }, modifier = Modifier.weight(1f), shape = MaterialTheme.shapes.extraSmall,
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = if (isSelected) GymSmartColors.Primary else GymSmartColors.TextSecondary, containerColor = if (isSelected) GymSmartColors.Primary.copy(alpha = 0.1f) else androidx.compose.ui.graphics.Color.Transparent),
+                    border = BorderStroke(1.dp, if (isSelected) GymSmartColors.Primary else GymSmartColors.Outline)
+                ) { Text("${preset}g", style = MaterialTheme.typography.labelMedium) }
             }
         }
 
         Spacer(Modifier.height(20.dp))
 
         Button(
-            onClick = { if (grams > 0) onConfirm(grams) },
-            enabled = grams > 0,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = AccentYellow)
-        ) {
-            Text("Guardar cambios", color = Color.White, fontWeight = FontWeight.Bold)
-        }
+            onClick = { if (grams > 0) onConfirm(grams) }, enabled = grams > 0,
+            modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.small,
+            colors = ButtonDefaults.buttonColors(containerColor = GymSmartColors.Primary, contentColor = GymSmartColors.OnPrimary, disabledContainerColor = GymSmartColors.Outline)
+        ) { Text("Guardar cambios", fontWeight = FontWeight.Bold) }
     }
 }
 
@@ -1099,110 +853,79 @@ private fun EditEntrySheet(
 
 @Composable
 private fun SheetHandle() {
-    Box(
-        modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Box(modifier = Modifier.size(width = 40.dp, height = 4.dp)
-            .clip(RoundedCornerShape(2.dp)).background(Color(0xFFDDDDDD)))
+    Box(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp), contentAlignment = Alignment.Center) {
+        Box(modifier = Modifier.size(width = 40.dp, height = 4.dp).clip(CircleShape).background(GymSmartColors.Outline))
     }
 }
 
 @Composable
 private fun SheetHeader(title: String, subtitle: String, onClose: () -> Unit) {
-    Row(modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
         Column {
-            Text(title, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = TextPrimary)
-            Text(subtitle, fontSize = 13.sp, color = TextSecondary)
+            Text(title, style = MaterialTheme.typography.titleLarge, color = GymSmartColors.TextPrimary)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = GymSmartColors.TextSecondary)
         }
-        IconButton(
-            onClick = onClose,
-            modifier = Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(Color(0xFFEEEEEE))
-        ) {
-            Icon(Icons.Default.Close, contentDescription = "Cerrar",
-                tint = TextPrimary, modifier = Modifier.size(18.dp))
+        IconButton(onClick = onClose, modifier = Modifier.size(36.dp).clip(MaterialTheme.shapes.extraSmall).background(GymSmartColors.SurfaceElevated)) {
+            Icon(Icons.Default.Close, contentDescription = "Cerrar", tint = GymSmartColors.TextPrimary, modifier = Modifier.size(18.dp))
         }
     }
 }
 
 @Composable
-private fun NutrientPreview(label: String, value: String, unit: String, color: Color) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(value, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = color)
-        Text(unit, fontSize = 11.sp, color = TextSecondary)
-        Text(label, fontSize = 10.sp, color = TextSecondary)
+private fun NutrientPreview(label: String, value: String, unit: String, color: androidx.compose.ui.graphics.Color) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(value, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = color)
+        Text(unit, style = MaterialTheme.typography.labelSmall, color = GymSmartColors.TextSecondary)
+        Text(label, style = MaterialTheme.typography.labelSmall, color = GymSmartColors.TextSecondary)
     }
 }
 
 @Composable
-private fun MacroChip(text: String, color: Color) {
-    Box(modifier = Modifier.clip(RoundedCornerShape(6.dp))
-        .background(color.copy(alpha = 0.1f)).padding(horizontal = 6.dp, vertical = 3.dp)) {
-        Text(text, fontSize = 10.sp, color = color, fontWeight = FontWeight.Medium)
+private fun MacroChip(text: String, color: androidx.compose.ui.graphics.Color) {
+    Box(modifier = Modifier.clip(MaterialTheme.shapes.extraSmall).background(color.copy(alpha = 0.12f)).padding(horizontal = 6.dp, vertical = 3.dp)) {
+        Text(text, style = MaterialTheme.typography.labelSmall, color = color, fontWeight = FontWeight.Medium)
     }
 }
 
 @Composable
-private fun searchFieldColors() = OutlinedTextFieldDefaults.colors(
-    focusedTextColor = TextPrimary,
-    unfocusedTextColor = TextPrimary,
-    focusedBorderColor = AccentYellow,
-    unfocusedBorderColor = Color(0xFFDDDDDD),
-    cursorColor = AccentYellow,
-    focusedContainerColor = CardColor,
-    unfocusedContainerColor = CardColor
+private fun sheetFieldColors() = OutlinedTextFieldDefaults.colors(
+    focusedBorderColor      = GymSmartColors.Primary,
+    unfocusedBorderColor    = GymSmartColors.Outline,
+    focusedLabelColor       = GymSmartColors.Primary,
+    unfocusedLabelColor     = GymSmartColors.TextSecondary,
+    cursorColor             = GymSmartColors.Primary,
+    focusedTextColor        = GymSmartColors.TextPrimary,
+    unfocusedTextColor      = GymSmartColors.TextPrimary,
+    focusedContainerColor   = GymSmartColors.SurfaceElevated,
+    unfocusedContainerColor = GymSmartColors.SurfaceElevated,
 )
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun WeekDayPicker(
-    today: LocalDate,
-    selectedDate: LocalDate,
-    onDateSelected: (LocalDate) -> Unit
-) {
+private fun WeekDayPicker(today: LocalDate, selectedDate: LocalDate, onDateSelected: (LocalDate) -> Unit) {
     val dayLabels = listOf("L", "M", "M", "J", "V", "S", "D")
-
-    // Semana 0 = semana actual, -2..+2 = rango de semanas (cubre 14 días atrás y adelante)
-    val weekCount = 5  // semanas -2, -1, 0, +1, +2
-    val initialPage = 2 // arranca en la semana actual
-
+    val weekCount = 5
+    val initialPage = 2
     val pagerState = rememberPagerState(initialPage = initialPage) { weekCount }
-
-    // Lunes de la semana actual
     val currentMonday = today.minus(DatePeriod(days = today.dayOfWeek.ordinal))
 
-    HorizontalPager(
-        state = pagerState,
-        modifier = Modifier.fillMaxWidth()
-    ) { pageIndex ->
-        // Offset de semanas respecto a la actual (-2, -1, 0, +1, +2)
+    HorizontalPager(state = pagerState, modifier = Modifier.fillMaxWidth()) { pageIndex ->
         val weekOffset = pageIndex - initialPage
         val monday = currentMonday.plus(DatePeriod(days = weekOffset * 7))
         val weekDays = (0..6).map { monday.plus(DatePeriod(days = it)) }
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
+        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
             weekDays.forEachIndexed { index, date ->
                 val isSelected = date == selectedDate
                 val isToday    = date == today
-                val isFuture   = date > today
                 val diffDays   = (date.toEpochDays() - today.toEpochDays()).toInt()
                 val inRange    = diffDays in -14..14
 
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable(enabled = inRange) {  // ← ya no filtra isFuture, solo inRange
-                            onDateSelected(date)
-                        }
+                        .clip(MaterialTheme.shapes.extraSmall)
+                        .clickable(enabled = inRange) { onDateSelected(date) }
                         .padding(horizontal = 4.dp, vertical = 8.dp)
                 ) {
                     Box(
@@ -1210,53 +933,39 @@ private fun WeekDayPicker(
                         modifier = Modifier
                             .size(28.dp)
                             .clip(CircleShape)
-                            .background(if (isSelected) AccentYellow else Color.Transparent)
-                            .then(
-                                if (isToday && !isSelected)
-                                    Modifier.border(1.5.dp, AccentYellow, CircleShape)
-                                else Modifier
-                            )
+                            .background(if (isSelected) GymSmartColors.Primary else androidx.compose.ui.graphics.Color.Transparent)
+                            .then(if (isToday && !isSelected) Modifier.border(1.5.dp, GymSmartColors.Primary, CircleShape) else Modifier)
                     ) {
                         Text(
-                            text = dayLabels[index],
-                            fontSize = 12.sp,
+                            dayLabels[index], style = MaterialTheme.typography.labelMedium,
                             fontWeight = if (isSelected || isToday) FontWeight.Bold else FontWeight.Normal,
                             color = when {
-                                isSelected -> TextPrimary
-                                isToday    -> AccentYellow
-                                !inRange   -> TextSecondary.copy(alpha = 0.3f)
-                                else       -> TextSecondary
+                                isSelected -> GymSmartColors.OnPrimary
+                                isToday    -> GymSmartColors.Primary
+                                !inRange   -> GymSmartColors.TextDisabled
+                                else       -> GymSmartColors.TextSecondary
                             }
                         )
                     }
-
                     Spacer(Modifier.height(4.dp))
-
                     Text(
-                        text = date.dayOfMonth.toString(),
-                        fontSize = 14.sp,
+                        date.dayOfMonth.toString(), style = MaterialTheme.typography.bodyMedium,
                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                         color = when {
-                            isSelected -> TextPrimary
-                            !inRange   -> TextSecondary.copy(alpha = 0.3f)
-                            else       -> TextPrimary
+                            isSelected -> GymSmartColors.TextPrimary
+                            !inRange   -> GymSmartColors.TextDisabled
+                            else       -> GymSmartColors.TextPrimary
                         }
                     )
-
                     Spacer(Modifier.height(4.dp))
-
                     Box(
-                        modifier = Modifier
-                            .size(5.dp)
-                            .clip(CircleShape)
-                            .background(
-                                when {
-                                    isSelected -> AccentYellow
-                                    isToday    -> AccentYellow
-                                    !inRange   -> Color.Transparent
-                                    else       -> TextSecondary.copy(alpha = 0.25f)
-                                }
-                            )
+                        modifier = Modifier.size(5.dp).clip(CircleShape).background(
+                            when {
+                                isSelected || isToday -> GymSmartColors.Primary
+                                !inRange -> androidx.compose.ui.graphics.Color.Transparent
+                                else -> GymSmartColors.TextDisabled
+                            }
+                        )
                     )
                 }
             }

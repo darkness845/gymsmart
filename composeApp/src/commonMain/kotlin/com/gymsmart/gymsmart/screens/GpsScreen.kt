@@ -1,8 +1,6 @@
 package com.gymsmart.gymsmart.screens
 
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
@@ -10,10 +8,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.gymsmart.gymsmart.MapComponent
 import com.gymsmart.gymsmart.model.ActiveRoute
@@ -22,9 +18,10 @@ import com.gymsmart.gymsmart.model.RoutePointDto
 import com.gymsmart.gymsmart.model.SaveRouteRequest
 import com.gymsmart.gymsmart.services.GpsService
 import com.gymsmart.gymsmart.services.LocationProvider
+import com.gymsmart.gymsmart.ui.theme.GymSmartColors
 import kotlinx.coroutines.launch
-import kotlin.time.Clock
 import kotlin.math.*
+import kotlin.time.Clock
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -34,8 +31,6 @@ fun GpsScreen(
     onRequestPermission: (onResult: (Boolean) -> Unit) -> Unit,
     gpsService: GpsService
 ) {
-    val accentYellow = Color(0xFFFFC107)
-    val bgCream = Color(0xFFF5F5F5)
     val scope = rememberCoroutineScope()
 
     var activeRoute by remember { mutableStateOf(ActiveRoute()) }
@@ -68,28 +63,69 @@ fun GpsScreen(
         }
     }
 
+    // --- Diálogo de guardado ---
     if (showSaveDialog) {
         AlertDialog(
             onDismissRequest = { if (!isSaving) showSaveDialog = false },
-            title = { Text("Guardar ruta", fontWeight = FontWeight.Bold) },
+            containerColor = GymSmartColors.SurfaceElevated,
+            shape = MaterialTheme.shapes.large,
+            title = {
+                Text(
+                    "Guardar ruta",
+                    fontWeight = FontWeight.Bold,
+                    color = GymSmartColors.TextPrimary
+                )
+            },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        "${formatDouble(activeRoute.distanceMeters / 1000, 2)} km  •  ${activeRoute.points.size} puntos",
-                        fontSize = 13.sp,
-                        color = Color.Gray
-                    )
-                    Spacer(Modifier.height(4.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Surface(
+                        color = GymSmartColors.SurfaceCard,
+                        shape = MaterialTheme.shapes.small
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                "${formatDouble(activeRoute.distanceMeters / 1000, 2)} km",
+                                color = GymSmartColors.Primary,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                "${activeRoute.points.size} puntos",
+                                color = GymSmartColors.TextSecondary,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
                     OutlinedTextField(
                         value = routeName,
                         onValueChange = { routeName = it },
                         label = { Text("Nombre de la ruta") },
                         singleLine = true,
                         enabled = !isSaving,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.small,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = GymSmartColors.Primary,
+                            unfocusedBorderColor = GymSmartColors.Outline,
+                            focusedLabelColor = GymSmartColors.Primary,
+                            unfocusedLabelColor = GymSmartColors.TextSecondary,
+                            cursorColor = GymSmartColors.Primary,
+                            focusedTextColor = GymSmartColors.TextPrimary,
+                            unfocusedTextColor = GymSmartColors.TextPrimary,
+                            focusedContainerColor = GymSmartColors.SurfaceCard,
+                            unfocusedContainerColor = GymSmartColors.SurfaceCard,
+                        )
                     )
                     if (saveSuccess) {
-                        Text("✅ Ruta guardada correctamente", color = Color(0xFF4CAF50), fontSize = 13.sp)
+                        Text(
+                            "✅ Ruta guardada correctamente",
+                            color = GymSmartColors.Success,
+                            style = MaterialTheme.typography.bodySmall
+                        )
                     }
                 }
             },
@@ -107,10 +143,10 @@ fun GpsScreen(
                                 startedAt = startedAt,
                                 points = activeRoute.points.map { p ->
                                     RoutePointDto(
-                                        lat       = p.lat,
-                                        lon       = p.lon,
+                                        lat = p.lat,
+                                        lon = p.lon,
                                         timestamp = p.timestamp,
-                                        speedMs   = p.speedMs,
+                                        speedMs = p.speedMs,
                                         altitudeM = p.altitudeM,
                                         accuracyM = p.accuracyM
                                     )
@@ -133,16 +169,22 @@ fun GpsScreen(
                         }
                     },
                     enabled = routeName.isNotBlank() && !isSaving,
-                    colors = ButtonDefaults.buttonColors(containerColor = accentYellow)
+                    shape = MaterialTheme.shapes.small,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = GymSmartColors.Primary,
+                        disabledContainerColor = GymSmartColors.Outline,
+                        contentColor = GymSmartColors.OnPrimary,
+                        disabledContentColor = GymSmartColors.TextDisabled
+                    )
                 ) {
                     if (isSaving) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(16.dp),
                             strokeWidth = 2.dp,
-                            color = Color.Black
+                            color = GymSmartColors.OnPrimary
                         )
                     } else {
-                        Text("Guardar", color = Color.Black, fontWeight = FontWeight.Bold)
+                        Text("Guardar", fontWeight = FontWeight.Bold)
                     }
                 }
             },
@@ -156,7 +198,7 @@ fun GpsScreen(
                     },
                     enabled = !isSaving
                 ) {
-                    Text("Descartar")
+                    Text("Descartar", color = GymSmartColors.TextSecondary)
                 }
             }
         )
@@ -164,62 +206,129 @@ fun GpsScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Ruta GPS", fontWeight = FontWeight.Bold) },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Volver")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
-            )
+            Column {
+                TopAppBar(
+                    title = {
+                        Text(
+                            "Ruta GPS",
+                            fontWeight = FontWeight.Bold,
+                            color = GymSmartColors.TextPrimary
+                        )
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = { navController.popBackStack() }) {
+                            Icon(
+                                Icons.Default.ArrowBack,
+                                contentDescription = "Volver",
+                                tint = GymSmartColors.TextPrimary
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = GymSmartColors.Background
+                    )
+                )
+            }
         },
-        containerColor = bgCream
+        containerColor = GymSmartColors.Background
     ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Card(
+
+            // --- Tarjeta de métricas ---
+            Surface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                elevation = CardDefaults.cardElevation(4.dp)
+                color = GymSmartColors.SurfaceCard,
+                shape = MaterialTheme.shapes.medium
             ) {
                 Column(
-                    modifier = Modifier.padding(24.dp),
+                    modifier = Modifier.padding(20.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text("Distancia", fontSize = 13.sp, color = Color.Gray)
+                    Text(
+                        "Distancia",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = GymSmartColors.TextSecondary
+                    )
                     Text(
                         "${formatDouble(activeRoute.distanceMeters / 1000, 2)} km",
-                        fontSize = 36.sp,
+                        style = MaterialTheme.typography.displaySmall,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFF333333)
+                        color = GymSmartColors.TextPrimary
                     )
+
                     Spacer(Modifier.height(16.dp))
+                    HorizontalDivider(color = GymSmartColors.Divider)
+                    Spacer(Modifier.height(16.dp))
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceEvenly
                     ) {
-                        MetricBox("Puntos", "${activeRoute.points.size}", accentYellow)
-                        MetricBox(
-                            "Velocidad",
-                            "${formatFloat(activeRoute.points.lastOrNull()?.speedMs?.times(3.6f) ?: 0f, 1)} km/h",
-                            accentYellow
+                        MetricItem(
+                            label = "Velocidad",
+                            value = "${formatFloat(activeRoute.points.lastOrNull()?.speedMs?.times(3.6f) ?: 0f, 1)}",
+                            unit = "km/h"
                         )
-                        MetricBox(
-                            "Altitud",
-                            "${formatDouble(activeRoute.points.lastOrNull()?.altitudeM ?: 0.0, 0)} m",
-                            accentYellow
+                        VerticalDivider(
+                            modifier = Modifier.height(40.dp),
+                            color = GymSmartColors.Divider
+                        )
+                        MetricItem(
+                            label = "Altitud",
+                            value = "${formatDouble(activeRoute.points.lastOrNull()?.altitudeM ?: 0.0, 0)}",
+                            unit = "m"
+                        )
+                        VerticalDivider(
+                            modifier = Modifier.height(40.dp),
+                            color = GymSmartColors.Divider
+                        )
+                        MetricItem(
+                            label = "Puntos",
+                            value = "${activeRoute.points.size}",
+                            unit = ""
                         )
                     }
                 }
             }
 
+            // --- Mapa ---
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .clip(MaterialTheme.shapes.medium)
+            ) {
+                MapComponent(
+                    points = activeRoute.points,
+                    completedPoints = activeRoute.points,
+                    userLocation = activeRoute.points.lastOrNull(),
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+
+            // --- Error ---
+            errorMsg?.let {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = GymSmartColors.Error.copy(alpha = 0.12f),
+                    shape = MaterialTheme.shapes.small
+                ) {
+                    Text(
+                        "⚠ $it",
+                        modifier = Modifier.padding(12.dp),
+                        color = GymSmartColors.Error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+
+            // --- Botón iniciar / parar ---
             Button(
                 onClick = {
                     if (!activeRoute.isRecording) {
@@ -234,74 +343,63 @@ fun GpsScreen(
                         }
                     } else {
                         activeRoute = activeRoute.copy(isRecording = false)
-                        if (activeRoute.points.isNotEmpty()) {
-                            showSaveDialog = true
-                        }
+                        if (activeRoute.points.isNotEmpty()) showSaveDialog = true
                     }
                 },
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = if (activeRoute.isRecording) Color.Red else accentYellow
+                    containerColor = if (activeRoute.isRecording) GymSmartColors.Error else GymSmartColors.Primary,
+                    contentColor = GymSmartColors.OnPrimary,
+                    disabledContainerColor = GymSmartColors.Outline,
+                    disabledContentColor = GymSmartColors.TextDisabled
                 ),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth().height(56.dp)
-            ) {
-                Text(
-                    if (activeRoute.isRecording) "⏹ Parar ruta" else "▶ Iniciar ruta",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
-                    color = Color.Black
-                )
-            }
-
-            Box(
+                shape = MaterialTheme.shapes.small,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f)
-                    .clip(RoundedCornerShape(16.dp))
-                    .border(1.dp, Color.LightGray, RoundedCornerShape(16.dp))
+                    .height(52.dp)
             ) {
-                MapComponent(
-                    points = activeRoute.points,
-                    completedPoints = activeRoute.points,
-                    userLocation = activeRoute.points.lastOrNull(),
-                    modifier = Modifier.fillMaxSize()
+                Text(
+                    if (activeRoute.isRecording) "Parar ruta" else "Iniciar ruta",
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.labelLarge
                 )
             }
 
-            errorMsg?.let {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFEBEE))
-                ) {
-                    Text("⚠️ $it", modifier = Modifier.padding(12.dp), color = Color.Red, fontSize = 13.sp)
-                }
-            }
+            Spacer(Modifier.height(4.dp))
+        }
+    }
+}
 
-            if (activeRoute.points.isNotEmpty()) {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    elevation = CardDefaults.cardElevation(2.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Últimos puntos", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                        Spacer(Modifier.height(8.dp))
-                        activeRoute.points.takeLast(5).reversed().forEach { point ->
-                            Text(
-                                "📍 ${formatDouble(point.lat, 5)}, ${formatDouble(point.lon, 5)}  •  ${formatFloat(point.speedMs * 3.6f, 1)} km/h",
-                                fontSize = 12.sp,
-                                color = Color.Gray,
-                                modifier = Modifier.padding(vertical = 2.dp)
-                            )
-                        }
-                    }
-                }
+// --- Componente auxiliar de métrica ---
+@Composable
+private fun MetricItem(label: String, value: String, unit: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = GymSmartColors.TextSecondary
+        )
+        Spacer(Modifier.height(2.dp))
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(
+                value,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = GymSmartColors.TextPrimary
+            )
+            if (unit.isNotEmpty()) {
+                Spacer(Modifier.width(2.dp))
+                Text(
+                    unit,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = GymSmartColors.TextSecondary,
+                    modifier = Modifier.padding(bottom = 3.dp)
+                )
             }
         }
     }
 }
 
+// --- Funciones de cálculo (sin cambios) ---
 fun calcularDistancia(points: List<RoutePoint>, nuevo: RoutePoint): Double {
     if (points.isEmpty()) return 0.0
     return calcularDistanciaTotal(points) + haversine(points.last(), nuevo)

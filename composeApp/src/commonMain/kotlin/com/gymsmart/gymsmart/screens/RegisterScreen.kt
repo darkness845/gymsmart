@@ -2,29 +2,23 @@ package com.gymsmart.gymsmart.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.gymsmart.gymsmart.navigation.Screen
 import com.gymsmart.gymsmart.services.AuthService
+import com.gymsmart.gymsmart.ui.theme.GymSmartColors
 import kotlinx.coroutines.launch
 
 @Composable
 fun RegisterScreen(navController: NavController, authService: AuthService) {
-    val background    = Color(0xFFF5F5F5)
-    val accent        = Color(0xFFFFC107)
-    val textPrimary   = Color(0xFF1C1C1C)
-    val textSecondary = Color(0xFF6B6B6B)
 
     var name      by remember { mutableStateOf("") }
     var email     by remember { mutableStateOf("") }
@@ -32,7 +26,6 @@ fun RegisterScreen(navController: NavController, authService: AuthService) {
     var errorMsg  by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
 
-    // Paso 2: verificación de email
     var showVerification by remember { mutableStateOf(false) }
     var verifyToken      by remember { mutableStateOf("") }
     var verifyError      by remember { mutableStateOf("") }
@@ -41,39 +34,92 @@ fun RegisterScreen(navController: NavController, authService: AuthService) {
 
     val scope = rememberCoroutineScope()
 
+    // Colores de TextField reutilizables
+    val fieldColors = OutlinedTextFieldDefaults.colors(
+        focusedBorderColor      = GymSmartColors.Primary,
+        unfocusedBorderColor    = GymSmartColors.Outline,
+        focusedLabelColor       = GymSmartColors.Primary,
+        unfocusedLabelColor     = GymSmartColors.TextSecondary,
+        cursorColor             = GymSmartColors.Primary,
+        focusedTextColor        = GymSmartColors.TextPrimary,
+        unfocusedTextColor      = GymSmartColors.TextPrimary,
+        focusedContainerColor   = GymSmartColors.SurfaceCard,
+        unfocusedContainerColor = GymSmartColors.SurfaceCard,
+        errorBorderColor        = GymSmartColors.Error,
+        errorLabelColor         = GymSmartColors.Error,
+        errorContainerColor     = GymSmartColors.SurfaceCard,
+    )
+
     Column(
-        modifier = Modifier.fillMaxSize().background(background).padding(28.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .background(GymSmartColors.Background)
+            .padding(horizontal = 28.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         if (!showVerification) {
+
             // ── Paso 1: formulario de registro ───────────────────────────────
-            Text("Crear cuenta", style = MaterialTheme.typography.headlineLarge,
-                fontWeight = FontWeight.Bold, color = textPrimary)
-            Text("Únete a GymSmart", style = MaterialTheme.typography.bodyMedium, color = textSecondary)
+
+            Text(
+                "Crear cuenta",
+                style = MaterialTheme.typography.headlineLarge,
+                color = GymSmartColors.TextPrimary
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Únete a GymSmart",
+                style = MaterialTheme.typography.bodyMedium,
+                color = GymSmartColors.TextSecondary
+            )
+
             Spacer(Modifier.height(40.dp))
 
-            OutlinedTextField(value = name, onValueChange = { name = it },
-                label = { Text("Nombre") }, singleLine = true,
-                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp))
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Nombre") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.small,
+                colors = fieldColors
+            )
             Spacer(Modifier.height(14.dp))
 
-            OutlinedTextField(value = email, onValueChange = { email = it },
-                label = { Text("Email") }, singleLine = true,
+            OutlinedTextField(
+                value = email,
+                onValueChange = { email = it },
+                label = { Text("Email") },
+                singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp))
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.small,
+                colors = fieldColors
+            )
             Spacer(Modifier.height(14.dp))
 
-            OutlinedTextField(value = password, onValueChange = { password = it },
-                label = { Text("Contraseña") }, singleLine = true,
+            OutlinedTextField(
+                value = password,
+                onValueChange = { password = it },
+                label = { Text("Contraseña") },
+                singleLine = true,
                 visualTransformation = PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp))
-            Spacer(Modifier.height(10.dp))
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.small,
+                colors = fieldColors
+            )
+
+            Spacer(Modifier.height(12.dp))
 
             if (errorMsg.isNotEmpty()) {
-                Text(errorMsg, color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall)
+                Text(
+                    errorMsg,
+                    color = GymSmartColors.Error,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.fillMaxWidth()
+                )
                 Spacer(Modifier.height(8.dp))
             }
 
@@ -92,28 +138,69 @@ fun RegisterScreen(navController: NavController, authService: AuthService) {
                     }
                 },
                 enabled = !isLoading && name.isNotBlank() && email.isNotBlank() && password.isNotBlank(),
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = accent)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+                shape = MaterialTheme.shapes.small,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor         = GymSmartColors.Primary,
+                    disabledContainerColor = GymSmartColors.Outline,
+                    contentColor           = GymSmartColors.OnPrimary,
+                    disabledContentColor   = GymSmartColors.TextDisabled
+                )
             ) {
-                if (isLoading) CircularProgressIndicator(color = Color.Black,
-                    modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
-                else Text("Crear cuenta", color = Color.Black, fontWeight = FontWeight.Bold)
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        color = GymSmartColors.OnPrimary,
+                        modifier = Modifier.size(22.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Text("Crear cuenta", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
+                }
             }
 
             Spacer(Modifier.height(16.dp))
+
             TextButton(onClick = { navController.navigate(Screen.Login.route) }) {
-                Text("¿Ya tienes cuenta? ", color = textSecondary)
-                Text("Inicia sesión", color = accent, fontWeight = FontWeight.Bold)
+                Text("¿Ya tienes cuenta?  ", color = GymSmartColors.TextSecondary, style = MaterialTheme.typography.bodyMedium)
+                Text("Inicia sesión", color = GymSmartColors.Primary, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
             }
 
         } else {
+
             // ── Paso 2: verificar email ───────────────────────────────────────
-            Text("Verifica tu email", style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold, color = textPrimary)
+
+            // Icono visual de email — simple círculo con acento
+            Box(
+                modifier = Modifier
+                    .size(72.dp)
+                    .background(GymSmartColors.SurfaceCard, shape = MaterialTheme.shapes.extraLarge),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("✉", style = MaterialTheme.typography.headlineLarge, color = GymSmartColors.Primary)
+            }
+
+            Spacer(Modifier.height(24.dp))
+
+            Text(
+                "Verifica tu email",
+                style = MaterialTheme.typography.headlineMedium,
+                color = GymSmartColors.TextPrimary
+            )
             Spacer(Modifier.height(8.dp))
-            Text("Hemos enviado un código a $email",
-                color = textSecondary, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                "Hemos enviado un código a",
+                style = MaterialTheme.typography.bodyMedium,
+                color = GymSmartColors.TextSecondary
+            )
+            Text(
+                email,
+                style = MaterialTheme.typography.bodyMedium,
+                color = GymSmartColors.Primary,
+                fontWeight = FontWeight.SemiBold
+            )
+
             Spacer(Modifier.height(32.dp))
 
             OutlinedTextField(
@@ -122,13 +209,21 @@ fun RegisterScreen(navController: NavController, authService: AuthService) {
                 label = { Text("Código de verificación") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-                isError = verifyError.isNotEmpty()
+                shape = MaterialTheme.shapes.small,
+                isError = verifyError.isNotEmpty(),
+                colors = fieldColors
             )
+
             if (verifyError.isNotEmpty()) {
                 Spacer(Modifier.height(6.dp))
-                Text(verifyError, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                Text(
+                    verifyError,
+                    color = if (verifyError.contains("reenviado")) GymSmartColors.Success else GymSmartColors.Error,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
+
             Spacer(Modifier.height(20.dp))
 
             Button(
@@ -138,7 +233,6 @@ fun RegisterScreen(navController: NavController, authService: AuthService) {
                         verifyError = ""
                         val result = authService.verifyEmail(verifyToken.trim())
                         if (result.success) {
-                            // Email verificado → ir al onboarding
                             navController.navigate(Screen.Onboarding.route) {
                                 popUpTo(Screen.Register.route) { inclusive = true }
                             }
@@ -149,18 +243,30 @@ fun RegisterScreen(navController: NavController, authService: AuthService) {
                     }
                 },
                 enabled = verifyToken.isNotBlank() && !isVerifying,
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = accent)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+                shape = MaterialTheme.shapes.small,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor         = GymSmartColors.Primary,
+                    disabledContainerColor = GymSmartColors.Outline,
+                    contentColor           = GymSmartColors.OnPrimary,
+                    disabledContentColor   = GymSmartColors.TextDisabled
+                )
             ) {
-                if (isVerifying) CircularProgressIndicator(color = Color.Black,
-                    modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
-                else Text("Verificar cuenta", color = Color.Black, fontWeight = FontWeight.Bold)
+                if (isVerifying) {
+                    CircularProgressIndicator(
+                        color = GymSmartColors.OnPrimary,
+                        modifier = Modifier.size(22.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Text("Verificar cuenta", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
+                }
             }
 
             Spacer(Modifier.height(16.dp))
 
-            // Reenviar código
             TextButton(
                 onClick = {
                     scope.launch {
@@ -174,7 +280,8 @@ fun RegisterScreen(navController: NavController, authService: AuthService) {
             ) {
                 Text(
                     if (isResending) "Enviando..." else "¿No te llegó? Reenviar código",
-                    color = textSecondary
+                    color = GymSmartColors.TextSecondary,
+                    style = MaterialTheme.typography.bodyMedium
                 )
             }
         }

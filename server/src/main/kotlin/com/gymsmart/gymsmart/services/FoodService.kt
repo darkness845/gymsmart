@@ -60,10 +60,10 @@ class FoodService {
         }
     }
 
-    // ── Búsqueda por texto (prioriza ES) ──────────────────────────────────────
+    // ── Búsqueda por texto ──────────────────────────────────────
     suspend fun searchFood(query: String): FoodSearchResponse {
         return try {
-            // Primero intenta en el índice español (más resultados Hacendado, Carrefour, Aldi)
+            // Primero intenta en el índice español
             val esResponse = fetchSearch(query, "world", "countries_tags_en" to "spain")
             if (esResponse.products.isNotEmpty()) return esResponse
 

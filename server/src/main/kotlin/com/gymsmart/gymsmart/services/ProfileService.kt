@@ -105,9 +105,9 @@ class ProfileService(private val turso: TursoService) {
             )
         )
 
-        // Guardar historial solo si el peso cambió (o es la primera vez)
+        // Guardar historial solo si el peso cambió
         if (previous == null || previous.weightKg != weightKg) {
-            val today = java.time.LocalDate.now().toString() // "2025-05-14"
+            val today = java.time.LocalDate.now().toString()
 
             // Evitar duplicado del mismo día
             val existing = turso.execute(

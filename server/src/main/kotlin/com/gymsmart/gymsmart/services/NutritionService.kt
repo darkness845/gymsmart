@@ -58,7 +58,7 @@ class NutritionService(private val turso: TursoService) {
         return turso.extractRows(result)
     }
 
-    // Historial — últimos alimentos únicos usados (sin repetir nombre)
+    // Historial — últimos alimentos únicos usados
     suspend fun getFoodHistory(userId: String): List<List<String?>> {
         val result = turso.execute(
             """

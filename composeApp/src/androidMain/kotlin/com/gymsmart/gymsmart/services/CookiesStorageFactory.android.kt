@@ -6,7 +6,6 @@ import io.ktor.http.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-// Necesitas pasar contexto en Android — ver Paso 5
 lateinit var appContext: Context
 
 actual fun createCookiesStorage(): CookiesStorage = AndroidCookiesStorage(appContext)

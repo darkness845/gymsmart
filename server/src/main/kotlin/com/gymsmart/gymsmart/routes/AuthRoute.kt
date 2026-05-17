@@ -44,7 +44,7 @@ fun Route.authRoutes(userService: UserService, emailService: EmailService) {
                 val user  = pair.first
                 val token = pair.second
                 val emailSent = emailService.sendEmailVerification(req.email, req.name, token)
-                println(">>> Email enviado: $emailSent — destino: ${req.email}")  // ← AÑADE ESTO
+                println(">>> Email enviado: $emailSent — destino: ${req.email}")
                 call.respond(HttpStatusCode.Created, AuthResponse(true, "VERIFY_EMAIL"))
             }
             .onFailure { e ->
@@ -114,7 +114,7 @@ fun Route.authRoutes(userService: UserService, emailService: EmailService) {
             }
     }
 
-    // Endpoints de reset de contraseña (igual que antes)
+    // Endpoints de reset de contraseña
     post("/auth/forgot-password") {
         val req = call.receive<ForgotPasswordRequest>()
         if (req.email.isBlank()) {

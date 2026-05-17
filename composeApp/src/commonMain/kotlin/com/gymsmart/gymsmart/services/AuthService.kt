@@ -16,7 +16,7 @@ class AuthService {
     val client = HttpClient {
         install(ContentNegotiation) { json() }
         install(HttpCookies) {
-            storage = createCookiesStorage() // ← expect/actual resuelve la plataforma
+            storage = createCookiesStorage()
         }
     }
 

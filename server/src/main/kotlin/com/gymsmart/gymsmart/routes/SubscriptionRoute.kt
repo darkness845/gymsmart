@@ -47,7 +47,7 @@ fun Route.subscriptionRoutes(
             })
         }
 
-        // Nuevo endpoint único: crea PI + PaymentMethod + confirma todo en backend
+        // Nuevo endpoint único: crea PI + PaymentMethod + confirma todoo en backend
         post("/pay") {
             val session = call.sessions.get<UserSession>()
                 ?: return@post call.respond(HttpStatusCode.Unauthorized)
@@ -83,7 +83,7 @@ fun Route.subscriptionRoutes(
             profileService.activatePremium(session.userId, duration)
             println(">>> Premium activado para ${session.userId}")
 
-            // Email con timeout de 10s, no bloquea más de eso
+            // Email con timeout de 10s
             try {
                 withTimeout(10_000) {
                     emailService.sendPurchaseConfirmation(user.email, user.name)

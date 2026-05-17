@@ -51,7 +51,7 @@ actual fun BarcodeScannerSheet(
         Box(Modifier.fillMaxWidth().padding(bottom = 16.dp), Alignment.Center) {
             Box(Modifier.size(width = 40.dp, height = 4.dp)
                 .clip(RoundedCornerShape(2.dp))
-                .padding(0.dp) // fondo lo pone el padre
+                .padding(0.dp)
             )
         }
 
@@ -88,7 +88,7 @@ actual fun BarcodeScannerSheet(
                     val previewView = PreviewView(ctx)
 
                     scope.launch {
-                        val cameraProvider = ProcessCameraProvider.getInstance(ctx).await()  // ← sin addListener
+                        val cameraProvider = ProcessCameraProvider.getInstance(ctx).await()
 
                         val preview = Preview.Builder().build().also {
                             it.surfaceProvider = previewView.surfaceProvider

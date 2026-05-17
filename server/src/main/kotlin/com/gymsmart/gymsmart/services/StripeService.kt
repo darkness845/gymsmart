@@ -25,7 +25,7 @@ class StripeService {
         cardName: String
     ): Boolean {
         // En test mode usamos el token de Stripe directamente
-        // tok_visa = 4242424242424242 (éxito)
+        // tok_visa = 4242424242424242
         // tok_chargeDeclined = tarjeta rechazada
         val testToken = when (cardNumber.replace(" ", "")) {
             "4242424242424242" -> "tok_visa"

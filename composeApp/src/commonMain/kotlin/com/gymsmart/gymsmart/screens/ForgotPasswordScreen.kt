@@ -2,42 +2,50 @@ package com.gymsmart.gymsmart.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.gymsmart.gymsmart.navigation.Screen
 import com.gymsmart.gymsmart.services.AuthService
+import com.gymsmart.gymsmart.ui.theme.GymSmartColors
 import kotlinx.coroutines.launch
 
 @Composable
 fun ForgotPasswordScreen(
-        navController: NavController,
-        authService:   AuthService,
-        fromProfile:   Boolean = false,
-        prefillEmail:  String  = ""
-    ) {
+    navController: NavController,
+    authService:   AuthService,
+    fromProfile:   Boolean = false,
+    prefillEmail:  String  = ""
+) {
 
-    val background    = Color(0xFFF5F3EF)
-    val accent        = Color(0xFFFFB800)
-    val textPrimary   = Color(0xFF1A1A1A)
-    val textSecondary = Color(0xFF888888)
+    var email         by remember { mutableStateOf(prefillEmail) }
+    var emailSent     by remember { mutableStateOf(false) }
+    var token         by remember { mutableStateOf("") }
+    var isLoading     by remember { mutableStateOf(false) }
+    var errorMsg      by remember { mutableStateOf("") }
 
-    var email     by remember { mutableStateOf(prefillEmail) }
-    var emailSent by remember { mutableStateOf(false) }
-    var token       by remember { mutableStateOf("") }
-    var isLoading   by remember { mutableStateOf(false) }
-    var errorMsg    by remember { mutableStateOf("") }
-    var verifiedToken by remember { mutableStateOf("") }  // token verificado que pasamos a la siguiente pantalla
     val scope = rememberCoroutineScope()
+
+    val fieldColors = OutlinedTextFieldDefaults.colors(
+        focusedBorderColor      = GymSmartColors.Primary,
+        unfocusedBorderColor    = GymSmartColors.Outline,
+        focusedLabelColor       = GymSmartColors.Primary,
+        unfocusedLabelColor     = GymSmartColors.TextSecondary,
+        cursorColor             = GymSmartColors.Primary,
+        focusedTextColor        = GymSmartColors.TextPrimary,
+        unfocusedTextColor      = GymSmartColors.TextPrimary,
+        focusedContainerColor   = GymSmartColors.SurfaceCard,
+        unfocusedContainerColor = GymSmartColors.SurfaceCard,
+        errorBorderColor        = GymSmartColors.Error,
+        errorLabelColor         = GymSmartColors.Error,
+        errorContainerColor     = GymSmartColors.SurfaceCard,
+    )
 
     LaunchedEffect(prefillEmail) {
         if (prefillEmail.isNotBlank()) {
@@ -49,25 +57,60 @@ fun ForgotPasswordScreen(
     }
 
     Column(
-        modifier = Modifier.fillMaxSize().background(background).padding(28.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .background(GymSmartColors.Background)
+            .padding(horizontal = 28.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+
+        // Icono contextual
+        Box(
+            modifier = Modifier
+                .size(72.dp)
+                .background(GymSmartColors.SurfaceCard, shape = MaterialTheme.shapes.extraLarge),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                if (!emailSent) "🔑" else "✉",
+                style = MaterialTheme.typography.headlineLarge
+            )
+        }
+
+        Spacer(Modifier.height(24.dp))
+
         Text(
             if (!emailSent) "Recuperar contraseña" else "Introduce el código",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold, color = textPrimary
+            style = MaterialTheme.typography.headlineMedium,
+            color = GymSmartColors.TextPrimary
         )
+
         Spacer(Modifier.height(8.dp))
+
         Text(
             if (!emailSent) "Introduce tu email y te enviaremos un código"
             else "Revisa tu correo e introduce el código que te hemos enviado",
-            color = textSecondary, style = MaterialTheme.typography.bodyMedium
+            style = MaterialTheme.typography.bodyMedium,
+            color = GymSmartColors.TextSecondary
         )
+
+        if (emailSent) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                email,
+                style = MaterialTheme.typography.bodyMedium,
+                color = GymSmartColors.Primary,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+
         Spacer(Modifier.height(32.dp))
 
         if (!emailSent) {
+
             // ── Paso 1: introducir email ──────────────────────────────────────
+
             OutlinedTextField(
                 value = email,
                 onValueChange = { email = it; errorMsg = "" },
@@ -75,14 +118,22 @@ fun ForgotPasswordScreen(
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp)
+                shape = MaterialTheme.shapes.small,
+                colors = fieldColors
             )
-            Spacer(Modifier.height(20.dp))
+
+            Spacer(Modifier.height(12.dp))
+
             if (errorMsg.isNotEmpty()) {
-                Text(errorMsg, color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall)
+                Text(
+                    errorMsg,
+                    color = GymSmartColors.Error,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.fillMaxWidth()
+                )
                 Spacer(Modifier.height(8.dp))
             }
+
             Button(
                 onClick = {
                     scope.launch {
@@ -94,35 +145,61 @@ fun ForgotPasswordScreen(
                     }
                 },
                 enabled = email.isNotBlank() && !isLoading,
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = accent)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+                shape = MaterialTheme.shapes.small,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor         = GymSmartColors.Primary,
+                    disabledContainerColor = GymSmartColors.Outline,
+                    contentColor           = GymSmartColors.OnPrimary,
+                    disabledContentColor   = GymSmartColors.TextDisabled
+                )
             ) {
-                if (isLoading) CircularProgressIndicator(color = Color.Black,
-                    modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
-                else Text("Enviar código", color = Color.Black, fontWeight = FontWeight.Bold)
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        color = GymSmartColors.OnPrimary,
+                        modifier = Modifier.size(22.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Text("Enviar código", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
+                }
             }
+
             Spacer(Modifier.height(12.dp))
+
             TextButton(onClick = { navController.popBackStack() }) {
-                Text("← Volver", color = textSecondary)
+                Text("← Volver", color = GymSmartColors.TextSecondary, style = MaterialTheme.typography.bodyMedium)
             }
 
         } else {
+
             // ── Paso 2: introducir código ─────────────────────────────────────
+
             OutlinedTextField(
                 value = token,
                 onValueChange = { token = it; errorMsg = "" },
                 label = { Text("Código del correo") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-                isError = errorMsg.isNotEmpty()
+                shape = MaterialTheme.shapes.small,
+                isError = errorMsg.isNotEmpty(),
+                colors = fieldColors
             )
+
             if (errorMsg.isNotEmpty()) {
                 Spacer(Modifier.height(6.dp))
-                Text(errorMsg, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                Text(
+                    errorMsg,
+                    color = GymSmartColors.Error,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
+
             Spacer(Modifier.height(20.dp))
+
             Button(
                 onClick = {
                     scope.launch {
@@ -130,7 +207,6 @@ fun ForgotPasswordScreen(
                         errorMsg = ""
                         val result = authService.verifyResetToken(token.trim())
                         if (result.success) {
-                            // Token válido → navega a cambiar contraseña pasando el token
                             navController.navigate(Screen.ResetPassword.route(token.trim(), fromProfile))
                         } else {
                             errorMsg = result.message
@@ -139,22 +215,37 @@ fun ForgotPasswordScreen(
                     }
                 },
                 enabled = token.isNotBlank() && !isLoading,
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = accent)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+                shape = MaterialTheme.shapes.small,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor         = GymSmartColors.Primary,
+                    disabledContainerColor = GymSmartColors.Outline,
+                    contentColor           = GymSmartColors.OnPrimary,
+                    disabledContentColor   = GymSmartColors.TextDisabled
+                )
             ) {
-                if (isLoading) CircularProgressIndicator(color = Color.Black,
-                    modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
-                else Text("Verificar código", color = Color.Black, fontWeight = FontWeight.Bold)
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        color = GymSmartColors.OnPrimary,
+                        modifier = Modifier.size(22.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Text("Verificar código", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
+                }
             }
+
             Spacer(Modifier.height(12.dp))
+
             if (fromProfile) {
                 TextButton(onClick = { navController.popBackStack() }) {
-                    Text("← Volver al perfil", color = textSecondary)
+                    Text("← Volver al perfil", color = GymSmartColors.TextSecondary, style = MaterialTheme.typography.bodyMedium)
                 }
             } else {
                 TextButton(onClick = { emailSent = false; token = ""; errorMsg = "" }) {
-                    Text("← Cambiar email", color = textSecondary)
+                    Text("← Cambiar email", color = GymSmartColors.TextSecondary, style = MaterialTheme.typography.bodyMedium)
                 }
             }
         }

@@ -46,7 +46,7 @@ fun NavGraph(
     locationProvider: LocationProvider,
     healthDataProvider: HealthDataProvider,
     onRequestLocationPermission: (callback: (Boolean) -> Unit) -> Unit,
-    onRequestCameraPermission: (callback: (Boolean) -> Unit) -> Unit = {}  // ← AÑADE
+    onRequestCameraPermission: (callback: (Boolean) -> Unit) -> Unit = {}
 ) {
     val navController = rememberNavController()
     val authService      = remember { AuthService() }

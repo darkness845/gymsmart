@@ -29,7 +29,7 @@ class MainActivity : ComponentActivity() {
     private val requestHealthPermissions = registerForActivityResult(
         PermissionController.createRequestPermissionResultContract()
     ) { granted ->
-        println("🔑 Resultado permisos Health Connect: $granted")
+        println("Resultado permisos Health Connect: $granted")
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -52,7 +52,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val locationService = remember { LocationService(this) }
             var pendingLocationCallback: ((Boolean) -> Unit)? = null
-            var pendingCameraCallback: ((Boolean) -> Unit)? = null  // ← NUEVO
+            var pendingCameraCallback: ((Boolean) -> Unit)? = null
 
             val locationPermLauncher = rememberLauncherForActivityResult(
                 ActivityResultContracts.RequestPermission()
@@ -61,7 +61,6 @@ class MainActivity : ComponentActivity() {
                 pendingLocationCallback = null
             }
 
-            // ← NUEVO: launcher para cámara
             val cameraPermLauncher = rememberLauncherForActivityResult(
                 ActivityResultContracts.RequestPermission()
             ) { granted ->
@@ -76,7 +75,7 @@ class MainActivity : ComponentActivity() {
                     pendingLocationCallback = callback
                     locationPermLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
                 },
-                onRequestCameraPermission = { callback ->   // ← NUEVO
+                onRequestCameraPermission = { callback ->
                     pendingCameraCallback = callback
                     cameraPermLauncher.launch(Manifest.permission.CAMERA)
                 }

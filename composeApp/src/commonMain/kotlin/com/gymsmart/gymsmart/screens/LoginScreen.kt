@@ -2,30 +2,25 @@ package com.gymsmart.gymsmart.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.gymsmart.gymsmart.navigation.Screen
 import com.gymsmart.gymsmart.services.AuthService
 import com.gymsmart.gymsmart.services.ProfileService
+import com.gymsmart.gymsmart.ui.theme.GymSmartColors
 import kotlinx.coroutines.launch
 
 @Composable
 fun LoginScreen(navController: NavController, authService: AuthService, profileService: ProfileService) {
-
-    val background = Color(0xFFF5F5F5)
-    val accent = Color(0xFFFFC107)
-    val textPrimary = Color(0xFF1C1C1C)
-    val textSecondary = Color(0xFF6B6B6B)
 
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -37,26 +32,35 @@ fun LoginScreen(navController: NavController, authService: AuthService, profileS
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(background)
-            .padding(28.dp),
+            .background(GymSmartColors.Background)
+            .padding(horizontal = 28.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
 
+        // Logo / título
         Text(
-            text = "GymSmart",
-            style = MaterialTheme.typography.headlineLarge,
-            fontWeight = FontWeight.Bold,
-            color = textPrimary
+            text = "GYM",
+            style = MaterialTheme.typography.displayLarge,
+            color = GymSmartColors.TextPrimary,
+            letterSpacing = 4.sp
         )
+        Text(
+            text = "SMART",
+            style = MaterialTheme.typography.displayLarge,
+            color = GymSmartColors.Primary,
+            letterSpacing = 4.sp
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
 
         Text(
             text = "Inicia sesión para continuar",
             style = MaterialTheme.typography.bodyMedium,
-            color = textSecondary
+            color = GymSmartColors.TextSecondary
         )
 
-        Spacer(modifier = Modifier.height(40.dp))
+        Spacer(modifier = Modifier.height(48.dp))
 
         OutlinedTextField(
             value = email,
@@ -65,7 +69,18 @@ fun LoginScreen(navController: NavController, authService: AuthService, profileS
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(14.dp)
+            shape = MaterialTheme.shapes.small,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = GymSmartColors.Primary,
+                unfocusedBorderColor = GymSmartColors.Outline,
+                focusedLabelColor = GymSmartColors.Primary,
+                unfocusedLabelColor = GymSmartColors.TextSecondary,
+                cursorColor = GymSmartColors.Primary,
+                focusedTextColor = GymSmartColors.TextPrimary,
+                unfocusedTextColor = GymSmartColors.TextPrimary,
+                focusedContainerColor = GymSmartColors.SurfaceCard,
+                unfocusedContainerColor = GymSmartColors.SurfaceCard,
+            )
         )
 
         Spacer(modifier = Modifier.height(14.dp))
@@ -78,16 +93,28 @@ fun LoginScreen(navController: NavController, authService: AuthService, profileS
             visualTransformation = PasswordVisualTransformation(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(14.dp)
+            shape = MaterialTheme.shapes.small,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = GymSmartColors.Primary,
+                unfocusedBorderColor = GymSmartColors.Outline,
+                focusedLabelColor = GymSmartColors.Primary,
+                unfocusedLabelColor = GymSmartColors.TextSecondary,
+                cursorColor = GymSmartColors.Primary,
+                focusedTextColor = GymSmartColors.TextPrimary,
+                unfocusedTextColor = GymSmartColors.TextPrimary,
+                focusedContainerColor = GymSmartColors.SurfaceCard,
+                unfocusedContainerColor = GymSmartColors.SurfaceCard,
+            )
         )
 
-        Spacer(modifier = Modifier.height(10.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
         if (errorMsg.isNotEmpty()) {
             Text(
                 text = errorMsg,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodySmall
+                color = GymSmartColors.Error,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.fillMaxWidth()
             )
             Spacer(modifier = Modifier.height(8.dp))
         }
@@ -119,29 +146,53 @@ fun LoginScreen(navController: NavController, authService: AuthService, profileS
             modifier = Modifier
                 .fillMaxWidth()
                 .height(52.dp),
-            shape = RoundedCornerShape(14.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = accent)
+            shape = MaterialTheme.shapes.small,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = GymSmartColors.Primary,
+                disabledContainerColor = GymSmartColors.Outline,
+                contentColor = GymSmartColors.OnPrimary,
+                disabledContentColor = GymSmartColors.TextDisabled
+            )
         ) {
             if (isLoading) {
                 CircularProgressIndicator(
-                    color = Color.Black,
+                    color = GymSmartColors.OnPrimary,
                     modifier = Modifier.size(22.dp),
                     strokeWidth = 2.dp
                 )
             } else {
-                Text("Iniciar sesión", color = Color.Black, fontWeight = FontWeight.Bold)
+                Text(
+                    "Iniciar sesión",
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.labelLarge
+                )
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(20.dp))
 
-        TextButton(onClick = { navController.navigate(Screen.ForgotPassword.route(fromProfile = false, email = "")) }) {
-            Text("¿Olvidaste tu contraseña?", color = textSecondary)
+        TextButton(onClick = {
+            navController.navigate(Screen.ForgotPassword.route(fromProfile = false, email = ""))
+        }) {
+            Text(
+                "¿Olvidaste tu contraseña?",
+                color = GymSmartColors.TextSecondary,
+                style = MaterialTheme.typography.bodyMedium
+            )
         }
 
         TextButton(onClick = { navController.navigate(Screen.Register.route) }) {
-            Text("¿No tienes cuenta? ", color = textSecondary)
-            Text("Regístrate", color = accent, fontWeight = FontWeight.Bold)
+            Text(
+                "¿No tienes cuenta?  ",
+                color = GymSmartColors.TextSecondary,
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Text(
+                "Regístrate",
+                color = GymSmartColors.Primary,
+                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.bodyMedium
+            )
         }
     }
 }

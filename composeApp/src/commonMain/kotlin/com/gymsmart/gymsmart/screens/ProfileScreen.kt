@@ -1,14 +1,11 @@
 package com.gymsmart.gymsmart.screens
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -18,7 +15,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -27,16 +23,18 @@ import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.gymsmart.gymsmart.model.ProfileRequest
+import com.gymsmart.gymsmart.model.NutritionTargets
+import com.gymsmart.gymsmart.model.SubscriptionStatus
+import com.gymsmart.gymsmart.navigation.Screen
 import com.gymsmart.gymsmart.services.AuthService
 import com.gymsmart.gymsmart.services.HealthDataProvider
 import com.gymsmart.gymsmart.services.ProfileService
-import com.gymsmart.gymsmart.model.NutritionTargets
-import com.gymsmart.gymsmart.navigation.Screen
+import com.gymsmart.gymsmart.services.SubscriptionService
+import com.gymsmart.gymsmart.ui.theme.GymSmartColors
+import androidx.compose.foundation.text.KeyboardOptions
 import kotlinx.coroutines.launch
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
@@ -44,17 +42,9 @@ import kotlinx.datetime.number
 import kotlinx.datetime.todayIn
 import kotlin.time.Clock
 
-// ─── Colores ────────────────────────────────────────────────────────────────
-private val Background = Color(0xFFF5F3EF)
-private val Accent = Color(0xFFFFB800)
-private val TextPrimary = Color(0xFF1C1C1C)
-private val TextSecondary = Color(0xFF6B6B6B)
-private val CardWhite = Color.White
-private val DividerColor = Color(0xFFE0E0E0)
-
 class BirthDateVisualTransformation : VisualTransformation {
     override fun filter(text: AnnotatedString): TransformedText {
-        val trimmed = text.text.take(8) // DDMMAAAA
+        val trimmed = text.text.take(8)
         val formatted = buildString {
             trimmed.forEachIndexed { i, c ->
                 if (i == 2 || i == 4) append('/')
@@ -62,22 +52,19 @@ class BirthDateVisualTransformation : VisualTransformation {
             }
         }
         val offsetMapping = object : OffsetMapping {
-            override fun originalToTransformed(offset: Int): Int {
-                return when {
-                    offset <= 2 -> offset
-                    offset <= 4 -> offset + 1
-                    offset <= 8 -> offset + 2
-                    else        -> formatted.length
-                }.coerceAtMost(formatted.length)
-            }
-            override fun transformedToOriginal(offset: Int): Int {
-                return when {
-                    offset <= 2 -> offset
-                    offset <= 5 -> offset - 1
-                    offset <= 10 -> offset - 2
-                    else        -> trimmed.length
-                }.coerceAtMost(trimmed.length)
-            }
+            override fun originalToTransformed(offset: Int): Int = when {
+                offset <= 2 -> offset
+                offset <= 4 -> offset + 1
+                offset <= 8 -> offset + 2
+                else        -> formatted.length
+            }.coerceAtMost(formatted.length)
+
+            override fun transformedToOriginal(offset: Int): Int = when {
+                offset <= 2 -> offset
+                offset <= 5 -> offset - 1
+                offset <= 10 -> offset - 2
+                else        -> trimmed.length
+            }.coerceAtMost(trimmed.length)
         }
         return TransformedText(AnnotatedString(formatted), offsetMapping)
     }
@@ -89,14 +76,13 @@ fun ProfileScreen(
     navController: NavController,
     healthDataProvider: HealthDataProvider
 ) {
-
-    val authService = remember { AuthService() }
+    val authService    = remember { AuthService() }
     val profileService = remember { ProfileService(authService.client) }
-    val scope = rememberCoroutineScope()
+    val scope          = rememberCoroutineScope()
 
     // Usuario
-    var userName by remember { mutableStateOf("Usuario") }
-    var userEmail by remember { mutableStateOf("") }
+    var userName      by remember { mutableStateOf("Usuario") }
+    var userEmail     by remember { mutableStateOf("") }
     var userPhone     by remember { mutableStateOf("") }
     var userCountry   by remember { mutableStateOf("") }
     var userBirthDate by remember { mutableStateOf("") }
@@ -104,34 +90,33 @@ fun ProfileScreen(
     var personalSuccess  by remember { mutableStateOf(false) }
 
     // Wearable
-    var steps by remember { mutableStateOf<Long?>(null) }
+    var steps    by remember { mutableStateOf<Long?>(null) }
     var calories by remember { mutableStateOf<Double?>(null) }
 
-    // Perfil
-    var weight by remember { mutableStateOf("") }
-    var height by remember { mutableStateOf("") }
-    var age by remember { mutableStateOf("") }
-
-    var sex by remember { mutableStateOf("male") }
+    // Perfil físico
+    var weight        by remember { mutableStateOf("") }
+    var height        by remember { mutableStateOf("") }
+    var age           by remember { mutableStateOf("") }
+    var sex           by remember { mutableStateOf("male") }
     var activityLevel by remember { mutableStateOf("moderate") }
-    var goal by remember { mutableStateOf("maintain") }
-    var goalRate by remember { mutableStateOf("0.5") }
+    var goal          by remember { mutableStateOf("maintain") }
+    var goalRate      by remember { mutableStateOf("0.5") }
+    var isSaving      by remember { mutableStateOf(false) }
+    var rateError     by remember { mutableStateOf(false) }
 
-    // UI
-    var isSaving by remember { mutableStateOf(false) }
-    var saveSuccess by remember { mutableStateOf(false) }
+    // Suscripción
+    var subStatus by remember { mutableStateOf<SubscriptionStatus?>(null) }
 
-    var rateError by remember { mutableStateOf(false) }
+    // Diálogo resumen
+    var showSummaryDialog by remember { mutableStateOf(false) }
+    var savedTargets      by remember { mutableStateOf<NutritionTargets?>(null) }
 
     data class OriginalPersonal(val name: String, val phone: String, val country: String, val birthDate: String)
+    data class OriginalProfile(val weight: String, val height: String, val age: String,
+                               val sex: String, val activityLevel: String, val goal: String, val goalRate: String)
+
     var originalPersonal by remember { mutableStateOf<OriginalPersonal?>(null) }
-
-    data class OriginalProfile(
-        val weight: String, val height: String, val age: String,
-        val sex: String, val activityLevel: String, val goal: String, val goalRate: String
-    )
-
-    var originalProfile by remember { mutableStateOf<OriginalProfile?>(null) }
+    var originalProfile  by remember { mutableStateOf<OriginalProfile?>(null) }
 
     val hasPersonalChanges by derivedStateOf {
         originalPersonal?.let {
@@ -139,7 +124,6 @@ fun ProfileScreen(
                     userCountry != it.country || userBirthDate != it.birthDate
         } ?: false
     }
-
     val hasChanges by derivedStateOf {
         originalProfile?.let {
             weight != it.weight || height != it.height || age != it.age ||
@@ -148,100 +132,53 @@ fun ProfileScreen(
         } ?: false
     }
 
-    var showSummaryDialog by remember { mutableStateOf(false) }
-    var savedTargets by remember { mutableStateOf<NutritionTargets?>(null) }
-
-    // ────────────────────────────────────────────────────────────────────────
-    // Carga inicial
-    // ────────────────────────────────────────────────────────────────────────
-
     LaunchedEffect(Unit) {
-
-        // Usuario
-        runCatching {
-            authService.me()
-        }.onSuccess { response ->
+        runCatching { authService.me() }.onSuccess { response ->
             userName      = response.user?.name      ?: response.message
             userEmail     = response.user?.email     ?: ""
             userPhone     = response.user?.phone     ?: ""
             userCountry   = response.user?.country   ?: ""
             userBirthDate = response.user?.birthDate ?: ""
-            originalPersonal = OriginalPersonal(
-                name      = response.user?.name      ?: "",
-                phone     = response.user?.phone     ?: "",
-                country   = response.user?.country   ?: "",
-                birthDate = response.user?.birthDate ?: ""
-            )
+            originalPersonal = OriginalPersonal(userName, userPhone, userCountry, userBirthDate)
         }
-
-        // Perfil
-        profileService.getProfileResponse()
-            .onSuccess { response ->
-
-                val profile = response.profile
-
-                weight = profile.weightKg.toString()
-                height = profile.heightCm.toString()
-                age = profile.age.toString()
-                sex = profile.sex
-                activityLevel = profile.activityLevel
-                goal = profile.goal
-                goalRate = profile.goalRate.toString()
-
-                originalProfile = OriginalProfile(
-                    weight        = profile.weightKg.toString(),
-                    height        = profile.heightCm.toString(),
-                    age           = profile.age.toString(),
-                    sex           = profile.sex,
-                    activityLevel = profile.activityLevel,
-                    goal          = profile.goal,
-                    goalRate      = profile.goalRate.toString()
-                )
-            }
-
-        // Wearable
-        runCatching {
-            healthDataProvider.getTodaySteps()
-        }.onSuccess {
-            steps = it
+        profileService.getProfileResponse().onSuccess { response ->
+            val p = response.profile
+            weight = p.weightKg.toString(); height = p.heightCm.toString(); age = p.age.toString()
+            sex = p.sex; activityLevel = p.activityLevel; goal = p.goal; goalRate = p.goalRate.toString()
+            originalProfile = OriginalProfile(weight, height, age, sex, activityLevel, goal, goalRate)
         }
-
-        runCatching {
-            healthDataProvider.getTodayActiveCalories()
-        }.onSuccess {
-            calories = it
-        }
+        runCatching { healthDataProvider.getTodaySteps() }.onSuccess { steps = it }
+        runCatching { healthDataProvider.getTodayActiveCalories() }.onSuccess { calories = it }
+        SubscriptionService(authService.client).getStatus().onSuccess { subStatus = it }
     }
-
-    // ────────────────────────────────────────────────────────────────────────
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        "Mi perfil",
-                        fontWeight = FontWeight.SemiBold
-                    )
-                },
-                navigationIcon = {
-                    IconButton(
-                        onClick = {
-                            navController.popBackStack()
-                        }
-                    ) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Volver"
+            Column {
+                TopAppBar(
+                    title = {
+                        Text(
+                            "Mi perfil",
+                            fontWeight = FontWeight.Bold,
+                            color = GymSmartColors.TextPrimary
                         )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Background
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = { navController.popBackStack() }) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Volver",
+                                tint = GymSmartColors.TextPrimary
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = GymSmartColors.Background
+                    )
                 )
-            )
+            }
         },
-        containerColor = Background
+        containerColor = GymSmartColors.Background
     ) { paddingValues ->
 
         Column(
@@ -253,88 +190,79 @@ fun ProfileScreen(
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
 
-            // ────────────────────────────────────────────────────────────────
-            // Header
-            // ────────────────────────────────────────────────────────────────
+            // ── Header ──────────────────────────────────────────────────────
+            ProfileHeader(name = userName, email = userEmail)
 
-            ProfileHeader(
-                name = userName,
-                email = userEmail
-            )
+            HorizontalDivider(color = GymSmartColors.Divider)
 
-            HorizontalDivider(color = DividerColor)
+            // ── Datos personales ─────────────────────────────────────────────
+            ProfileSection(icon = Icons.Default.Person, title = "Datos personales") {
 
-            // ────────────────────────────────────────────────────────────────
-            // Contraseña
-            // ────────────────────────────────────────────────────────────────
-
-            HorizontalDivider(color = DividerColor)
-
-            ProfileSection(
-                icon  = Icons.Default.Person,
-                title = "Datos personales"
-            ) {
                 ProfileTextField(
-                    value         = userName,
+                    value = userName,
                     onValueChange = { userName = it; personalSuccess = false },
-                    label         = "Nombre"
+                    label = "Nombre"
                 )
                 ProfileTextField(
-                    value         = userPhone,
-                    onValueChange = { if (it.filter { c -> c.isDigit() }.length <= 9) userPhone = it.filter { c -> c.isDigit() }; personalSuccess = false },
-                    label         = "Teléfono",
-                    keyboardType  = KeyboardType.Phone
+                    value = userPhone,
+                    onValueChange = {
+                        val digits = it.filter { c -> c.isDigit() }
+                        if (digits.length <= 9) { userPhone = digits; personalSuccess = false }
+                    },
+                    label = "Teléfono",
+                    keyboardType = KeyboardType.Phone
                 )
                 CountryPickerField(
                     selected = userCountry,
                     onSelect = { userCountry = it; personalSuccess = false }
                 )
                 OutlinedTextField(
-                    value         = userBirthDate,
+                    value = userBirthDate,
                     onValueChange = {
                         val digits = it.filter { c -> c.isDigit() }.take(8)
-                        // Si ya tiene 8 dígitos, validar que el año no sea anterior a (hoy - 100 años)
                         if (digits.length == 8) {
-                            val year = digits.substring(4, 8).toIntOrNull() ?: 0
+                            val year  = digits.substring(4, 8).toIntOrNull() ?: 0
                             val today = Clock.System.todayIn(TimeZone.currentSystemDefault())
                             if (year < today.year - 100 || year > today.year) return@OutlinedTextField
                         }
-                        userBirthDate = digits
-                        personalSuccess = false
+                        userBirthDate = digits; personalSuccess = false
                     },
-                    label                = { Text("Fecha de nacimiento") },
-                    placeholder          = { Text("DD/MM/AAAA", color = Color(0xFFBBBBBB)) },
+                    label = { Text("Fecha de nacimiento") },
+                    placeholder = { Text("DD/MM/AAAA", color = GymSmartColors.TextDisabled) },
                     visualTransformation = BirthDateVisualTransformation(),
-                    keyboardOptions      = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine           = true,
-                    shape                = RoundedCornerShape(12.dp),
-                    modifier             = Modifier.fillMaxWidth(),
-                    colors               = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Accent,
-                        focusedLabelColor  = Accent,
-                        cursorColor        = Accent
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    shape = MaterialTheme.shapes.small,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor   = GymSmartColors.Primary,
+                        unfocusedBorderColor = GymSmartColors.Outline,
+                        focusedLabelColor    = GymSmartColors.Primary,
+                        unfocusedLabelColor  = GymSmartColors.TextSecondary,
+                        cursorColor          = GymSmartColors.Primary,
+                        focusedTextColor     = GymSmartColors.TextPrimary,
+                        unfocusedTextColor   = GymSmartColors.TextPrimary,
+                        focusedContainerColor   = GymSmartColors.SurfaceElevated,
+                        unfocusedContainerColor = GymSmartColors.SurfaceElevated,
                     )
                 )
 
                 AnimatedVisibility(visible = personalSuccess) {
                     Text(
                         "✅ Datos guardados correctamente",
-                        color    = Color(0xFF388E3C),
-                        fontSize = 13.sp
+                        color = GymSmartColors.Success,
+                        style = MaterialTheme.typography.bodySmall
                     )
                 }
 
                 Button(
                     onClick = {
                         scope.launch {
-                            isSavingPersonal = true
-                            personalSuccess  = false
+                            isSavingPersonal = true; personalSuccess = false
                             val ok = authService.updatePersonalData(userName, userPhone, userCountry, userBirthDate)
                             if (ok) {
                                 originalPersonal = OriginalPersonal(userName, userPhone, userCountry, userBirthDate)
-                                personalSuccess  = true
-
-                                // Si hay fecha de nacimiento completa, recalcular edad y actualizar perfil físico
+                                personalSuccess = true
                                 if (userBirthDate.length == 8) {
                                     try {
                                         val day   = userBirthDate.substring(0, 2).toInt()
@@ -344,134 +272,116 @@ fun ProfileScreen(
                                         val today = Clock.System.todayIn(TimeZone.currentSystemDefault())
                                         var calculatedAge = today.year - birth.year
                                         if (today.month.number < birth.month.number ||
-                                            (today.month.number == birth.month.number && today.day < birth.day)) {
+                                            (today.month.number == birth.month.number && today.day < birth.day))
                                             calculatedAge--
-                                        }
                                         if (calculatedAge in 14..100 && weight.isNotBlank() && height.isNotBlank()) {
                                             age = calculatedAge.toString()
                                             val request = ProfileRequest(
-                                                weightKg      = weight.toDoubleOrNull() ?: 0.0,
-                                                heightCm      = height.toDoubleOrNull() ?: 0.0,
-                                                age           = calculatedAge,
-                                                sex           = sex,
-                                                activityLevel = activityLevel,
-                                                goal          = goal,
-                                                goalRate      = if (goal == "maintain") 0.0 else goalRate.toDoubleOrNull() ?: 0.0,
-                                                hasWearable   = steps != null
+                                                weightKg = weight.toDoubleOrNull() ?: 0.0,
+                                                heightCm = height.toDoubleOrNull() ?: 0.0,
+                                                age = calculatedAge, sex = sex,
+                                                activityLevel = activityLevel, goal = goal,
+                                                goalRate = if (goal == "maintain") 0.0 else goalRate.toDoubleOrNull() ?: 0.0,
+                                                hasWearable = steps != null
                                             )
                                             profileService.saveProfile(request).onSuccess { response ->
                                                 savedTargets = response.targets
                                                 originalProfile = OriginalProfile(weight, height, calculatedAge.toString(), sex, activityLevel, goal, goalRate)
                                             }
                                         }
-                                    } catch (_: Exception) { }
+                                    } catch (_: Exception) {}
                                 }
                             }
                             isSavingPersonal = false
                         }
                     },
-                    enabled  = !isSavingPersonal && hasPersonalChanges,
-                    colors   = ButtonDefaults.buttonColors(
-                        containerColor         = Accent,
-                        disabledContainerColor = Color(0xFFE0E0E0)
-                    ),
-                    shape    = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth()
+                    enabled = !isSavingPersonal && hasPersonalChanges,
+                    shape = MaterialTheme.shapes.small,
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor         = GymSmartColors.Primary,
+                        disabledContainerColor = GymSmartColors.Outline,
+                        contentColor           = GymSmartColors.OnPrimary,
+                        disabledContentColor   = GymSmartColors.TextDisabled
+                    )
                 ) {
                     if (isSavingPersonal) {
-                        CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.Black, strokeWidth = 2.dp)
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            color = GymSmartColors.OnPrimary,
+                            strokeWidth = 2.dp
+                        )
                     } else {
-                        Text("Guardar cambios", color = Color.Black, fontWeight = FontWeight.SemiBold)
+                        Text("Guardar cambios", fontWeight = FontWeight.SemiBold)
                     }
                 }
 
-                HorizontalDivider(color = DividerColor)
-                Spacer(Modifier.height(2.dp))
+                HorizontalDivider(color = GymSmartColors.Divider)
 
-                Button(
+                // Botón cambiar contraseña
+                OutlinedButton(
                     onClick = {
                         navController.navigate(Screen.ForgotPassword.route(fromProfile = true, email = userEmail))
                     },
-                    colors   = ButtonDefaults.buttonColors(containerColor = Color(0xFFF0F0F0)),
-                    shape    = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth()
+                    shape = MaterialTheme.shapes.small,
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    border = ButtonDefaults.outlinedButtonBorder.copy(
+                        brush = androidx.compose.ui.graphics.SolidColor(GymSmartColors.Outline)
+                    ),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = GymSmartColors.TextSecondary
+                    )
                 ) {
-                    Icon(Icons.Default.Lock, contentDescription = null, tint = TextPrimary, modifier = Modifier.size(16.dp))
+                    Icon(
+                        Icons.Default.Lock,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
                     Spacer(Modifier.width(8.dp))
-                    Text("Cambiar contraseña", color = TextPrimary, fontWeight = FontWeight.SemiBold)
+                    Text("Cambiar contraseña", fontWeight = FontWeight.SemiBold)
                 }
             }
 
-            // ────────────────────────────────────────────────────────────────
-            // Datos físicos
-            // ────────────────────────────────────────────────────────────────
+            // ── Datos físicos ────────────────────────────────────────────────
+            ProfileSection(icon = Icons.Default.FitnessCenter, title = "Datos físicos y preferencias") {
 
-            ProfileSection(
-                icon = Icons.Default.FitnessCenter,
-                title = "Datos físicos y preferencias"
-            ) {
-
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     ProfileTextField(
-                        value = weight,
-                        onValueChange = { weight = it },
-                        label = "Peso (kg)",
-                        modifier = Modifier.weight(1f),
+                        value = weight, onValueChange = { weight = it },
+                        label = "Peso (kg)", modifier = Modifier.weight(1f),
                         keyboardType = KeyboardType.Decimal
                     )
-
                     ProfileTextField(
-                        value = height,
-                        onValueChange = { height = it },
-                        label = "Altura (cm)",
-                        modifier = Modifier.weight(1f),
+                        value = height, onValueChange = { height = it },
+                        label = "Altura (cm)", modifier = Modifier.weight(1f),
                         keyboardType = KeyboardType.Decimal
                     )
                 }
 
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     ProfileTextField(
-                        value = age,
-                        onValueChange = { age = it },
-                        label = "Edad",
-                        modifier = Modifier.weight(1f),
+                        value = age, onValueChange = { age = it },
+                        label = "Edad", modifier = Modifier.weight(1f),
                         keyboardType = KeyboardType.Number
                     )
-
-                    Column(
-                        modifier = Modifier.weight(1f)
-                    ) {
-
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
                             "Sexo",
-                            fontSize = 12.sp,
-                            color = TextSecondary
+                            style = MaterialTheme.typography.labelMedium,
+                            color = GymSmartColors.TextSecondary
                         )
-
                         Spacer(Modifier.height(4.dp))
-
                         SegmentedButtons(
-                            options = listOf(
-                                "Hombre" to "male",
-                                "Mujer" to "female"
-                            ),
-                            selected = sex,
-                            onSelect = { sex = it }
+                            options = listOf("Hombre" to "male", "Mujer" to "female"),
+                            selected = sex, onSelect = { sex = it }
                         )
                     }
                 }
 
                 DropdownField(
-                    label = "Nivel de actividad",
-                    selected = activityLevel,
+                    label = "Nivel de actividad", selected = activityLevel,
                     options = buildList {
-                        if (steps != null) add("wearable" to "🏃 Usar pulsera (automático)")
+                        if (steps != null) add("wearable" to "🏃 Pulsera (automático)")
                         add("sedentary"   to "Sedentario")
                         add("light"       to "Ligero")
                         add("moderate"    to "Moderado")
@@ -482,32 +392,27 @@ fun ProfileScreen(
                 )
 
                 DropdownField(
-                    label = "Objetivo",
-                    selected = goal,
+                    label = "Objetivo", selected = goal,
                     options = listOf(
                         "lose_fat"    to "Perder peso",
                         "maintain"    to "Mantener",
                         "gain_muscle" to "Ganar músculo"
                     ),
-                    onSelect = {
-                        goal = it
-                        goalRate = if (it == "maintain") "0.0" else ""
-                    }
+                    onSelect = { goal = it; goalRate = if (it == "maintain") "0.0" else "" }
                 )
 
                 AnimatedVisibility(visible = goal != "maintain") {
                     DropdownField(
-                        label = "Ritmo semanal",
-                        selected = goalRate,
+                        label = "Ritmo semanal", selected = goalRate,
                         options = when (goal) {
                             "lose_fat" -> listOf(
-                                "" to "Selecciona un ritmo...",   // ← opción vacía inicial
+                                ""       to "Selecciona un ritmo...",
                                 "-250.0" to "Suave (-250 kcal/día ≈ 0.25 kg/sem)",
                                 "-400.0" to "Moderado (-400 kcal/día ≈ 0.5 kg/sem)",
                                 "-500.0" to "Agresivo (-500 kcal/día ≈ 1 kg/sem)"
                             )
                             else -> listOf(
-                                "" to "Selecciona un ritmo...",   // ← opción vacía inicial
+                                ""      to "Selecciona un ritmo...",
                                 "250.0" to "Suave (+250 kcal/día ≈ 0.25 kg/sem)",
                                 "400.0" to "Moderado (+400 kcal/día ≈ 0.5 kg/sem)",
                                 "500.0" to "Agresivo (+500 kcal/día ≈ 1 kg/sem)"
@@ -520,94 +425,56 @@ fun ProfileScreen(
                 AnimatedVisibility(visible = rateError) {
                     Text(
                         "⚠️ Selecciona un ritmo semanal",
-                        color = MaterialTheme.colorScheme.error,
-                        fontSize = 13.sp
-                    )
-                }
-
-                AnimatedVisibility(
-                    visible = saveSuccess
-                ) {
-                    Text(
-                        "✅ Perfil guardado correctamente",
-                        color = Color(0xFF388E3C),
-                        fontSize = 13.sp
+                        color = GymSmartColors.Warning,
+                        style = MaterialTheme.typography.bodySmall
                     )
                 }
 
                 Button(
                     onClick = {
-
                         scope.launch {
-
-                            if (goal != "maintain" && goalRate.isBlank()) {
-                                rateError = true
-                                return@launch
-                            }
-                            rateError = false
-
-                            isSaving = true
-                            saveSuccess = false
-
+                            if (goal != "maintain" && goalRate.isBlank()) { rateError = true; return@launch }
+                            rateError = false; isSaving = true
                             val request = ProfileRequest(
-                                weightKg      = weight.toDoubleOrNull() ?: 0.0,
-                                heightCm      = height.toDoubleOrNull() ?: 0.0,
-                                age           = age.toIntOrNull() ?: 0,
-                                sex           = sex,
-                                activityLevel = activityLevel,
-                                goal          = goal,
-                                goalRate      = if (goal == "maintain") 0.0 else goalRate.toDoubleOrNull() ?: 0.0,
-                                hasWearable   = steps != null
+                                weightKg = weight.toDoubleOrNull() ?: 0.0,
+                                heightCm = height.toDoubleOrNull() ?: 0.0,
+                                age = age.toIntOrNull() ?: 0, sex = sex,
+                                activityLevel = activityLevel, goal = goal,
+                                goalRate = if (goal == "maintain") 0.0 else goalRate.toDoubleOrNull() ?: 0.0,
+                                hasWearable = steps != null
                             )
-
-                            profileService.saveProfile(request)
-                                .onSuccess { response ->
-                                    savedTargets = response.targets
-                                    showSummaryDialog = true
-                                    originalProfile = OriginalProfile(weight, height, age, sex, activityLevel, goal, goalRate)
-                                }
-
+                            profileService.saveProfile(request).onSuccess { response ->
+                                savedTargets = response.targets
+                                showSummaryDialog = true
+                                originalProfile = OriginalProfile(weight, height, age, sex, activityLevel, goal, goalRate)
+                            }
                             isSaving = false
                         }
                     },
-                    enabled  = !isSaving && hasChanges,
-                    colors   = ButtonDefaults.buttonColors(
-                        containerColor         = Accent,
-                        disabledContainerColor = Color(0xFFE0E0E0)
-                    ),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth()
+                    enabled = !isSaving && hasChanges,
+                    shape = MaterialTheme.shapes.small,
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor         = GymSmartColors.Primary,
+                        disabledContainerColor = GymSmartColors.Outline,
+                        contentColor           = GymSmartColors.OnPrimary,
+                        disabledContentColor   = GymSmartColors.TextDisabled
+                    )
                 ) {
-
                     if (isSaving) {
-
                         CircularProgressIndicator(
                             modifier = Modifier.size(18.dp),
-                            color = Color.Black,
+                            color = GymSmartColors.OnPrimary,
                             strokeWidth = 2.dp
                         )
-
                     } else {
-
-                        Text(
-                            "Guardar cambios",
-                            color = Color.Black,
-                            fontWeight = FontWeight.SemiBold
-                        )
+                        Text("Guardar cambios", fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
 
-            HorizontalDivider(color = DividerColor)
-
-            // ────────────────────────────────────────────────────────────────
-            // Wearable
-            // ────────────────────────────────────────────────────────────────
-
-            ProfileSection(
-                icon = Icons.Default.Watch,
-                title = "Datos de pulsera (hoy)"
-            ) {
+            // ── Wearable ─────────────────────────────────────────────────────
+            ProfileSection(icon = Icons.Default.Watch, title = "Datos de pulsera (hoy)") {
 
                 WearableStatRow(
                     icon = Icons.Default.DirectionsWalk,
@@ -615,7 +482,6 @@ fun ProfileScreen(
                     value = steps?.toString() ?: "—",
                     unit = "pasos"
                 )
-
                 WearableStatRow(
                     icon = Icons.Default.LocalFireDepartment,
                     label = "Calorías activas",
@@ -623,48 +489,86 @@ fun ProfileScreen(
                     unit = "kcal"
                 )
 
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(2.dp))
 
-                Text(
-                    text =
-                        if (steps != null)
-                            "✅ Health Connect conectado"
+                Surface(
+                    color = if (steps != null)
+                        GymSmartColors.Success.copy(alpha = 0.10f)
+                    else
+                        GymSmartColors.Warning.copy(alpha = 0.10f),
+                    shape = MaterialTheme.shapes.extraSmall
+                ) {
+                    Text(
+                        text = if (steps != null)
+                            "✅  Health Connect conectado"
                         else
-                            "⚠️ Health Connect no disponible",
-
-                    fontSize = 12.sp,
-
-                    color =
-                        if (steps != null)
-                            Color(0xFF388E3C)
-                        else
-                            TextSecondary
-                )
+                            "⚠️  Health Connect no disponible",
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (steps != null) GymSmartColors.Success else GymSmartColors.Warning
+                    )
+                }
             }
 
-            HorizontalDivider(color = DividerColor)
-
+            // ── Suscripción ───────────────────────────────────────────────────
             ProfileSection(icon = Icons.Default.Star, title = "Suscripción") {
-                var subStatus by remember { mutableStateOf<com.gymsmart.gymsmart.model.SubscriptionStatus?>(null) }
-                val subService = remember { com.gymsmart.gymsmart.services.SubscriptionService(authService.client) }
-
-                LaunchedEffect(Unit) {
-                    subService.getStatus().onSuccess { subStatus = it }
-                }
 
                 if (subStatus?.active == true) {
-                    val remaining = ((subStatus!!.expiresAt - Clock.System.now().toEpochMilliseconds()) / 60000).coerceAtLeast(0)
-                    Text("⭐ Plan Premium activo", fontWeight = FontWeight.Bold, color = Accent)
-                    Text("Caduca en $remaining minutos", fontSize = 13.sp, color = TextSecondary)
+                    val remaining = ((subStatus!!.expiresAt - Clock.System.now().toEpochMilliseconds()) / 60000)
+                        .coerceAtLeast(0)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text("⭐", style = MaterialTheme.typography.titleMedium)
+                        Column {
+                            Text(
+                                "Plan Premium activo",
+                                fontWeight = FontWeight.Bold,
+                                color = GymSmartColors.PremiumGold
+                            )
+                            Text(
+                                "Caduca en $remaining minutos",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = GymSmartColors.TextSecondary
+                            )
+                        }
+                    }
                 } else {
-                    Text("Plan actual: Free", color = TextSecondary, fontSize = 14.sp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "Plan actual: Free",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = GymSmartColors.TextSecondary
+                        )
+                        Surface(
+                            color = GymSmartColors.Outline,
+                            shape = MaterialTheme.shapes.extraSmall
+                        ) {
+                            Text(
+                                "FREE",
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = GymSmartColors.TextDisabled
+                            )
+                        }
+                    }
                     Spacer(Modifier.height(4.dp))
                     Button(
-                        onClick = { navController.navigate(com.gymsmart.gymsmart.navigation.Screen.Subscription.route) },
-                        colors  = ButtonDefaults.buttonColors(containerColor = Accent),
-                        shape   = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) { Text("Mejorar a Premium ⭐", color = Color.Black, fontWeight = FontWeight.Bold) }
+                        onClick = { navController.navigate(Screen.Subscription.route) },
+                        shape = MaterialTheme.shapes.small,
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = GymSmartColors.PremiumGold,
+                            contentColor   = GymSmartColors.Background
+                        )
+                    ) {
+                        Text("Mejorar a Premium ⭐", fontWeight = FontWeight.Bold)
+                    }
                 }
             }
 
@@ -672,81 +576,102 @@ fun ProfileScreen(
         }
     }
 
+    // ── Diálogo resumen ──────────────────────────────────────────────────────
     if (showSummaryDialog) {
         savedTargets?.let { targets ->
             AlertDialog(
                 onDismissRequest = { showSummaryDialog = false },
-                containerColor   = Color.White,
-                shape            = RoundedCornerShape(20.dp),
+                containerColor = GymSmartColors.SurfaceElevated,
+                shape = MaterialTheme.shapes.large,
                 title = {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.fillMaxWidth()) {
-                        Text("✅ Perfil actualizado",
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            "✅ Perfil actualizado",
                             fontWeight = FontWeight.Bold,
-                            fontSize   = 18.sp,
-                            color      = TextPrimary)
-                        Text("Tus nuevos objetivos diarios",
-                            fontSize = 13.sp,
-                            color    = TextSecondary,
-                            modifier = Modifier.padding(top = 4.dp))
+                            color = GymSmartColors.TextPrimary,
+                            style = MaterialTheme.typography.titleLarge
+                        )
+                        Text(
+                            "Tus nuevos objetivos diarios",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = GymSmartColors.TextSecondary
+                        )
                     }
                 },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
 
-                        // TDEE y objetivo calórico
-                        Row(modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
                             SummaryKcalBox(
-                                label    = if (activityLevel == "wearable") "BMR" else "TDEE",
-                                value    = "${targets.tdee}",
-                                sub      = "mantenimiento",
+                                label = if (activityLevel == "wearable") "BMR" else "TDEE",
+                                value = "${targets.tdee}",
+                                sub = "mantenimiento",
                                 modifier = Modifier.weight(1f)
                             )
                             SummaryKcalBox(
-                                label    = "Objetivo",
-                                value    = "${targets.targetKcal}",
-                                sub      = "kcal/día",
+                                label = "Objetivo",
+                                value = "${targets.targetKcal}",
+                                sub = "kcal/día",
                                 highlight = true,
                                 modifier = Modifier.weight(1f)
                             )
                         }
 
-                        // Macros
-                        HorizontalDivider(color = Color(0xFFEEEEEE))
-                        Row(modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            SummaryMacroBox("Proteína", "${targets.proteinG}g", Color(0xFF4CAF50), Modifier.weight(1f))
-                            SummaryMacroBox("Carbos",   "${targets.carbsG}g",   Color(0xFF2196F3), Modifier.weight(1f))
-                            SummaryMacroBox("Grasas",   "${targets.fatG}g",     Color(0xFFFF5722), Modifier.weight(1f))
+                        HorizontalDivider(color = GymSmartColors.Divider)
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            SummaryMacroBox("Proteína", "${targets.proteinG}g", GymSmartColors.MacroProtein, Modifier.weight(1f))
+                            SummaryMacroBox("Carbos",   "${targets.carbsG}g",   GymSmartColors.MacroCarbs,   Modifier.weight(1f))
+                            SummaryMacroBox("Grasas",   "${targets.fatG}g",     GymSmartColors.MacroFat,     Modifier.weight(1f))
                         }
 
-                        // IMC
-                        HorizontalDivider(color = Color(0xFFEEEEEE))
-                        Row(verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("⚖️ IMC:", fontSize = 13.sp, color = TextSecondary)
-                            Text("${targets.bmi}", fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp, color = TextPrimary)
-                            Text("·", color = TextSecondary)
-                            Text(targets.bmiCategory, fontSize = 13.sp,
+                        HorizontalDivider(color = GymSmartColors.Divider)
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text("⚖️ IMC:", style = MaterialTheme.typography.bodySmall, color = GymSmartColors.TextSecondary)
+                            Text(
+                                "${targets.bmi}",
+                                fontWeight = FontWeight.Bold,
+                                color = GymSmartColors.TextPrimary,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text("·", color = GymSmartColors.TextSecondary)
+                            Text(
+                                targets.bmiCategory,
+                                style = MaterialTheme.typography.bodySmall,
                                 color = when {
-                                    targets.bmi < 18.5 -> Color(0xFF2196F3)
-                                    targets.bmi < 25.0 -> Color(0xFF4CAF50)
-                                    targets.bmi < 30.0 -> Color(0xFFFFA726)
-                                    else               -> Color(0xFFEF5350)
-                                })
+                                    targets.bmi < 18.5 -> GymSmartColors.MacroCarbs
+                                    targets.bmi < 25.0 -> GymSmartColors.Success
+                                    targets.bmi < 30.0 -> GymSmartColors.Warning
+                                    else               -> GymSmartColors.Error
+                                }
+                            )
                         }
                     }
                 },
                 confirmButton = {
                     Button(
                         onClick = { showSummaryDialog = false },
-                        colors  = ButtonDefaults.buttonColors(containerColor = Accent),
-                        shape   = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth()
+                        shape = MaterialTheme.shapes.small,
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = GymSmartColors.Primary,
+                            contentColor   = GymSmartColors.OnPrimary
+                        )
                     ) {
-                        Text("Perfecto 💪", color = Color.Black, fontWeight = FontWeight.Bold)
+                        Text("Perfecto 💪", fontWeight = FontWeight.Bold)
                     }
                 }
             )
@@ -754,91 +679,80 @@ fun ProfileScreen(
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// COMPONENTES
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── Composables auxiliares ──────────────────────────────────────────────────
 
 @Composable
 private fun SummaryKcalBox(
     label: String, value: String, sub: String,
     modifier: Modifier = Modifier, highlight: Boolean = false
 ) {
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
-            .background(if (highlight) Color(0xFFFFF8E1) else Color(0xFFF5F3EF))
-            .then(if (highlight) Modifier.border(2.dp, Accent, RoundedCornerShape(12.dp)) else Modifier)
-            .padding(vertical = 12.dp),
-        contentAlignment = Alignment.Center
+    Surface(
+        modifier = modifier,
+        color = if (highlight) GymSmartColors.Primary.copy(alpha = 0.12f) else GymSmartColors.SurfaceCard,
+        shape = MaterialTheme.shapes.small,
+        border = if (highlight) ButtonDefaults.outlinedButtonBorder.copy(
+            brush = androidx.compose.ui.graphics.SolidColor(GymSmartColors.Primary)
+        ) else null
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(label, fontSize = 11.sp, color = TextSecondary)
-            Text(value, fontWeight = FontWeight.Bold, fontSize = 22.sp, color = TextPrimary)
-            Text(sub,   fontSize = 10.sp,  color = TextSecondary)
+        Column(
+            modifier = Modifier.padding(vertical = 14.dp).fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(label, style = MaterialTheme.typography.labelSmall, color = GymSmartColors.TextSecondary)
+            Text(
+                value,
+                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.headlineMedium,
+                color = if (highlight) GymSmartColors.Primary else GymSmartColors.TextPrimary
+            )
+            Text(sub, style = MaterialTheme.typography.labelSmall, color = GymSmartColors.TextSecondary)
         }
     }
 }
 
 @Composable
-private fun SummaryMacroBox(label: String, value: String, color: Color, modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(10.dp))
-            .background(color.copy(alpha = 0.1f))
-            .padding(vertical = 10.dp),
-        contentAlignment = Alignment.Center
+private fun SummaryMacroBox(label: String, value: String, color: androidx.compose.ui.graphics.Color, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier,
+        color = color.copy(alpha = 0.10f),
+        shape = MaterialTheme.shapes.small
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(value, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = color)
-            Text(label, fontSize = 11.sp, color = TextSecondary)
+        Column(
+            modifier = Modifier.padding(vertical = 10.dp).fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(value, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, color = color)
+            Text(label, style = MaterialTheme.typography.labelSmall, color = GymSmartColors.TextSecondary)
         }
     }
 }
 
 @Composable
-private fun ProfileHeader(
-    name: String,
-    email: String
-) {
-
+private fun ProfileHeader(name: String, email: String) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
-
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .size(64.dp)
-                .clip(CircleShape)
-                .background(Accent)
+        Surface(
+            modifier = Modifier.size(64.dp),
+            shape = CircleShape,
+            color = GymSmartColors.Primary.copy(alpha = 0.15f)
         ) {
-
-            Text(
-                text = name.firstOrNull()?.uppercase() ?: "?",
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.Black
-            )
-        }
-
-        Column {
-
-            Text(
-                name,
-                fontWeight = FontWeight.Bold,
-                fontSize = 18.sp,
-                color = TextPrimary
-            )
-
-            if (email.isNotBlank()) {
-
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                 Text(
-                    email,
-                    fontSize = 13.sp,
-                    color = TextSecondary
+                    text = name.firstOrNull()?.uppercase() ?: "?",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = GymSmartColors.Primary
                 )
+            }
+        }
+        Column {
+            Text(name, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
+            Spacer(Modifier.height(8.dp))
+            if (email.isNotBlank()) {
+                Text(email, style = MaterialTheme.typography.bodySmall, color = GymSmartColors.TextSecondary)
             }
         }
     }
@@ -850,42 +764,19 @@ private fun ProfileSection(
     title: String,
     content: @Composable ColumnScope.() -> Unit
 ) {
-
-    Column(
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-
-            Icon(
-                icon,
-                contentDescription = null,
-                tint = Accent,
-                modifier = Modifier.size(20.dp)
-            )
-
-            Text(
-                title,
-                fontWeight = FontWeight.Bold,
-                fontSize = 15.sp,
-                color = TextPrimary
-            )
+            Icon(icon, contentDescription = null, tint = GymSmartColors.Primary, modifier = Modifier.size(18.dp))
+            Text(title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall, color = GymSmartColors.TextPrimary)
         }
-
-        Card(
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = CardWhite
-            ),
-            elevation = CardDefaults.cardElevation(
-                defaultElevation = 3.dp
-            ),
-            modifier = Modifier.fillMaxWidth()
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = GymSmartColors.SurfaceCard,
+            shape = MaterialTheme.shapes.medium
         ) {
-
             Column(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -903,23 +794,24 @@ private fun ProfileTextField(
     modifier: Modifier = Modifier.fillMaxWidth(),
     keyboardType: KeyboardType = KeyboardType.Text
 ) {
-
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
-        label = {
-            Text(label)
-        },
+        label = { Text(label) },
         singleLine = true,
-        keyboardOptions = KeyboardOptions(
-            keyboardType = keyboardType
-        ),
-        shape = RoundedCornerShape(12.dp),
+        keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+        shape = MaterialTheme.shapes.small,
         modifier = modifier,
         colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = Accent,
-            focusedLabelColor = Accent,
-            cursorColor = Accent
+            focusedBorderColor   = GymSmartColors.Primary,
+            unfocusedBorderColor = GymSmartColors.Outline,
+            focusedLabelColor    = GymSmartColors.Primary,
+            unfocusedLabelColor  = GymSmartColors.TextSecondary,
+            cursorColor          = GymSmartColors.Primary,
+            focusedTextColor     = GymSmartColors.TextPrimary,
+            unfocusedTextColor   = GymSmartColors.TextPrimary,
+            focusedContainerColor   = GymSmartColors.SurfaceElevated,
+            unfocusedContainerColor = GymSmartColors.SurfaceElevated,
         )
     )
 }
@@ -930,64 +822,35 @@ private fun SegmentedButtons(
     selected: String,
     onSelect: (String) -> Unit
 ) {
-
-    Row(
-        modifier = Modifier.fillMaxWidth()
-    ) {
-
+    Row(modifier = Modifier.fillMaxWidth()) {
         options.forEachIndexed { index, (label, value) ->
-
             val isSelected = value == selected
-
             val shape = when (index) {
-
-                0 -> RoundedCornerShape(
-                    topStart = 8.dp,
-                    bottomStart = 8.dp
+                0               -> MaterialTheme.shapes.extraSmall.copy(
+                    topEnd = androidx.compose.foundation.shape.CornerSize(0.dp),
+                    bottomEnd = androidx.compose.foundation.shape.CornerSize(0.dp)
                 )
-
-                options.lastIndex -> RoundedCornerShape(
-                    topEnd = 8.dp,
-                    bottomEnd = 8.dp
+                options.lastIndex -> MaterialTheme.shapes.extraSmall.copy(
+                    topStart = androidx.compose.foundation.shape.CornerSize(0.dp),
+                    bottomStart = androidx.compose.foundation.shape.CornerSize(0.dp)
                 )
-
-                else -> RoundedCornerShape(0.dp)
+                else            -> androidx.compose.foundation.shape.RoundedCornerShape(0.dp)
             }
-
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .weight(1f)
-                    .height(36.dp)
-                    .background(
-                        if (isSelected) Accent else Color.Transparent,
-                        shape
-                    )
-                    .border(
-                        1.dp,
-                        Accent,
-                        shape
-                    )
-                    .clickable {
-                        onSelect(value)
-                    }
+            Surface(
+                modifier = Modifier.weight(1f).height(36.dp)
+                    .border(1.dp, if (isSelected) GymSmartColors.Primary else GymSmartColors.Outline, shape)
+                    .clickable { onSelect(value) },
+                color = if (isSelected) GymSmartColors.Primary.copy(alpha = 0.15f) else GymSmartColors.SurfaceCard,
+                shape = shape
             ) {
-
-                Text(
-                    label,
-                    fontSize = 13.sp,
-                    fontWeight =
-                        if (isSelected)
-                            FontWeight.Bold
-                        else
-                            FontWeight.Normal,
-
-                    color =
-                        if (isSelected)
-                            Color.Black
-                        else
-                            TextSecondary
-                )
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                    Text(
+                        label,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                        color = if (isSelected) GymSmartColors.Primary else GymSmartColors.TextSecondary
+                    )
+                }
             }
         }
     }
@@ -1001,60 +864,46 @@ private fun DropdownField(
     options: List<Pair<String, String>>,
     onSelect: (String) -> Unit
 ) {
+    var expanded by remember { mutableStateOf(false) }
+    val displayLabel = options.firstOrNull { it.first == selected }?.second ?: selected
 
-    var expanded by remember {
-        mutableStateOf(false)
-    }
-
-    val displayLabel =
-        options.firstOrNull {
-            it.first == selected
-        }?.second ?: selected
-
-    ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = {
-            expanded = it
-        }
-    ) {
-
+    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
         OutlinedTextField(
             value = displayLabel,
             onValueChange = {},
             readOnly = true,
-            label = {
-                Text(label)
-            },
-            trailingIcon = {
-                ExposedDropdownMenuDefaults.TrailingIcon(expanded)
-            },
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .menuAnchor(MenuAnchorType.PrimaryNotEditable),
+            label = { Text(label) },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+            shape = MaterialTheme.shapes.small,
+            modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable),
             colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = Accent,
-                focusedLabelColor = Accent
+                focusedBorderColor   = GymSmartColors.Primary,
+                unfocusedBorderColor = GymSmartColors.Outline,
+                focusedLabelColor    = GymSmartColors.Primary,
+                unfocusedLabelColor  = GymSmartColors.TextSecondary,
+                focusedTextColor     = GymSmartColors.TextPrimary,
+                unfocusedTextColor   = GymSmartColors.TextPrimary,
+                focusedContainerColor   = GymSmartColors.SurfaceElevated,
+                unfocusedContainerColor = GymSmartColors.SurfaceElevated,
             )
         )
-
         ExposedDropdownMenu(
             expanded = expanded,
-            onDismissRequest = {
-                expanded = false
-            }
+            onDismissRequest = { expanded = false },
+            containerColor = GymSmartColors.SurfaceElevated
         ) {
-
             options.forEach { (value, text) ->
-
                 DropdownMenuItem(
-                    text = {
-                        Text(text)
-                    },
-                    onClick = {
-                        onSelect(value)
-                        expanded = false
-                    }
+                    text = { Text(text, color = GymSmartColors.TextPrimary) },
+                    onClick = { onSelect(value); expanded = false },
+                    colors = MenuItemColors(
+                        textColor = GymSmartColors.TextPrimary,
+                        leadingIconColor = GymSmartColors.TextPrimary,
+                        trailingIconColor = GymSmartColors.TextPrimary,
+                        disabledTextColor = GymSmartColors.TextDisabled,
+                        disabledLeadingIconColor = GymSmartColors.TextDisabled,
+                        disabledTrailingIconColor = GymSmartColors.TextDisabled,
+                    )
                 )
             }
         }
@@ -1062,81 +911,29 @@ private fun DropdownField(
 }
 
 @Composable
-private fun WearableStatRow(
-    icon: ImageVector,
-    label: String,
-    value: String,
-    unit: String
-) {
-
+private fun WearableStatRow(icon: ImageVector, label: String, value: String, unit: String) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
         modifier = Modifier.fillMaxWidth()
     ) {
-
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-
-            Icon(
-                icon,
-                contentDescription = null,
-                tint = Accent,
-                modifier = Modifier.size(20.dp)
-            )
-
-            Text(
-                label,
-                color = TextSecondary,
-                fontSize = 14.sp
-            )
+            Icon(icon, contentDescription = null, tint = GymSmartColors.Primary, modifier = Modifier.size(20.dp))
+            Text(label, style = MaterialTheme.typography.bodyMedium, color = GymSmartColors.TextSecondary)
         }
-
         Text(
             "$value $unit",
             fontWeight = FontWeight.Bold,
-            color = TextPrimary,
-            fontSize = 15.sp
+            style = MaterialTheme.typography.bodyMedium,
+            color = GymSmartColors.TextPrimary
         )
     }
 }
 
-@Composable
-private fun PasswordField(
-    value: String,
-    onValueChange: (String) -> Unit,
-    label: String,
-    show: Boolean,
-    onToggleShow: () -> Unit
-) {
-    OutlinedTextField(
-        value               = value,
-        onValueChange       = onValueChange,
-        label               = { Text(label) },
-        singleLine          = true,
-        visualTransformation = if (show) VisualTransformation.None else PasswordVisualTransformation(),
-        keyboardOptions     = KeyboardOptions(keyboardType = KeyboardType.Password),
-        trailingIcon        = {
-            IconButton(onClick = onToggleShow) {
-                Icon(
-                    if (show) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                    contentDescription = null,
-                    tint = TextSecondary
-                )
-            }
-        },
-        shape    = RoundedCornerShape(12.dp),
-        modifier = Modifier.fillMaxWidth(),
-        colors   = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = Accent,
-            focusedLabelColor  = Accent,
-            cursorColor        = Accent
-        )
-    )
-}
-
+// ─── Lista de países (sin cambios) ──────────────────────────────────────────
 private val COUNTRIES = listOf(
     "Afganistán", "Albania", "Alemania", "Andorra", "Angola", "Antigua y Barbuda",
     "Arabia Saudita", "Argelia", "Argentina", "Armenia", "Australia", "Austria",
@@ -1175,50 +972,55 @@ private val COUNTRIES = listOf(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CountryPickerField(
-    selected: String,
-    onSelect: (String) -> Unit
-) {
+private fun CountryPickerField(selected: String, onSelect: (String) -> Unit) {
     var query    by remember { mutableStateOf("") }
     var expanded by remember { mutableStateOf(false) }
-
     val filtered = remember(query) {
-        if (query.isBlank()) COUNTRIES
-        else COUNTRIES.filter { it.contains(query, ignoreCase = true) }
+        if (query.isBlank()) COUNTRIES else COUNTRIES.filter { it.contains(query, ignoreCase = true) }
     }
 
     ExposedDropdownMenuBox(
-        expanded         = expanded,
+        expanded = expanded,
         onExpandedChange = { expanded = it; if (!it) query = "" }
     ) {
         OutlinedTextField(
-            value         = selected,
+            value = selected,
             onValueChange = {},
-            readOnly      = true,
-            label         = { Text("País") },
-            placeholder   = { Text("Selecciona un país", color = Color(0xFFBBBBBB)) },
-            trailingIcon  = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-            singleLine    = true,
-            shape         = RoundedCornerShape(12.dp),
-            modifier      = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable),
-            colors        = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = Accent,
-                focusedLabelColor  = Accent,
-                cursorColor        = Accent
+            readOnly = true,
+            label = { Text("País") },
+            placeholder = { Text("Selecciona un país", color = GymSmartColors.TextDisabled) },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+            singleLine = true,
+            shape = MaterialTheme.shapes.small,
+            modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor   = GymSmartColors.Primary,
+                unfocusedBorderColor = GymSmartColors.Outline,
+                focusedLabelColor    = GymSmartColors.Primary,
+                unfocusedLabelColor  = GymSmartColors.TextSecondary,
+                focusedTextColor     = GymSmartColors.TextPrimary,
+                unfocusedTextColor   = GymSmartColors.TextPrimary,
+                focusedContainerColor   = GymSmartColors.SurfaceElevated,
+                unfocusedContainerColor = GymSmartColors.SurfaceElevated,
             )
         )
         ExposedDropdownMenu(
-            expanded         = expanded,
-            onDismissRequest = { expanded = false; query = "" }
+            expanded = expanded,
+            onDismissRequest = { expanded = false; query = "" },
+            containerColor = GymSmartColors.SurfaceElevated
         ) {
             filtered.forEach { country ->
                 DropdownMenuItem(
-                    text    = { Text(country) },
-                    onClick = {
-                        onSelect(country)
-                        expanded = false
-                        query    = ""
-                    }
+                    text = { Text(country, color = GymSmartColors.TextPrimary) },
+                    onClick = { onSelect(country); expanded = false; query = "" },
+                    colors = MenuItemColors(
+                        textColor = GymSmartColors.TextPrimary,
+                        leadingIconColor = GymSmartColors.TextPrimary,
+                        trailingIconColor = GymSmartColors.TextPrimary,
+                        disabledTextColor = GymSmartColors.TextDisabled,
+                        disabledLeadingIconColor = GymSmartColors.TextDisabled,
+                        disabledTrailingIconColor = GymSmartColors.TextDisabled,
+                    )
                 )
             }
         }

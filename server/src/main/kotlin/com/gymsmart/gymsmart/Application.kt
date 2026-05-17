@@ -16,7 +16,7 @@ import com.gymsmart.gymsmart.routes.getLocation
 import com.gymsmart.gymsmart.services.GpsService
 
 fun main() {
-    val port = System.getenv("PORT")?.toInt() ?: 8080  // ← Railway inyecta PORT
+    val port = System.getenv("PORT")?.toInt() ?: 8080
     embeddedServer(Netty, port = port, host = "0.0.0.0", module = Application::module)
         .start(wait = true)
 }
