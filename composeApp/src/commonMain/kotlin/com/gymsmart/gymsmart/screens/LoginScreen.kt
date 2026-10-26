@@ -27,7 +27,152 @@ fun LoginScreen(navController: NavController, authService: AuthService, profileS
     var errorMsg by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
 
+    // Cuenta registrada pero sin verificar: sin esto, el usuario quedaba en un callejón sin salida
+    // (ver AUTH-1 en doc/08-backlog-mejoras.md) — no había forma de introducir el código ni de
+    // reenviarlo desde el login.
+    var showVerification by remember { mutableStateOf(false) }
+    var verifyToken by remember { mutableStateOf("") }
+    var verifyError by remember { mutableStateOf("") }
+    var isVerifying by remember { mutableStateOf(false) }
+    var isResending by remember { mutableStateOf(false) }
+
     val scope = rememberCoroutineScope()
+
+    val fieldColors = OutlinedTextFieldDefaults.colors(
+        focusedBorderColor = GymSmartColors.Primary,
+        unfocusedBorderColor = GymSmartColors.Outline,
+        focusedLabelColor = GymSmartColors.Primary,
+        unfocusedLabelColor = GymSmartColors.TextSecondary,
+        cursorColor = GymSmartColors.Primary,
+        focusedTextColor = GymSmartColors.TextPrimary,
+        unfocusedTextColor = GymSmartColors.TextPrimary,
+        focusedContainerColor = GymSmartColors.SurfaceCard,
+        unfocusedContainerColor = GymSmartColors.SurfaceCard,
+    )
+
+    suspend fun goToDashboardOrOnboarding() {
+        // null (no se pudo saber, p.ej. fallo de red) nunca se trata como "no tiene perfil": eso
+        // mandaría a rehacer el onboarding y el guardado final sobrescribiría un perfil real (ver
+        // RED-1 en doc/08-backlog-mejoras.md).
+        val destination = if (profileService.hasProfile() == false) Screen.Onboarding.route else Screen.Dashboard.route
+        navController.navigate(destination) {
+            popUpTo(Screen.Login.route) { inclusive = true }
+        }
+    }
+
+    if (showVerification) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(GymSmartColors.Background)
+                .padding(horizontal = 28.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(72.dp)
+                    .background(GymSmartColors.SurfaceCard, shape = MaterialTheme.shapes.extraLarge),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("✉", style = MaterialTheme.typography.headlineLarge, color = GymSmartColors.Primary)
+            }
+
+            Spacer(Modifier.height(24.dp))
+
+            Text("Verifica tu email", style = MaterialTheme.typography.headlineMedium, color = GymSmartColors.TextPrimary)
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Tu cuenta todavía no está verificada. Introduce el código que te enviamos a",
+                style = MaterialTheme.typography.bodyMedium,
+                color = GymSmartColors.TextSecondary
+            )
+            Text(email, style = MaterialTheme.typography.bodyMedium, color = GymSmartColors.Primary, fontWeight = FontWeight.SemiBold)
+
+            Spacer(Modifier.height(32.dp))
+
+            OutlinedTextField(
+                value = verifyToken,
+                onValueChange = { verifyToken = it; verifyError = "" },
+                label = { Text("Código de verificación") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.small,
+                isError = verifyError.isNotEmpty(),
+                colors = fieldColors
+            )
+
+            if (verifyError.isNotEmpty()) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    verifyError,
+                    color = if (verifyError.contains("reenviado")) GymSmartColors.Success else GymSmartColors.Error,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            Spacer(Modifier.height(20.dp))
+
+            Button(
+                onClick = {
+                    scope.launch {
+                        isVerifying = true
+                        verifyError = ""
+                        val result = authService.verifyEmail(verifyToken.trim())
+                        if (result.success) {
+                            goToDashboardOrOnboarding()
+                        } else {
+                            verifyError = result.message
+                        }
+                        isVerifying = false
+                    }
+                },
+                enabled = verifyToken.isNotBlank() && !isVerifying,
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                shape = MaterialTheme.shapes.small,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = GymSmartColors.Primary,
+                    disabledContainerColor = GymSmartColors.Outline,
+                    contentColor = GymSmartColors.OnPrimary,
+                    disabledContentColor = GymSmartColors.TextDisabled
+                )
+            ) {
+                if (isVerifying) {
+                    CircularProgressIndicator(color = GymSmartColors.OnPrimary, modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                } else {
+                    Text("Verificar cuenta", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            TextButton(
+                onClick = {
+                    scope.launch {
+                        isResending = true
+                        authService.resendVerification(email)
+                        isResending = false
+                        verifyError = "Código reenviado, revisa tu bandeja"
+                    }
+                },
+                enabled = !isResending
+            ) {
+                Text(
+                    if (isResending) "Enviando..." else "¿No te llegó? Reenviar código",
+                    color = GymSmartColors.TextSecondary,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            TextButton(onClick = { showVerification = false; verifyError = "" }) {
+                Text("Volver", color = GymSmartColors.TextSecondary, style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+        return
+    }
 
     Column(
         modifier = Modifier
@@ -126,16 +271,9 @@ fun LoginScreen(navController: NavController, authService: AuthService, profileS
                     errorMsg = ""
                     val response = authService.login(email, password)
                     if (response.success) {
-                        val destination = if (profileService.hasProfile()) {
-                            Screen.Dashboard.route
-                        } else {
-                            Screen.Onboarding.route
-                        }
-                        navController.navigate(destination) {
-                            popUpTo(Screen.Login.route) { inclusive = true }
-                        }
+                        goToDashboardOrOnboarding()
                     } else if (response.message == "EMAIL_NOT_VERIFIED") {
-                        errorMsg = "Debes verificar tu email. Revisa tu bandeja de entrada."
+                        showVerification = true
                     } else {
                         errorMsg = response.message
                     }

@@ -10,7 +10,9 @@ import kotlinx.serialization.Serializable
 
 class NutritionService(private val httpClient: HttpClient) {
 
-    suspend fun saveMealRemote(entry: MealEntry, mealType: String, date: String): Boolean {
+    /** Devuelve el id creado por el servidor, o null si falló. Sin el id real, la comida recién
+     * añadida no se puede editar ni borrar hasta recargar la pantalla (ver NUT-2 en el backlog). */
+    suspend fun saveMealRemote(entry: MealEntry, mealType: String, date: String): String? {
         return try {
             val response = httpClient.post("${AppConfig.BASE_URL}/nutrition/add") {
                 contentType(ContentType.Application.Json)
@@ -22,8 +24,9 @@ class NutritionService(private val httpClient: HttpClient) {
                     )
                 )
             }
-            response.status == HttpStatusCode.Created
-        } catch (e: Exception) { false }
+            if (response.status != HttpStatusCode.Created) return null
+            response.body<Map<String, String>>()["id"]
+        } catch (e: Exception) { null }
     }
 
     suspend fun getUserMeals(date: String): List<MealEntryWithTarget>? {

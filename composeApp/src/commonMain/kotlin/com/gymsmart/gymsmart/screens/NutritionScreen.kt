@@ -51,6 +51,7 @@ import io.ktor.client.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
+import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import kotlinx.coroutines.launch
 import kotlinx.datetime.*
@@ -110,6 +111,10 @@ fun NutritionScreen(
     var carbGoalBase    by remember { mutableStateOf(200.0) }
     var kcalGoal        by remember { mutableStateOf(2000.0) }
     var hasWearable     by remember { mutableStateOf(false) }
+    // Sin esto, si falla la carga del perfil el usuario cuenta todo el día contra los valores de
+    // arriba (2000 kcal, etc.) creyendo que son sus objetivos reales, sin ninguna señal de que no lo
+    // son (ver NUT-3 en doc/08-backlog-mejoras.md).
+    var goalsLoaded     by remember { mutableStateOf(false) }
 
     val proteinGoal by remember { derivedStateOf { proteinGoalBase } }
     val fatGoal by remember { derivedStateOf {
@@ -129,13 +134,16 @@ fun NutritionScreen(
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(selectedDate) {
-        profileService.getProfileResponse().onSuccess { response ->
-            kcalGoal        = response.targets.targetKcal.toDouble()
-            proteinGoalBase = response.targets.proteinG.toDouble()
-            carbGoalBase    = response.targets.carbsG.toDouble()
-            fatGoalBase     = response.targets.fatG.toDouble()
-            hasWearable     = response.profile.activityLevel == "wearable"
-        }
+        profileService.getProfileResponse()
+            .onSuccess { response ->
+                kcalGoal        = response.targets.targetKcal.toDouble()
+                proteinGoalBase = response.targets.proteinG.toDouble()
+                carbGoalBase    = response.targets.carbsG.toDouble()
+                fatGoalBase     = response.targets.fatG.toDouble()
+                hasWearable     = response.profile.activityLevel == "wearable"
+                goalsLoaded     = true
+            }
+            .onFailure { goalsLoaded = false }
         if (hasWearable) runCatching { healthDataProvider.getTodayActiveCalories() }.onSuccess { activeCalories = it }
         nutritionService.getUserMeals(selectedDate.toString())?.forEach { entryWithTarget ->
             val mealType = MealType.entries.find { it.name == entryWithTarget.mealType }
@@ -157,8 +165,12 @@ fun NutritionScreen(
                         scope.launch {
                             sheetMode = null
                             try {
-                                val raw = httpClient.get("${AppConfig.BASE_URL}/food/barcode/$code").bodyAsText()
-                                val product = Json { ignoreUnknownKeys = true }.decodeFromString<Product>(raw)
+                                val response = httpClient.get("${AppConfig.BASE_URL}/food/barcode/$code")
+                                if (!response.status.isSuccess()) {
+                                    snackbarHostState.showSnackbar("Producto no encontrado (código: $code)", duration = SnackbarDuration.Short)
+                                    return@launch
+                                }
+                                val product = Json { ignoreUnknownKeys = true }.decodeFromString<Product>(response.bodyAsText())
                                 sheetMode = SheetMode.PortionPicker(mode.meal, product)
                             } catch (e: Exception) {
                                 snackbarHostState.showSnackbar("Producto no encontrado (código: $code)", duration = SnackbarDuration.Short)
@@ -191,12 +203,15 @@ fun NutritionScreen(
                             fatPer100 = n?.fat_100g ?: 0.0
                         )
                         scope.launch {
-                            val success = nutritionService.saveMealRemote(entry, mode.meal.name, selectedDate.toString())
-                            if (success) {
+                            val newId = nutritionService.saveMealRemote(entry, mode.meal.name, selectedDate.toString())
+                            if (newId != null) {
+                                // El id lo asigna el servidor: sin él, esta comida no se podría editar
+                                // ni borrar hasta recargar la pantalla (ver NUT-2 en el backlog).
+                                val savedEntry = entry.copy(id = newId)
                                 if (mode.existingEntry != null) {
                                     val idx = list.indexOfFirst { it.id == mode.existingEntry.id }
-                                    if (idx >= 0) list[idx] = entry
-                                } else list.add(entry)
+                                    if (idx >= 0) list[idx] = savedEntry
+                                } else list.add(savedEntry)
                                 closeSheet()
                             } else snackbarHostState.showSnackbar("Error: No se pudo guardar en la nube.", duration = SnackbarDuration.Short)
                         }
@@ -287,6 +302,23 @@ fun NutritionScreen(
                     selectedDate = selectedDate,
                     onDateSelected = { selectedDate = it }
                 )
+            }
+            if (!goalsLoaded) {
+                item {
+                    Spacer(Modifier.height(16.dp))
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        color = GymSmartColors.Error.copy(alpha = 0.12f),
+                        shape = MaterialTheme.shapes.small
+                    ) {
+                        Text(
+                            "⚠ No se pudieron cargar tus objetivos reales. Mostrando valores aproximados.",
+                            modifier = Modifier.padding(12.dp),
+                            color = GymSmartColors.Error,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
             }
             item {
                 Spacer(Modifier.height(16.dp))
@@ -498,6 +530,7 @@ private fun FoodSearchSheet(
     var favorites by remember { mutableStateOf<List<Product>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
     var errorMsg  by remember { mutableStateOf<String?>(null) }
+    var hasSearched by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         history   = nutritionService.getFoodHistory()
@@ -560,12 +593,24 @@ private fun FoodSearchSheet(
                     Button(
                         onClick = {
                             scope.launch {
-                                isLoading = true; errorMsg = null; results = emptyList()
+                                isLoading = true; errorMsg = null; results = emptyList(); hasSearched = false
                                 try {
-                                    val raw = httpClient.get("${AppConfig.BASE_URL}/food/search") { parameter("q", query) }.bodyAsText()
-                                    results = Json { ignoreUnknownKeys = true }.decodeFromString<FoodSearchResponse>(raw).products
-                                } catch (e: Exception) { errorMsg = "Error: ${e.message}" }
-                                isLoading = false
+                                    val response = httpClient.get("${AppConfig.BASE_URL}/food/search") { parameter("q", query) }
+                                    if (!response.status.isSuccess()) {
+                                        errorMsg = "No se pudo buscar. Inténtalo de nuevo."
+                                    } else {
+                                        val products = Json { ignoreUnknownKeys = true }
+                                            .decodeFromString<FoodSearchResponse>(response.bodyAsText()).products
+                                        // Sin kcal/100g ni macros no hay nada que registrar: se filtran para
+                                        // no poder guardar una comida de 0 kcal (ver NUT-4 en el backlog).
+                                        results = products.filter { it.nutriments.estimatedKcalPer100() > 0.0 }
+                                    }
+                                } catch (e: Exception) {
+                                    errorMsg = "No se pudo buscar. Comprueba tu conexión."
+                                } finally {
+                                    isLoading = false
+                                    hasSearched = true
+                                }
                             }
                         },
                         enabled = query.isNotBlank() && !isLoading,
@@ -583,7 +628,11 @@ private fun FoodSearchSheet(
                 Spacer(Modifier.height(8.dp))
                 errorMsg?.let { Text(it, color = GymSmartColors.Error, style = MaterialTheme.typography.bodySmall) }
                 Spacer(Modifier.height(4.dp))
-                ProductList(products = results, onProductSelected = onProductSelected)
+                if (hasSearched && errorMsg == null && results.isEmpty()) {
+                    EmptySheetState("Sin resultados con datos nutricionales para \"$query\"")
+                } else {
+                    ProductList(products = results, onProductSelected = onProductSelected)
+                }
             }
             1 -> {
                 if (history.isEmpty()) EmptySheetState("Aún no has añadido ningún alimento")

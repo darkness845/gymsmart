@@ -22,6 +22,7 @@ fun main() {
 }
 
 fun Application.module() {
+    configureErrorHandling()
     configureSerialization()
     configureCORS()
 

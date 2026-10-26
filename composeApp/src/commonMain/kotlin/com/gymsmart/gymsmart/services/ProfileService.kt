@@ -14,14 +14,18 @@ class ProfileService(private val client: HttpClient) {
 
     private val base = AppConfig.BASE_URL
 
-    // ¿El usuario ya completó su perfil?
-    suspend fun hasProfile(): Boolean {
+    // ¿El usuario ya completó su perfil? null = no se pudo saber (red caída, respuesta inesperada):
+    // NUNCA se debe interpretar como "no tiene perfil", porque eso manda a rehacer el onboarding y
+    // el guardado final sobrescribe un perfil real que sí existía (ver RED-1 en
+    // doc/08-backlog-mejoras.md).
+    suspend fun hasProfile(): Boolean? {
         return try {
-            val text = client.get("$base/profile/has").bodyAsText()
-            Json.parseToJsonElement(text).jsonObject["hasProfile"]
-                ?.jsonPrimitive?.boolean ?: false
+            val response = client.get("$base/profile/has")
+            if (!response.status.isSuccess()) return null
+            Json.parseToJsonElement(response.bodyAsText()).jsonObject["hasProfile"]
+                ?.jsonPrimitive?.boolean
         } catch (e: Exception) {
-            false
+            null
         }
     }
 

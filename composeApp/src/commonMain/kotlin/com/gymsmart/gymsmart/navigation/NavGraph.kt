@@ -1,6 +1,17 @@
 package com.gymsmart.gymsmart.navigation
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -42,6 +53,33 @@ sealed class Screen(val route: String) {
 data class RouteDetailArgs(val routeId: String)
 
 @Composable
+private fun StartupScreen(showError: Boolean, onRetry: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(com.gymsmart.gymsmart.ui.theme.GymSmartColors.Background),
+        contentAlignment = Alignment.Center
+    ) {
+        if (showError) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    "No se pudo conectar con el servidor",
+                    color = com.gymsmart.gymsmart.ui.theme.GymSmartColors.TextPrimary
+                )
+                Button(onClick = onRetry) {
+                    Text("Reintentar")
+                }
+            }
+        } else {
+            CircularProgressIndicator(color = com.gymsmart.gymsmart.ui.theme.GymSmartColors.Primary)
+        }
+    }
+}
+
+@Composable
 fun NavGraph(
     locationProvider: LocationProvider,
     healthDataProvider: HealthDataProvider,
@@ -56,19 +94,34 @@ fun NavGraph(
 
     val scope = rememberCoroutineScope()
     var startDestination by remember { mutableStateOf<String?>(null) }
+    var startupError by remember { mutableStateOf(false) }
+    var retryTrigger by remember { mutableStateOf(0) }
 
-    LaunchedEffect(Unit) {
+    // Un fallo de red aquí NUNCA debe decidir "no hay sesión" ni "no tiene perfil": antes eso podía
+    // expulsar al login a un usuario con sesión válida, o peor, mandarlo a rehacer el onboarding y
+    // sobrescribir un perfil real (ver RED-1 en doc/08-backlog-mejoras.md). Ante un fallo de red se
+    // muestra un reintento, nunca se adivina el destino.
+    LaunchedEffect(retryTrigger) {
+        startupError = false
         val response = authService.me()
-        startDestination = if (response.success) {
-            // Usuario logado: comprobar si ya completó el onboarding
-            if (profileService.hasProfile()) Screen.Dashboard.route
-            else Screen.Onboarding.route
-        } else {
-            Screen.Login.route
+        when {
+            response.networkError -> startupError = true
+            !response.success -> startDestination = Screen.Login.route
+            else -> {
+                // Usuario logado: comprobar si ya completó el onboarding.
+                // null (no se pudo saber) nunca se trata como "no tiene perfil" — se asume que sí lo
+                // tiene y Dashboard se encarga de mostrar su propio estado de carga/error.
+                startDestination =
+                    if (profileService.hasProfile() == false) Screen.Onboarding.route
+                    else Screen.Dashboard.route
+            }
         }
     }
 
-    if (startDestination == null) return
+    if (startDestination == null) {
+        StartupScreen(showError = startupError, onRetry = { retryTrigger++ })
+        return
+    }
 
     NavHost(navController = navController, startDestination = startDestination!!) {
         composable(Screen.Login.route) {

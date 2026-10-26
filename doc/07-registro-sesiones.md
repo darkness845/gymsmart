@@ -4,6 +4,49 @@ Bitácora corta por sesión de trabajo sobre el endurecimiento del proyecto. Ent
 
 ---
 
+## 2026-10-26 (continuación 5) — Fase 5: bloque 1 completo + parte del bloque 2
+
+Usuario pidió commitear lo de Fase 4 y empezar la Fase 5 por el orden de ataque propuesto. Se atacó el
+bloque 1 completo ("pérdida de datos y funciones muertas") más dos ítems del bloque 2 (fiabilidad del
+conteo de kcal):
+
+- **DB-1**: `TursoService.execute()` ahora comprueba el status HTTP y el campo `error` de Turso, y
+  lanza `TursoException` en vez de devolver silenciosamente "sin datos". Se añadió el plugin
+  `StatusPages` (`plugins/ErrorHandling.kt`, nuevo) — antes no existía ningún manejo global de errores
+  en el servidor.
+- **NUT-1**: el cliente ya comprueba el status HTTP antes de parsear la respuesta de `/food/barcode/`,
+  así que un 404 ya no se interpreta como un producto válido vacío.
+- **NUT-2**: `/nutrition/add` ahora devuelve `{"id": "..."}`; el cliente usa ese id real en vez de
+  `""`, así que una comida recién añadida ya se puede editar/borrar sin recargar la pantalla.
+- **AUTH-1**: `LoginScreen` ahora muestra el mismo paso de verificación (código + reenviar) que ya
+  existía en `RegisterScreen` cuando el login responde `EMAIL_NOT_VERIFIED`. Antes era un callejón sin
+  salida.
+- **RED-1** (el más importante): `AuthResponse` tiene un campo nuevo `networkError`; `me()` lo marca en
+  el catch. `hasProfile()` ahora devuelve `Boolean?` (`null` = no se pudo saber) en vez de `Boolean`, y
+  en NavGraph/LoginScreen un `null` **nunca** se trata como "no tiene perfil" (eso es lo que mandaba a
+  rehacer el onboarding y sobrescribía el perfil real). El arranque de la app (`NavGraph.kt`) ahora
+  muestra una pantalla de carga con reintento en vez de una pantalla en blanco indefinida o de adivinar
+  el destino — de paso arregla también RED-4.
+- **NUT-3**: la pantalla de nutrición ahora muestra un aviso visible si no se pudieron cargar los
+  objetivos reales del perfil, en vez de presentar los valores hardcodeados (2000 kcal, etc.) como si
+  fueran los del usuario.
+- **NUT-4**: la búsqueda de alimentos filtra productos sin datos nutricionales útiles (antes se podían
+  añadir como comidas de 0 kcal), y distingue "sin resultados" de "falló la búsqueda".
+- Todo verificado con `./gradlew :server:compileKotlin` y `:composeApp:compileKotlinJvm` (`BUILD
+  SUCCESSFUL`) tras cada cambio. **No se ha podido verificar el target Android** por falta de Android
+  SDK en este entorno — ninguno de los cambios de esta tanda toca código Android puro, así que el
+  riesgo es bajo, pero queda pendiente de build real.
+- `08-backlog-mejoras.md` actualizado: cada ítem resuelto está marcado con ✅ y referencia al detalle.
+- **Pendiente del bloque 2**: WEAR-1/2/3 (recuento del wearable con `aggregate()`).
+- **Bloques 3-5 sin empezar**: GPS (foreground service — cambios más invasivos, requieren permisos
+  nuevos y un `Service` de Android no verificable en este entorno), cliente HTTP único, gate premium
+  real, redimensionado de imagen para IA.
+- **Siguiente sesión**: decidir si se sigue con WEAR-1/2/3 (cambio acotado, un archivo) antes de entrar
+  en GPS (más invasivo, mejor con confirmación explícita dado que no se puede verificar compilación
+  Android aquí). Commit de esta tanda pendiente de confirmación del usuario.
+
+---
+
 ## 2026-10-26 (continuación 4) — Fase 4 completa: investigación exhaustiva
 
 Sesión de investigación profunda a petición del usuario ("investiga bien todo", con el objetivo explícito

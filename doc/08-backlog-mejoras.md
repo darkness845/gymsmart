@@ -10,17 +10,30 @@ Leyenda: 🔴 crítico · 🟠 medio · 🟡 bajo · ✅ arreglado
 
 ---
 
-## ✅ Arreglado durante la Fase 4
+## ✅ Arreglado
 
 | # | Qué | Dónde |
 |---|---|---|
 | R1 | **Regresión introducida por el fix de seguridad de Fase 2**: el análisis corporal por IA usaba un `HttpClient` sin cookies, así que al exigir sesión en `/ai/body-analysis` empezó a devolver 401 y la función quedó muerta, fallando en silencio (`printStackTrace`). Ahora usa el cliente con cookies, se eliminó el cliente duplicado y los fallos muestran un mensaje visible al usuario. | `WeightScreen.kt` |
 | R2 | **Crash al abrir la pantalla de Peso sin conexión**: `weightService.getHistory()` era la única llamada de servicio sin `try/catch`, dentro de un `LaunchedEffect` con `try/finally` sin `catch` → excepción no capturada. Ahora va envuelta en `runCatching`. | `WeightScreen.kt` |
 | R3 | **El estado premium no se cargaba nunca sin historial de peso**: `subService.getStatus()` estaba solo en la rama `else`, así que un usuario premium sin pesos registrados veía "Solo Premium" y se le mandaba a pagar de nuevo. Ahora se carga siempre. | `WeightScreen.kt` |
+| DB-1 | **Los errores de Turso se convertían en silencio en "éxito"/"sin datos"**: `TursoService.execute()` no comprobaba el status HTTP ni el campo `error` de cada statement. Ahora lanza `TursoException` si Turso falla, y se añadió el plugin `StatusPages` (antes no existía ningún manejo global de errores) para que cualquier excepción no capturada devuelva un JSON claro en vez de dejar al cliente sin respuesta. | `TursoService.kt`, `plugins/ErrorHandling.kt` (nuevo) |
+| NUT-1 | **Un código de barras no encontrado se guardaba como comida de 0 kcal**: no se comprobaba el status HTTP antes de deserializar; un 404 con cuerpo `{"error":...}` se parseaba como un `Product` vacío válido. Ahora se comprueba `response.status.isSuccess()` antes de parsear. | `NutritionScreen.kt` |
+| NUT-2 | **Una comida recién añadida no se podía editar ni borrar**: `/nutrition/add` no devolvía el id creado, así que la entrada local quedaba con `id = ""`. Ahora el servidor devuelve `{"id": "..."}` y el cliente lo usa para la entrada local. | `NutritionRoutes.kt`, `NutritionService.kt` (servidor y cliente), `NutritionScreen.kt` |
+| NUT-3 | **Objetivos de nutrición inventados (2000 kcal, etc.) mostrados como reales si fallaba la carga del perfil**: no había ninguna señal de que esos valores no eran los del usuario. Ahora hay un aviso visible cuando no se pudieron cargar los objetivos reales. | `NutritionScreen.kt` |
+| NUT-4 | **Productos sin datos nutricionales se podían añadir como comidas de 0 kcal**: la búsqueda de alimentos no filtraba resultados sin kcal/macros útiles, y no distinguía "sin resultados" de "falló la búsqueda". Ahora se filtran los productos sin datos útiles y se muestra un mensaje de "sin resultados" distinto del error de red. | `NutritionScreen.kt` |
+| AUTH-1 | **Una cuenta registrada sin verificar quedaba bloqueada para siempre**: el login solo mostraba un texto ante `EMAIL_NOT_VERIFIED`, sin forma de introducir el código ni de reenviarlo. Ahora `LoginScreen` muestra el mismo paso de verificación (código + reenviar) que ya existía en `RegisterScreen`. | `LoginScreen.kt` |
+| RED-1 | **Un fallo de red podía sobrescribir el perfil real del usuario**: `me()`/`hasProfile()` convertían cualquier excepción en una respuesta negativa, indistinguible de "no tienes sesión"/"no tienes perfil" — eso mandaba a Login o a rehacer el Onboarding (que sobrescribe el perfil real al guardar). Ahora `AuthResponse` tiene un campo `networkError`, `hasProfile()` devuelve `Boolean?` (`null` = no se pudo saber, nunca se trata como "no tiene perfil"), y el arranque de la app muestra una pantalla de carga/reintento en vez de adivinar el destino. **De regalo, arregla también RED-4** (pantalla en blanco indefinida al arrancar). | `UserSession.kt` (modelo), `AuthService.kt`, `ProfileService.kt`, `NavGraph.kt`, `LoginScreen.kt` |
 
-Los tres se detectaron porque tres investigaciones independientes señalaron el mismo síntoma. **Lección
-registrada en [02-convenciones.md](02-convenciones.md)**: al añadir una comprobación de sesión a un
-endpoint, hay que verificar con qué cliente HTTP lo llama el cliente.
+Los tres primeros (R1-R3) se detectaron porque tres investigaciones independientes señalaron el mismo
+síntoma. **Lección registrada en [02-convenciones.md](02-convenciones.md)**: al añadir una comprobación
+de sesión a un endpoint, hay que verificar con qué cliente HTTP lo llama el cliente, y nunca derivar
+estado de negocio de que una excepción haya ocurrido.
+
+Todo lo anterior está verificado con `./gradlew :server:compileKotlin` y
+`:composeApp:compileKotlinJvm` (ambos `BUILD SUCCESSFUL`) tras cada cambio. No se ha podido compilar el
+target Android en este entorno (sin Android SDK instalado) — los cambios que tocan código Android puro
+(ninguno de los de esta tanda) seguirían pendientes de esa verificación.
 
 ---
 
@@ -58,62 +71,46 @@ probable en una ruta larga con la pantalla apagada— se pierde la ruta completa
 ni recuperación. Nota: `rememberSaveable` no sirve aquí (miles de puntos exceden el límite del `Bundle`);
 hace falta persistencia local real.
 
-### RED-1 — Un fallo de red puede sobrescribir el perfil del usuario (pérdida de datos)
-Cadena completa del problema:
+### ✅ RED-1 — Un fallo de red puede sobrescribir el perfil del usuario (pérdida de datos) — Arreglado
+Cadena completa del problema (histórica, ya cerrada):
 1. `AuthService.me()` captura cualquier excepción y devuelve `success = false` → **"sin red" es
    indistinguible de "sin sesión"**.
-2. `ProfileService.hasProfile()` devuelve `false` ante cualquier excepción (incluida una página de error
+2. `ProfileService.hasProfile()` devolvía `false` ante cualquier excepción (incluida una página de error
    502 de Render, que además parsea a mano).
-3. `NavGraph.kt:60-69` interpreta ese `false` como "este usuario no tiene perfil" y lo manda a
+3. `NavGraph.kt:60-69` interpretaba ese `false` como "este usuario no tiene perfil" y lo mandaba a
    **Onboarding**.
 4. Rehacer el onboarding llama a `/profile/save`, que en el servidor es `INSERT OR REPLACE INTO
    user_profiles` → **sobrescribe peso, altura, edad y objetivos reales**, y además escribe en
    `weight_history`.
 
-*Impacto*: un parpadeo de red o un cold start de Render en el momento justo puede destruir el perfil.
-Es el único camino de pérdida de datos encontrado en toda la auditoría.
+Era el único camino de pérdida de datos encontrado en toda la auditoría. Ver el arreglo completo en la
+sección "✅ Arreglado" al principio de este documento.
 
-*Arreglo*: que `me()` y `hasProfile()` distingan fallo de red de respuesta negativa (devolver `Result`),
-y que ante fallo de red la app muestre carga/reintento **en vez de decidir destino**. Nunca derivar "no
-tiene perfil" de una excepción. El mismo patrón está en `LoginScreen.kt:129`.
+### ✅ NUT-1 — Un código de barras no encontrado se guardaba como comida de 0 kcal — Arreglado
+`NutritionScreen.kt:156-166` no comprobaba el código de estado. Cuando el producto no existe, el
+servidor responde 404 con `{"error":"..."}` (`FoodRoute.kt:32`), pero como `Product` tiene los tres
+campos nulables con valor por defecto y se usa `ignoreUnknownKeys = true`, ese JSON de error se
+deserializaba sin excepción en un `Product` vacío, guardable en el diario. Ver "✅ Arreglado" arriba.
 
-### NUT-1 — Un código de barras no encontrado se guarda como comida de 0 kcal
-`NutritionScreen.kt:156-166` no comprueba el código de estado. Cuando el producto no existe, el servidor
-responde 404 con `{"error":"..."}` (`FoodRoute.kt:32`), pero como `Product` tiene los tres campos
-nulables con valor por defecto y se usa `ignoreUnknownKeys = true`, **ese JSON de error se deserializa
-sin excepción** en un `Product` vacío. No se entra en el `catch`, así que el aviso "Producto no
-encontrado" nunca aparece: se abre el selector de porción con "Sin nombre" y 0 kcal, y el usuario puede
-guardarlo en su diario.
+### ✅ NUT-2 — Una comida recién añadida no se podía editar ni borrar — Arreglado
+`NutritionScreen.kt:185` creaba la entrada con `id = ""` porque `saveMealRemote` solo devolvía `Boolean`
+y el UUID que genera el servidor nunca volvía al cliente. Rompía el flujo más común de la funcionalidad
+principal ("me he pasado con los gramos, lo borro"). Ver "✅ Arreglado" arriba.
 
-### NUT-2 — Una comida recién añadida no se puede editar ni borrar
-`NutritionScreen.kt:185` crea la entrada con `id = ""` porque `saveMealRemote` solo devuelve `Boolean` y
-el UUID que genera el servidor nunca vuelve al cliente. Al intentar editarla o borrarla se llama a
-`/nutrition/update/` o `/nutrition/delete/` sin id → error genérico. Solo se arregla al recargar la
-pantalla. Agravante: con varias comidas nuevas (todas con `id = ""`), las búsquedas por id casan con la
-entrada equivocada.
+### ✅ NUT-3 — La pantalla de nutrición mostraba objetivos inventados como si fueran reales — Arreglado
+`NutritionScreen.kt:108-111` inicializaba los objetivos hardcodeados (2000 kcal, etc.) y solo los
+sobrescribía en el `onSuccess` del perfil, sin `onFailure`. Era el peor fallo de confianza del
+inventario en una app cuyo propósito es contar calorías con fiabilidad. Ver "✅ Arreglado" arriba.
 
-*Impacto*: rompe el flujo más común de la funcionalidad principal ("me he pasado con los gramos, lo
-borro").
+### ✅ AUTH-1 — Cuenta registrada sin verificar = callejón sin salida permanente — Arreglado
+El paso de verificación por código vivía solo en el estado local de `RegisterScreen`; el login no
+ofrecía forma de introducir el código ni de reenviarlo ante `EMAIL_NOT_VERIFIED`. Cuenta inutilizable
+desde la app, sin recuperación posible. Ver "✅ Arreglado" arriba.
 
-*Arreglo*: que `/nutrition/add` devuelva el id creado y propagarlo a la entrada local.
-
-### NUT-3 — La pantalla de nutrición muestra objetivos inventados como si fueran reales
-`NutritionScreen.kt:108-111` inicializa los objetivos hardcodeados (**2000 kcal**, 150 g proteína, 200 g
-carbos, 65 g grasa) y solo los sobrescribe en el `onSuccess` del perfil, **sin `onFailure`**. Si la carga
-del perfil falla (cold start, 401, sin red), el usuario cuenta todo el día contra objetivos ficticios sin
-ninguna señal de que no son los suyos.
-
-*Impacto*: en una app cuyo propósito es contar calorías con fiabilidad, es el peor fallo de confianza del
-inventario, y encaja con la sensación de que "los números no van muy allá".
-
-### AUTH-1 — Cuenta registrada sin verificar = callejón sin salida permanente
-El paso de verificación por código vive solo en el estado local de `RegisterScreen`. Si el usuario cierra
-la app ahí: al volver, el login responde `EMAIL_NOT_VERIFIED` y `LoginScreen.kt:137-138` **solo muestra
-un texto**, sin campo para el código ni botón de reenviar. Registrarse otra vez da "email ya
-registrado", y el reset de contraseña no toca `email_verified`. El servidor **sí** expone
-`/auth/resend-verification` y `AuthService` tiene el método, pero ninguna pantalla accesible lo ofrece.
-
-*Impacto*: cuenta inutilizable desde la app, sin recuperación posible por el usuario.
+### ✅ DB-1 — Los errores de base de datos se convertían en silencio en "éxito" — Arreglado
+`TursoService.execute()` no comprobaba el status HTTP ni el campo `error` de Turso. Un token caducado o
+una cuota superada hacían que las lecturas devolvieran "no hay datos" y las escrituras fallidas se
+reportaran como correctas. Ver "✅ Arreglado" arriba.
 
 ### SEC-1 — El gate premium no existe en el servidor
 `ProfileService.isPremium()` **existe pero no se llama desde ningún sitio** (verificado con grep: solo
@@ -122,18 +119,6 @@ sesión, cualquier usuario registrado y logueado —gratis— puede llamar a `/a
 no hay cuota diaria, ni rate limit, ni caché, ni registro de consumo.
 
 *Impacto*: tus créditos de OpenAI. Ver también [03-seguridad.md](03-seguridad.md).
-
-### DB-1 — Todos los errores de base de datos se convierten en silencio en "éxito" o "sin datos"
-`TursoService.execute()` no comprueba el código de estado HTTP, y Ktor sin `expectSuccess` no lanza
-excepción con 4xx/5xx. `extractRows()` busca la clave `results` y, al no encontrarla en un cuerpo de
-error, devuelve `emptyList()`. Para las escrituras el resultado se ignora por completo.
-
-*Consecuencias*: un token de Turso caducado, una cuota superada o una violación de constraint hacen que
-las lecturas devuelvan "no hay datos" y **que las escrituras fallidas se reporten como correctas**. Por
-ejemplo, `/nutrition/add` responde `201 Created "Guardado en Turso"` aunque el `INSERT` haya fallado: el
-usuario cree que registró la comida y no está.
-
-*Arreglo*: comprobar el status y la presencia de `error` en la respuesta de Turso, y propagar el fallo.
 
 ---
 
@@ -191,9 +176,9 @@ usuario cree que registró la comida y no está.
   `loc.accuracy` vale `0.0` y el filtro `> 25f` la trata como la posición más precisa posible.
 - **GPS-6 — La duración incluye el tiempo parado**, porque se calcula como "ahora menos el inicio" al
   guardar, incluyendo el rato que el diálogo estuvo abierto. Cualquier ritmo (min/km) derivado sale mal.
-- **NUT-4 — No se filtran los productos sin datos nutricionales.** `NutritionScreen.kt:608-611` pinta
-  todos los que devuelve OFF, incluidos los de `nutriments = null`, como "0 kcal/100g", y **se pueden
-  añadir**: comidas de 0 kcal que no suman nada al diario.
+- ✅ **NUT-4 — Arreglado.** No se filtraban los productos sin datos nutricionales: `nutriments = null`
+  se mostraba como "0 kcal/100g" y se podía añadir. Ahora se filtran y se distingue "sin resultados" de
+  "falló la búsqueda".
 - **IA-2 — Las cifras del análisis no son reproducibles.** `OpenAIService.kt` no fija `temperature` (por
   defecto 1.0 → máxima variabilidad) ni usa `response_format: {"type":"json_object"}`, que gpt-4o soporta
   de forma nativa. La misma foto analizada dos veces da porcentajes distintos. Además el prompt instruye
@@ -334,16 +319,17 @@ usuario cree que registró la comida y no está.
 
 ---
 
-## Orden de ataque sugerido para la Fase 5
+## Orden de ataque para la Fase 5 — estado
 
-1. **Pérdida de datos y funciones muertas primero**: RED-1 (sobrescritura del perfil), NUT-2 (editar/
-   borrar comidas), AUTH-1 (cuenta bloqueada), NUT-1 (código de barras), DB-1 (errores de BBDD
-   silenciosos).
-2. **Fiabilidad del conteo de kcal**, que es el núcleo del producto: NUT-3 (objetivos inventados), NUT-4
-   (productos sin datos), WEAR-1/2/3 (recuento del wearable).
-3. **GPS como funcionalidad real**: GPS-1 (foreground service), GPS-2 (huecos), GPS-3 (persistencia),
-   GPS-4 (guardado por lotes).
-4. **Resiliencia transversal**: HTTP-1 (cliente único) como base, y encima RED-2 (timeouts), RED-3 (401),
-   RED-4 (pantalla de arranque).
-5. **Coste y seguridad**: SEC-1 (gate premium real), IA-1 (redimensionar imagen), OFF-1 (caché).
+1. ✅ **Pérdida de datos y funciones muertas** — completo: RED-1, NUT-2, AUTH-1, NUT-1, DB-1.
+2. 🔄 **Fiabilidad del conteo de kcal** — NUT-3 y NUT-4 arreglados. **Pendiente: WEAR-1/2/3**
+   (recuento del wearable — migrar a `aggregate()` y sincronización en segundo plano).
+3. ⏳ **GPS como funcionalidad real** — pendiente: GPS-1 (foreground service), GPS-2 (huecos), GPS-3
+   (persistencia), GPS-4 (guardado por lotes). Son los cambios más invasivos (permisos nuevos, `Service`
+   de Android, no verificables en este entorno sin Android SDK) — conviene decidir con el usuario antes
+   de tocarlos.
+4. ⏳ **Resiliencia transversal** — pendiente: HTTP-1 (cliente único) como base, y encima RED-2
+   (timeouts), RED-3 (401 centralizado).
+5. ⏳ **Coste y seguridad** — pendiente: SEC-1 (gate premium real), IA-1 (redimensionar imagen antes de
+   enviarla a OpenAI), OFF-1 (caché de búsquedas).
 6. El resto por severidad.

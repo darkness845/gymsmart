@@ -39,7 +39,7 @@ class NutritionService(private val turso: TursoService) {
         """.trimIndent())
     }
 
-    suspend fun addMeal(userId: String, req: MealEntryRequest) {
+    suspend fun addMeal(userId: String, req: MealEntryRequest): String {
         val id = UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
         turso.execute(
@@ -48,6 +48,7 @@ class NutritionService(private val turso: TursoService) {
                 req.proteinsPer100.toString(), req.carbsPer100.toString(),
                 req.fatPer100.toString(), req.mealType, req.date, now.toString())
         )
+        return id
     }
 
     suspend fun getUserMeals(userId: String, date: String): List<List<String?>> {

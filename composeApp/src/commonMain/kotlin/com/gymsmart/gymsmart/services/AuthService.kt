@@ -56,7 +56,10 @@ class AuthService {
         return try {
             client.get("$base/auth/me").body()
         } catch (e: Exception) {
-            AuthResponse(false, "Sin sesión")
+            // Excepción aquí = la petición ni siquiera tuvo respuesta (red caída, cold start de
+            // Render). Es distinto de que el servidor responda "no hay sesión" — no se debe tratar
+            // igual (ver RED-1 en doc/08-backlog-mejoras.md).
+            AuthResponse(false, "Error de conexión", networkError = true)
         }
     }
 

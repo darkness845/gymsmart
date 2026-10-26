@@ -20,8 +20,8 @@ fun Route.nutritionRoutes(nutritionService: NutritionService) {
         val session = call.sessions.get<UserSession>()
             ?: return@post call.respond(HttpStatusCode.Unauthorized, "No hay sesión")
         val req = call.receive<MealEntryRequest>()
-        nutritionService.addMeal(session.userId, req)
-        call.respond(HttpStatusCode.Created, "Guardado en Turso")
+        val id = nutritionService.addMeal(session.userId, req)
+        call.respond(HttpStatusCode.Created, mapOf("id" to id))
     }
 
     get("/nutrition/mine") {
