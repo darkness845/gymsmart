@@ -100,7 +100,35 @@ Bitácora corta por sesión de trabajo sobre el endurecimiento del proyecto. Ent
     estrategia de múltiples `HttpClient`/DI (requiere decidir enfoque antes de tocarlo).
 - **Nada de esta tanda se ha commiteado todavía** — queda en el working tree, pendiente de que el
   usuario confirme (como hizo con la tanda de seguridad).
-- **Siguiente sesión**: confirmar commit de esta limpieza; decidir cuándo desplegar a Render todo lo de
-  Fase 2; probar el cambio de cookie cifrada de Android en un dispositivo/emulador real; seguir con lo
-  que queda de Fase 3 (logging del cliente con una librería multiplataforma, estrategia de DI mínima) o
-  pasar a Fase 4 (validación de fiabilidad de nutrición/GPS/wearable).
+- Usuario confirmó commit de la limpieza de Fase 3 (commit `4a81cba`).
+
+### 2026-10-26 (continuación 3) — Fase 4: validación de nutrición
+
+- Usuario dijo "sigue" de nuevo. Los dos puntos restantes de Fase 3 (logging del cliente, estrategia de
+  DI) requieren decisiones de arquitectura que no se tomaron por iniciativa propia; se dejaron
+  documentados como pendientes y se pasó a Fase 4, empezando por nutrición (el dolor que más mencionó
+  el usuario).
+- **Investigación a fondo del modo "wearable"**: se leyó `ProfileService.computeTargets` línea a línea,
+  `NutritionScreen.kt` (cómo se usa `activeCalories`) y `HealthConnectProvider.kt` (semántica exacta de
+  `ActiveCaloriesBurnedRecord`, que por definición de Health Connect excluye el metabolismo basal).
+  **Conclusión: la hipótesis de la Fase 1 era incorrecta.** El diseño BMR (servidor) + kcal activas
+  reales (cliente, sumadas aparte) es un patrón válido y deliberado (igual que Fitbit/Garmin/MFP), no un
+  bug. El problema real de precisión es que la lectura de kcal activas es puntual por pantalla, no
+  continua — ya estaba identificado como mejora de Fase 5, ahora confirmado como la explicación más
+  probable de la imprecisión percibida. **Se corrigió `06-funcionalidades.md`** para reflejar esta
+  conclusión más sólida en vez de la hipótesis preliminar.
+- **Bug real encontrado y arreglado**: al revisar el cálculo de kcal por comida, 4 sitios en
+  `NutritionScreen.kt`/`NutritionService.kt` usaban el campo ambiguo `energy-kcal` de Open Food Facts
+  como si fuera por 100g cuando faltaba el campo correcto `energy-kcal_100g` (uno de los 4 ni siquiera
+  tenía ese fallback, mostraba 0 directamente). Se añadió `Nutriments?.estimatedKcalPer100()` en
+  `model/NutritionModels.kt` que estima kcal/100g a partir de los macros (regla 4/4/9) cuando falta el
+  campo correcto, en vez de asumir que un campo ambiguo es por 100g. Aplicado en los 4 sitios.
+  Verificado con `:composeApp:compileKotlinJvm` → `BUILD SUCCESSFUL`.
+- **No se tocó** la fórmula de TDEE del servidor (confirmada correcta) ni el patrón de lectura de Health
+  Connect (la mejora de fondo pertenece a Fase 5, es un cambio de arquitectura — background sync — no
+  una corrección puntual).
+- **Nada de esta tanda se ha commiteado todavía.**
+- **Siguiente sesión**: confirmar commit de los cambios de nutrición; decidir si Fase 4 continúa con
+  GPS/wearable (medir precisión real, considerar la mejora de sincronización en segundo plano) o se
+  pasa directamente a Fase 5; decidir cuándo desplegar todo lo acumulado a Render; probar en un
+  dispositivo real el cambio de cookie cifrada de Android.

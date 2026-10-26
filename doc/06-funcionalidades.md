@@ -1,24 +1,70 @@
 # Estado de las funcionalidades existentes
 
-Primera valoración (Fase 1), a partir de lectura de código. La **validación formal** con tests y
-comparación rigurosa contra fórmulas de referencia es trabajo de la Fase 4
-([00-roadmap.md](00-roadmap.md)) — esto es el punto de partida, no la conclusión final.
+La sección de nutrición se validó a fondo en Fase 4 (2026-10-26). GPS, wearable, training y
+suscripción siguen con la valoración preliminar de Fase 1 — pendientes de su propia pasada de Fase 4.
 
-## Nutrición / kcal / objetivos
+## Nutrición / kcal / objetivos — validado en Fase 4 (2026-10-26)
 
-**Veredicto preliminar: la base matemática está bien, falta integrar el gasto real del wearable.**
+**Veredicto: la fórmula de TDEE/macros es correcta y estándar. El modo "wearable" NO tiene el bug que se
+sospechaba inicialmente — su diseño es razonable. El problema real de precisión está en otro sitio: cómo
+y cuándo se lee el dato de la pulsera, y en un caso de datos de Open Food Facts ambiguos.**
 
-- `ProfileService.computeTargets` (servidor) usa Mifflin-St Jeor correctamente, con multiplicadores de
-  actividad estándar y reparto de macros razonable (ver detalle en
-  [01-arquitectura.md](01-arquitectura.md)).
-- **Problema identificado**: cuando el nivel de actividad es `"wearable"`, el servidor usa el BMR puro
-  como TDEE, sin sumar el gasto calórico real que reporta la pulsera/Health Connect. Esto coincide
-  exactamente con la percepción del usuario de que "los números no van muy allá" en el modo pulsera.
-  **Hipótesis de causa raíz** a confirmar en Fase 4: falta sumar `activeCaloriesBurnedToday` (o un
-  promedio de días anteriores) al BMR antes de calcular el objetivo.
-- El registro de comidas en sí (`/nutrition/add`, modelos `Product`/`Nutriments`) depende de datos de
-  Open Food Facts — no se confirmó en esta pasada si `NutritionScreen` llama directamente a
-  `/food/search|barcode` o si ese flujo está incompleto; **pendiente de confirmar en Fase 4**.
+### TDEE y macros (fórmula base)
+
+`ProfileService.computeTargets` (servidor) usa Mifflin-St Jeor correctamente (confirmado leyendo el
+código línea a línea), con multiplicadores de actividad estándar (1.2–1.9) y reparto de macros acorde a
+guías ISSN 2017 (proteína 2.0 g/kg en déficit / 1.8 g/kg resto, grasa 25% de kcal, carbos por
+diferencia, mínimos de seguridad 1500/1200 kcal). **No hay nada que corregir aquí.**
+
+### Modo "wearable" — hipótesis inicial descartada tras investigar más a fondo
+
+La Fase 1 planteó como hipótesis que el modo `activityLevel == "wearable"` estaba mal porque el servidor
+usa el BMR puro como `targetKcal`, sin multiplicador de actividad. Al investigar en profundidad (Fase 4)
+se confirmó que **esto no es un bug**: es un diseño deliberado tipo "calorías ganadas" (el mismo patrón
+que usan Fitbit/Garmin/MyFitnessPal con pulsera conectada):
+
+- El servidor manda `targetKcal = BMR + ajuste de objetivo` (sin multiplicador), etiquetado como "BMR"
+  en la UI (`ProfileScreen.kt:612`, `OnboardingScreen.kt:372`).
+- El cliente (`NutritionScreen.kt`) ya suma por su cuenta las kcal activas reales del día
+  (`healthDataProvider.getTodayActiveCalories()`, que en Android lee `ActiveCaloriesBurnedRecord` de
+  Health Connect desde medianoche hasta el momento de la consulta) al objetivo del servidor:
+  `realGoal = kcalGoal + activeCalories` (`NutritionScreen.kt:330`). Por definición, Health Connect
+  calcula las "calorías activas" excluyendo el metabolismo basal, así que `BMR + activeCalories` **sí
+  aproxima el TDEE real del día**, sin necesidad de un multiplicador adicional (que de hecho duplicaría
+  la actividad ya contada).
+- **El problema real es operativo, no de fórmula**: `getTodayActiveCalories()` se lee una sola vez por
+  cada apertura de pantalla (`LaunchedEffect(Unit)`), no de forma continua. Si el usuario abre
+  Nutrition/Dashboard a primera hora, `activeCalories` es ~0 y el objetivo del día aparece igual al BMR
+  puro (muy restrictivo); si no vuelve a abrir la pantalla, ese número desactualizado se queda fijo todo
+  el día aunque haya hecho mucha actividad real. Esto coincide con la sensación de "los números no van
+  muy allá": el presupuesto de kcal que ve el usuario suele estar desfasado respecto a su actividad real
+  del día.
+- **Esto ya estaba identificado como mejora de Fase 5** en la sección de wearable más abajo (sincronizar
+  en segundo plano en vez de consulta puntual) — se confirma aquí que es, con alta probabilidad, la causa
+  principal de la imprecisión percibida en el modo pulsera, más que la fórmula en sí.
+- Nota menor: la fórmula de TDEE está duplicada (servidor `ProfileService.kt` + vista previa de
+  onboarding en `OnboardingScreen.kt:345-356`). Es una duplicación necesaria hoy (el onboarding necesita
+  una vista previa antes de guardar, cuando todavía no hay respuesta del servidor), pero es un riesgo de
+  que ambas copias diverjan con el tiempo. Candidato a mover a `shared/` si ese módulo llega a usarse
+  como capa de dominio común (ver [01-arquitectura.md](01-arquitectura.md) §1) — no se toca ahora por ser
+  bajo riesgo y fuera del alcance de esta limpieza.
+
+### Registro de comidas — bug de datos encontrado y arreglado
+
+Al revisar cómo se calculan las kcal de cada comida registrada (`NutritionScreen.kt`), se encontró un
+problema real de precisión: cuando un producto de Open Food Facts no tenía el campo estándar
+`energy-kcal_100g`, el código usaba el campo `energy-kcal` (sin sufijo) **como si fuera por 100g** — pero
+ese campo no está garantizado a serlo en los datos de OFF (puede representar la ración, no 100g). Esto
+podía guardar kcal incorrectas para productos con datos incompletos, de forma silenciosa, y ese valor
+quedaba persistido para siempre en el historial/favoritos del usuario.
+
+**Arreglado (2026-10-26)**: se añadió `Nutriments?.estimatedKcalPer100()` en
+`model/NutritionModels.kt`, que prioriza `energy-kcal_100g`; si falta, estima kcal/100g a partir de los
+macros por 100g (regla 4/4/9: proteína×4 + carbos×4 + grasa×9), más fiable que asumir que un campo
+ambiguo es por 100g; solo si tampoco hay macros, usa `energy-kcal` como último recurso. Aplicado en los 4
+sitios de `NutritionScreen.kt`/`NutritionService.kt` que calculaban esto de forma inconsistente (uno de
+ellos ni siquiera tenía el fallback ambiguo, simplemente mostraba 0). Verificado con
+`:composeApp:compileKotlinJvm` → `BUILD SUCCESSFUL`.
 
 ## GPS / rutas
 

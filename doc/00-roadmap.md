@@ -17,7 +17,7 @@ aparece algo urgente, se arregla aunque todavía no se haya cerrado del todo la 
 | Fase 1 — Documentación de arquitectura | ✅ Primera versión completa | `01-arquitectura.md`, `02-convenciones.md`, `05-deuda-tecnica.md` escritos. Se refinarán si aparecen inexactitudes al tocar código. |
 | Fase 2 — Seguridad | 🔄 7 de 10 resueltos, 1 diferido a propósito | Solo queda #9 (logging del cliente, para Fase 3) y #6 (Stripe/PCI, diferido hasta activar pagos reales). **Falta desplegar todo a Render.** |
 | Fase 3 — Limpieza de código | 🔄 En curso | `backend/`/`frontend/` eliminados; `AndroidGpsTracker.kt`, `PermissionHelper.kt`, `WeightService.addWeight` eliminados; modelos de nutrición movidos a `model/`; duplicación de `GpsService` unificada; comentarios residuales de `AppConfig.kt` limpiados. Pendiente: logging del cliente, estrategia de DI mínima. |
-| Fase 4 — Validación de fiabilidad (kcal/objetivos/GPS/wearable) | ⏳ Pendiente | Primera valoración preliminar en `06-funcionalidades.md`; falta la validación formal con tests/campo. |
+| Fase 4 — Validación de fiabilidad (kcal/objetivos/GPS/wearable) | 🔄 Nutrición validada, resto pendiente | Fórmula de TDEE confirmada correcta; hipótesis del bug "wearable" descartada y corregida con mejor diagnóstico; bug real de datos de Open Food Facts encontrado y arreglado. GPS/wearable/training siguen con valoración preliminar de Fase 1. |
 | Fase 5 — Mejora de funcionalidades existentes | ⏳ Pendiente | |
 | Fase 6 — Nuevas funcionalidades (incluye soporte iOS/Web real) | ⏳ Bloqueada hasta cerrar 1-5 | Causa raíz de que iOS no compile ya diagnosticada en `01-arquitectura.md §5`. |
 

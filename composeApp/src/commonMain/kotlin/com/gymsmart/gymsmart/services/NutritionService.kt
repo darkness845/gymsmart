@@ -104,7 +104,7 @@ class NutritionService(private val httpClient: HttpClient) {
                 contentType(ContentType.Application.Json)
                 setBody(FavoriteBody(
                     name           = product.product_name ?: "",
-                    kcalPer100     = product.nutriments?.energy_kcal_100g ?: 0.0,
+                    kcalPer100     = product.nutriments.estimatedKcalPer100(),
                     proteinsPer100 = product.nutriments?.proteins_100g ?: 0.0,
                     carbsPer100    = product.nutriments?.carbohydrates_100g ?: 0.0,
                     fatPer100      = product.nutriments?.fat_100g ?: 0.0

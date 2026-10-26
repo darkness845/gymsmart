@@ -42,6 +42,7 @@ import com.gymsmart.gymsmart.model.FoodSearchResponse
 import com.gymsmart.gymsmart.model.MealEntry
 import com.gymsmart.gymsmart.model.Nutriments
 import com.gymsmart.gymsmart.model.Product
+import com.gymsmart.gymsmart.model.estimatedKcalPer100
 import com.gymsmart.gymsmart.services.HealthDataProvider
 import com.gymsmart.gymsmart.services.NutritionService
 import com.gymsmart.gymsmart.services.ProfileService
@@ -184,7 +185,7 @@ fun NutritionScreen(
                             id = mode.existingEntry?.id ?: "",
                             name = mode.product.product_name ?: "Sin nombre",
                             grams = grams,
-                            kcalPer100 = n?.energy_kcal_100g ?: n?.energy_kcal ?: 0.0,
+                            kcalPer100 = n.estimatedKcalPer100(),
                             proteinsPer100 = n?.proteins_100g ?: 0.0,
                             carbsPer100 = n?.carbohydrates_100g ?: 0.0,
                             fatPer100 = n?.fat_100g ?: 0.0
@@ -607,7 +608,7 @@ private fun EmptySheetState(text: String) {
 private fun ProductList(products: List<Product>, onProductSelected: (Product) -> Unit) {
     androidx.compose.foundation.lazy.LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         items(products) { product ->
-            val kcal = product.nutriments?.energy_kcal_100g ?: product.nutriments?.energy_kcal ?: 0.0
+            val kcal = product.nutriments.estimatedKcalPer100()
             Surface(
                 modifier = Modifier.fillMaxWidth().clickable { onProductSelected(product) },
                 shape = MaterialTheme.shapes.small,
@@ -646,7 +647,7 @@ private fun PortionPickerSheet(
     var gramsText by remember { mutableStateOf(initialGrams.toInt().toString()) }
     val grams = gramsText.toDoubleOrNull() ?: 0.0
     val n = product.nutriments
-    val kcalPer100 = n?.energy_kcal_100g ?: n?.energy_kcal ?: 0.0
+    val kcalPer100 = n.estimatedKcalPer100()
     val kcal     = kcalPer100               / 100.0 * grams
     val proteins = (n?.proteins_100g ?: 0.0)        / 100.0 * grams
     val carbs    = (n?.carbohydrates_100g ?: 0.0)   / 100.0 * grams
