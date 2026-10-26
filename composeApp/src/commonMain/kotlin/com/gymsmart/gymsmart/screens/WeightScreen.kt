@@ -35,9 +35,6 @@ import com.gymsmart.gymsmart.services.WeightService
 import com.gymsmart.gymsmart.services.byteArrayToImageBitmap
 import com.gymsmart.gymsmart.services.rememberImagePicker
 import com.gymsmart.gymsmart.ui.theme.GymSmartColors
-import io.ktor.client.*
-import io.ktor.client.plugins.contentnegotiation.*
-import io.ktor.serialization.kotlinx.json.*
 import kotlinx.coroutines.launch
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -51,24 +48,18 @@ fun WeightScreen(
 ) {
     val scope = rememberCoroutineScope()
 
-    val client = remember {
-        HttpClient {
-            install(ContentNegotiation) { json() }
-        }
-    }
-
     val authService = remember { AuthService() }
     val profileService = remember { ProfileService(authService.client) }
     val weightService = remember { WeightService(authService.client) }
 
     var isLoading by remember { mutableStateOf(true) }
     var currentProfile by remember { mutableStateOf<ProfileResponse?>(null) }
-    val service = remember { WeightService(client) }
     var entries by remember { mutableStateOf(listOf<WeightEntry>()) }
     var showDialog by remember { mutableStateOf(false) }
     var inputWeight by remember { mutableStateOf("") }
     var previewBytes by remember { mutableStateOf<ByteArray?>(null) }
     var analysis by remember { mutableStateOf<BodyAnalysisResponse?>(null) }
+    var analysisError by remember { mutableStateOf<String?>(null) }
     var selectedImageBase64 by remember { mutableStateOf<String?>(null) }
     var isLoadingAnalysis by remember { mutableStateOf(false) }
     var isPremium by remember { mutableStateOf(false) }
@@ -87,17 +78,15 @@ fun WeightScreen(
 
     LaunchedEffect(Unit) {
         try {
-            entries = weightService.getHistory()
-            if (entries.isEmpty()) {
-                profileService.getProfileResponse().onSuccess { response ->
-                    currentProfile = response
-                    val today = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date.toString()
+            entries = runCatching { weightService.getHistory() }.getOrDefault(emptyList())
+            profileService.getProfileResponse().onSuccess { response ->
+                currentProfile = response
+                // Sin historial todavía: se muestra el peso del perfil como único punto de partida.
+                if (entries.isEmpty()) {
                     entries = listOf(WeightEntry(day = today, weightKg = response.profile.weightKg.toFloat()))
                 }
-            } else {
-                profileService.getProfileResponse().onSuccess { currentProfile = it }
-                subService.getStatus().onSuccess { isPremium = it.active }
             }
+            subService.getStatus().onSuccess { isPremium = it.active }
         } finally {
             isLoading = false
         }
@@ -202,9 +191,10 @@ fun WeightScreen(
                                 scope.launch {
                                     try {
                                         isLoadingAnalysis = true
-                                        analysis = service.analyzeBody(image)
+                                        analysisError = null
+                                        analysis = weightService.analyzeBody(image)
                                     } catch (e: Exception) {
-                                        e.printStackTrace()
+                                        analysisError = "No se pudo completar el análisis. Inténtalo de nuevo."
                                     } finally {
                                         isLoadingAnalysis = false
                                     }
@@ -225,6 +215,23 @@ fun WeightScreen(
                     if (isLoadingAnalysis) {
                         Spacer(Modifier.height(16.dp))
                         CircularProgressIndicator(color = GymSmartColors.Primary)
+                    }
+
+                    analysisError?.let { msg ->
+                        Spacer(Modifier.height(16.dp))
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = MaterialTheme.shapes.small,
+                            color = GymSmartColors.Error.copy(alpha = 0.12f),
+                            tonalElevation = 0.dp
+                        ) {
+                            Text(
+                                "⚠ $msg",
+                                modifier = Modifier.padding(12.dp),
+                                color = GymSmartColors.Error,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
                     }
 
                     analysis?.let { result ->

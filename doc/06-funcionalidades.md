@@ -66,34 +66,48 @@ sitios de `NutritionScreen.kt`/`NutritionService.kt` que calculaban esto de form
 ellos ni siquiera tenía el fallback ambiguo, simplemente mostraba 0). Verificado con
 `:composeApp:compileKotlinJvm` → `BUILD SUCCESSFUL`.
 
-## GPS / rutas
+## GPS / rutas — validado en Fase 4 (2026-10-26)
 
-**Veredicto preliminar: la base está bien implementada en Android.**
+**Veredicto: la base de captura de ubicación está bien construida, pero todo lo que la rodea tiene
+fallos graves. Hoy el GPS no es fiable para una ruta real.**
 
-- `LocationService` (Android) usa `FusedLocationProviderClient` con eventos (no polling), intervalo 1 s,
-  filtro de distancia 5 m — es una implementación correcta y eficiente en batería.
-- El servidor persiste rutas y puntos correctamente, con comprobación de propiedad (`user_id`) en todas
-  las operaciones.
+- ✅ Lo que está bien: `LocationService` (Android) usa `FusedLocationProviderClient` por eventos (no
+  polling), con filtro de distancia; el servidor persiste rutas y puntos comprobando propiedad por
+  `user_id`; osmdroid tiene el `userAgentValue` configurado, así que los tiles de OSM no se bloquean.
+- 🔴 **No hay foreground service**: el seguimiento se detiene al bloquear el móvil. Hay que correr con la
+  pantalla encendida (ver GPS-1 en [08-backlog-mejoras.md](08-backlog-mejoras.md)).
+- 🔴 **Un hueco de señal >100 m mata la grabación** para el resto de la sesión, en cascada (GPS-2).
+- 🔴 **La ruta en curso solo vive en memoria**: si Android mata el proceso, se pierde entera (GPS-3).
+- 🟠 Guardar una ruta hace N+1 peticiones HTTP secuenciales a Turso: entre 45 s y varios minutos para una
+  ruta normal, con riesgo de timeout (GPS-4).
+- 🟠 Se usan `loc.speed`/`accuracy` sin comprobar `hasSpeed()`/`hasAccuracy()`, lo que descarta puntos
+  válidos y acepta posiciones sin precisión como si fueran perfectas (GPS-5).
+- 🟠 La duración incluye el tiempo parado, así que cualquier ritmo derivado sale mal (GPS-6).
 - No funciona en Desktop (esperado, no hay GPS) ni en iOS/Web (no implementado, ver
   [01-arquitectura.md §5](01-arquitectura.md)).
-- Pendiente en Fase 4: medir precisión real en campo y consumo de batería en uso prolongado.
+- Pendiente de medir en campo (requiere dispositivo real): precisión efectiva y consumo de batería.
 
-## Wearable / Health Connect (pasos y kcal)
+## Wearable / Health Connect (pasos y kcal) — validado en Fase 4 (2026-10-26)
 
-**Veredicto preliminar: funciona, pero con un patrón de recolección mejorable — coincide con lo que
-planteó el usuario.**
+**Veredicto: funciona, pero el recuento tiene dos fallos opuestos y la recolección está mal planteada.
+Respuesta directa a "¿se puede hacer mejor la recolecta tal como la hice?": sí, y el arreglo principal
+cabe en un solo archivo.**
 
-- `HealthConnectProvider` (Android) lee correctamente `StepsRecord`/`ActiveCaloriesBurnedRecord` del
-  día actual.
-- **Limitación concreta**: la lectura es una consulta puntual (`readRecords`) disparada solo cuando se
-  entra a una pantalla (`LaunchedEffect(Unit)`), no una suscripción en segundo plano. Esto significa que
-  los datos mostrados pueden estar desactualizados si el usuario no reabre la pantalla, y que no hay una
-  fuente única y fresca de este dato para otros cálculos (como el TDEE del modo "wearable" en
-  nutrición).
-- **Mejora concreta propuesta para Fase 5**: mover la recolección a un mecanismo en segundo plano
-  (`WorkManager` periódico, o `registerForUpdates`/callback de Health Connect si está disponible en la
-  versión usada) con caché local, de forma que: (a) la UI se actualice sin depender de reabrir pantallas,
-  y (b) el cálculo de TDEE en el modo wearable pueda usar un dato fresco en vez de no usarlo en absoluto.
+- `HealthConnectProvider` lee `StepsRecord`/`ActiveCaloriesBurnedRecord` del día en curso con
+  `readRecords` y los suma a mano. Verificado que **no se usa `aggregate()`, ni `pageToken`, ni
+  `dataOriginFilter` en ningún sitio del proyecto**.
+- 🟠 **Puede contar de más** (WEAR-1): Health Connect agrega datos de varias apps a la vez (app de la
+  pulsera, Google Fit, sensor del móvil). Sumando registros crudos, lo que escriben dos fuentes se cuenta
+  dos veces. `aggregate()` con `COUNT_TOTAL` aplica la deduplicación que `readRecords` no hace.
+- 🟠 **Puede contar de menos** (WEAR-2): `readRecords` pagina y el código ignora el `pageToken`, así que
+  se queda con la primera página (1000 registros). Con apps que escriben un registro por minuto, los
+  datos se truncan en silencio.
+- 🟠 **Lectura puntual, no sincronización** (WEAR-3): cada pantalla lee una sola vez al entrar. Si abres
+  la app por la mañana, el presupuesto de kcal se queda congelado en el valor de esa hora todo el día —
+  es la causa más probable de la imprecisión que se percibe en modo pulsera.
+- **Mejora propuesta para Fase 5**: migrar a `aggregate()` (resuelve WEAR-1 y WEAR-2 de golpe) y mover la
+  recolección a un mecanismo en segundo plano (`WorkManager` periódico) con caché local, de forma que la
+  UI y el cálculo de objetivos usen siempre un dato fresco.
 
 ## Entrenamiento (Training)
 
@@ -111,8 +125,29 @@ planteó el usuario.**
 ahora — solo queda documentado el camino para activarlo de forma segura el día que se decida cobrar de
 verdad (ver [03-seguridad.md](03-seguridad.md) #6 y [04-produccion-playstore.md](04-produccion-playstore.md)).
 
-## Análisis corporal por IA
+## Entrenamiento — nota de Fase 4
 
-**Veredicto: funcional, pero sin control de acceso** (ver hallazgo crítico #1 en
-[03-seguridad.md](03-seguridad.md)). La calidad del análisis en sí no se ha evaluado todavía — pendiente
-de Fase 4 si se considera relevante.
+`TrainingScreen` está registrada en el NavGraph pero **nada navega a ella**: no aparece en el menú del
+Dashboard ni en ningún otro sitio. Es decir, la decisión de "retirarla del menú" ya es innecesaria, el
+usuario nunca puede llegar a ella. Queda como código inerte hasta que se decida su alcance real.
+
+## Análisis corporal por IA — validado en Fase 4 (2026-10-26)
+
+**Veredicto: funcionaba, pero mal planteado en coste y fiabilidad; y durante esta fase estuvo roto por
+una regresión (ya arreglada).**
+
+- ✅ Arreglado en esta fase: la llamada usaba un `HttpClient` sin cookies, así que al exigir sesión en el
+  endpoint devolvía 401 y fallaba en silencio (R1 en [08-backlog-mejoras.md](08-backlog-mejoras.md)).
+- 🔴 **El gate premium no existe en el servidor**: `isPremium()` está implementado pero no se llama desde
+  ningún sitio; el único control es de cliente. Cualquier usuario registrado puede consumir créditos de
+  OpenAI sin límite (SEC-1).
+- 🟠 **La imagen se envía a resolución completa** (~5,3 MB en base64, 30-45 MB de heap por petición en una
+  instancia de 512 MB) **sin ninguna ganancia**: gpt-4o reescala internamente a ≤768 px antes de
+  tokenizar, así que esa resolución se descarta. Redimensionar a ~1024 px recorta el payload ~95% (IA-1).
+- 🟠 **Las cifras no son reproducibles**: sin `temperature` fijada (por defecto 1.0) ni
+  `response_format: json_object`. La misma foto da porcentajes distintos en dos análisis. Y el prompt
+  fuerza al modelo a no admitir incertidumbre y a no dejar campos vacíos, así que **siempre devuelve un
+  número**, aunque la foto no permita estimarlo, sin indicador de confianza (IA-2).
+- 🟡 **El resultado no se persiste**: se pierde al salir de la pantalla. No hay histórico de composición
+  corporal ni comparación en el tiempo — siendo la única función premium y la más caro por uso, es la
+  mejora de producto más evidente.

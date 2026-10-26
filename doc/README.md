@@ -23,6 +23,7 @@ cambiar si algún día la app sale a producción real (ver [04-produccion-playst
 | [05-deuda-tecnica.md](05-deuda-tecnica.md) | Inventario de código muerto, duplicado o legacy (p.ej. `backend/`, `frontend/`) y decisiones tomadas sobre cada cosa. |
 | [06-funcionalidades.md](06-funcionalidades.md) | Estado real de cada funcionalidad (nutrición/kcal, objetivos, GPS, wearable) y plan de mejora de cada una. |
 | [07-registro-sesiones.md](07-registro-sesiones.md) | Bitácora corta por sesión: qué se hizo, qué se decidió, qué queda pendiente. |
+| [08-backlog-mejoras.md](08-backlog-mejoras.md) | **Cola de trabajo**: todos los bugs y mejoras encontrados en la Fase 4, priorizados por impacto real, con ubicación y estado. |
 
 ## Reglas para usar esta documentación
 

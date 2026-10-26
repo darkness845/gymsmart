@@ -107,6 +107,31 @@ efecto en producción.
   esquema correcto. Sigue sin existir un sistema de migraciones versionadas; se deja como mejora futura,
   no bloqueante.
 
+### 11. El gate premium no existe en el servidor (encontrado en Fase 4)
+- **Dónde**: `server/.../services/ProfileService.kt` (`isPremium()`), `routes/BodyAnalysisRoute.kt`,
+  cliente `WeightScreen.kt`.
+- **Problema**: `isPremium()` está implementado pero **no se llama desde ningún sitio** del servidor
+  (verificado con grep: solo aparece su propia definición). El único control de acceso premium es de
+  cliente. Tras el arreglo del hallazgo #1, el endpoint exige sesión, pero **cualquier usuario registrado
+  y logueado —gratis— puede llamarlo sin límite**: no hay cuota diaria, ni rate limit, ni caché, ni
+  registro de consumo.
+- **Impacto hoy**: consumo de tus créditos de OpenAI por cualquier usuario con cuenta. Agravado porque
+  cada llamada envía la imagen a resolución completa (ver IA-1 en
+  [08-backlog-mejoras.md](08-backlog-mejoras.md)).
+- **Estado**: 🟠 Abierto (SEC-1 en el backlog).
+- **Arreglo propuesto**: llamar a `isPremium()` en la ruta, y añadir una cuota por usuario/día.
+
+### 12. Los errores de base de datos se convierten en silencio en "éxito" (encontrado en Fase 4)
+- **Dónde**: `server/.../services/TursoService.kt`.
+- **Problema**: `execute()` no comprueba el código de estado HTTP, y Ktor sin `expectSuccess` no lanza
+  excepción con 4xx/5xx. `extractRows()` no encuentra la clave `results` en un cuerpo de error y devuelve
+  `emptyList()`. En las escrituras, el resultado se ignora por completo.
+- **Impacto**: un token de Turso caducado, una cuota superada o una violación de constraint hacen que las
+  lecturas devuelvan "no hay datos" y **que las escrituras fallidas se reporten como correctas**
+  (`/nutrition/add` responde `201 Created` aunque el `INSERT` haya fallado). Es un camino de pérdida de
+  datos silenciosa y, de rebote, oculta cualquier problema de seguridad o de cuota en la base de datos.
+- **Estado**: 🟠 Abierto (DB-1 en el backlog).
+
 ## 🟡 Bajos
 
 ### 8. `EmailService` construye JSON por interpolación de string sin escapar
@@ -125,6 +150,24 @@ efecto en producción.
 - **Impacto**: bajo, no son secretos, pero conviene retirarlos o condicionarlos a build debug antes de
   producción.
 - **Estado**: 🟡 Abierto.
+
+### 13. `usesCleartextTraffic="true"` en el manifest de Android (encontrado en Fase 4)
+- **Dónde**: `composeApp/src/androidMain/AndroidManifest.xml`.
+- **Problema**: permite tráfico HTTP en claro. Es un resto de la época en que `BASE_URL` apuntaba a IPs
+  locales; ahora todo va por HTTPS.
+- **Impacto**: bajo hoy, pero quita una red de seguridad (impide que el tráfico se degrade a HTTP) y Play
+  Store lo señala en la revisión.
+- **Estado**: 🟡 Abierto.
+
+### 14. `allowBackup="true"` choca con el cifrado de la cookie (encontrado en Fase 4)
+- **Dónde**: `composeApp/src/androidMain/AndroidManifest.xml` + `CookiesStorageFactory.android.kt`.
+- **Problema**: la copia de seguridad de Android se lleva el fichero de preferencias cifrado, pero **no
+  la clave maestra** (vive en el Keystore y no se respalda). Al restaurar en otro dispositivo, ese fichero
+  no se puede descifrar.
+- **Impacto**: no crashea (el `try/catch` del hallazgo #3 lo detecta), pero **cae en silencio al
+  almacenamiento sin cifrar**, deshaciendo el arreglo de cifrado en ese dispositivo.
+- **Estado**: 🟡 Abierto. Arreglo: excluir esas preferencias del backup con reglas de
+  `android:fullBackupContent` / `dataExtractionRules`.
 
 ### 10. `BASE_URL` hardcodeado sin diferenciar entornos
 - **Dónde**: `composeApp/.../config/AppConfig.kt:12`.

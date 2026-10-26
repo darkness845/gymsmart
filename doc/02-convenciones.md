@@ -48,6 +48,19 @@ sin querer) y las **reglas a aplicar de aquí en adelante** para no seguir acumu
 9. **Cambios de limpieza (Fase 3) no deben alterar comportamiento visible.** Si un refactor cambia algo
    que el usuario puede notar al usar la app, no es limpieza, es una mejora de funcionalidad y se trata
    en Fase 5 (con su propio commit/aviso).
+10. **Al añadir una comprobación de sesión a un endpoint, verifica con qué `HttpClient` lo llama el
+    cliente.**
+    **Por qué:** en esta sesión, añadir auth a `/ai/body-analysis` rompió el análisis corporal, porque
+    `WeightScreen` lo llamaba con uno de sus tres `HttpClient` — justo el que no tenía el plugin
+    `HttpCookies`. Antes funcionaba solo porque el endpoint era público, así que el fix destapó un bug
+    latente. Y como el `catch` solo hacía `printStackTrace()`, falló en silencio.
+    **Cómo aplicarlo:** busca quién llama al endpoint en el cliente y confirma que usa un cliente con
+    cookies (hoy, `authService.client`). Mientras exista más de un `HttpClient` en el proyecto, este
+    riesgo sigue vivo: ver HTTP-1 en [08-backlog-mejoras.md](08-backlog-mejoras.md).
+11. **No derives estado de negocio de que una excepción haya ocurrido.** Un `catch` que devuelve
+    `false`/`emptyList()` convierte "falló la red" en "el usuario no tiene esto", y eso ya ha provocado
+    un camino real de pérdida de datos (RED-1 en el backlog). Distingue fallo de red de respuesta
+    negativa del servidor, y ante fallo de red muestra carga/reintento en vez de decidir.
 
 ## Cómo añadir una pantalla + servicio + endpoint nuevo (receta corta)
 

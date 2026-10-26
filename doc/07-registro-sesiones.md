@@ -4,6 +4,48 @@ Bitácora corta por sesión de trabajo sobre el endurecimiento del proyecto. Ent
 
 ---
 
+## 2026-10-26 (continuación 4) — Fase 4 completa: investigación exhaustiva
+
+Sesión de investigación profunda a petición del usuario ("investiga bien todo", con el objetivo explícito
+de encontrar fallos y mejoras). Se repartió en cuatro frentes en paralelo: GPS + wearable + fechas
+(directo), análisis IA + datos de alimentos, resiliencia/offline/cold start, y auditoría de pantallas.
+
+**Resultado: ~60 hallazgos, inventariados y priorizados en [08-backlog-mejoras.md](08-backlog-mejoras.md)**
+(documento nuevo, que pasa a ser la cola de trabajo de la Fase 5).
+
+- **Regresión propia detectada y arreglada.** El fix de seguridad de Fase 2 (exigir sesión en
+  `/ai/body-analysis`) **rompió el análisis corporal**: `WeightScreen` lo llamaba con uno de sus tres
+  `HttpClient`, justo el que no tenía el plugin `HttpCookies`. Antes funcionaba solo porque el endpoint
+  era público, así que el fix destapó un bug latente, y el `catch` con solo `printStackTrace()` lo hacía
+  fallar en silencio. Lo señalaron **las tres investigaciones de forma independiente**. Arreglado: usa el
+  cliente con cookies, se eliminó el cliente duplicado, y los fallos ahora muestran un mensaje visible.
+  Lección añadida como regla 10 en [02-convenciones.md](02-convenciones.md).
+- También arreglado en el acto: crash al abrir la pantalla de Peso sin conexión (`getHistory()` sin
+  `try/catch` dentro de un `LaunchedEffect` sin `catch`), y el estado premium que no se cargaba nunca si
+  el usuario no tenía historial de peso. Verificado con `:composeApp:compileKotlinJvm` → `BUILD
+  SUCCESSFUL`.
+- **Hallazgos críticos abiertos más relevantes**: el GPS se para al bloquear el móvil (no hay foreground
+  service); un hueco de señal >100 m mata la grabación en cascada; la ruta en curso solo vive en memoria;
+  un fallo de red puede llevar a rehacer el onboarding y **sobrescribir el perfil real** (único camino de
+  pérdida de datos encontrado); un código de barras no encontrado se puede guardar como comida de 0 kcal;
+  las comidas recién añadidas no se pueden editar ni borrar; una cuenta sin verificar queda bloqueada sin
+  salida; la pantalla de nutrición muestra **2000 kcal hardcodeadas** como si fueran los objetivos reales
+  cuando falla la carga del perfil; y los errores de Turso se reportan como éxito.
+- **Respuesta a la duda del usuario sobre la recolecta del wearable**: sí se puede hacer mejor, y el
+  arreglo principal cabe en un archivo. El código suma registros crudos (`readRecords`), lo que puede
+  **contar de más** (varias apps escribiendo los mismos pasos, sin la deduplicación que sí hace
+  `aggregate()`) y **contar de menos** a la vez (ignora el `pageToken`, truncando en la primera página de
+  1000 registros).
+- Se actualizaron `03-seguridad.md` (4 hallazgos nuevos: gate premium inexistente en servidor, errores de
+  BBDD silenciosos, `usesCleartextTraffic`, conflicto de `allowBackup` con el cifrado nuevo),
+  `06-funcionalidades.md` (veredictos reales de GPS, wearable, IA y training) y `00-roadmap.md` (Fase 4
+  cerrada).
+- **Nada de esta tanda está commiteado todavía.**
+- **Siguiente paso**: empezar Fase 5 por el orden de ataque propuesto al final del backlog (pérdida de
+  datos y funciones muertas primero, luego fiabilidad del conteo de kcal, luego GPS).
+
+---
+
 ## 2026-10-26 — Fase 0 y arranque de Fase 1
 
 - Se define el roadmap de 6 fases en [00-roadmap.md](00-roadmap.md) (documentación → seguridad →
