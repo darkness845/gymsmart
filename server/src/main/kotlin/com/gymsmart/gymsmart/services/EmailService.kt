@@ -4,8 +4,11 @@ import io.ktor.client.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.request.*
 import io.ktor.http.*
+import kotlinx.serialization.json.*
+import org.slf4j.LoggerFactory
 
 class EmailService {
+    private val logger = LoggerFactory.getLogger(EmailService::class.java)
     private val apiKey = System.getenv("BREVO_API_KEY")
         ?: throw IllegalStateException("BREVO_API_KEY no definida")
     private val fromEmail = System.getenv("BREVO_USER")
@@ -15,22 +18,26 @@ class EmailService {
 
     private suspend fun sendEmail(to: String, subject: String, html: String): Boolean {
         return try {
+            val body = buildJsonObject {
+                putJsonObject("sender") {
+                    put("name", "GymSmart")
+                    put("email", fromEmail)
+                }
+                putJsonArray("to") {
+                    addJsonObject { put("email", to) }
+                }
+                put("subject", subject)
+                put("htmlContent", html)
+            }
             val response = client.post("https://api.brevo.com/v3/smtp/email") {
                 header("api-key", apiKey)
                 contentType(ContentType.Application.Json)
-                setBody("""
-                    {
-                      "sender": {"name": "GymSmart", "email": "$fromEmail"},
-                      "to": [{"email": "$to"}],
-                      "subject": "$subject",
-                      "htmlContent": ${kotlinx.serialization.json.Json.encodeToString(kotlinx.serialization.json.JsonPrimitive(html))}
-                    }
-                """.trimIndent())
+                setBody(body.toString())
             }
-            println(">>> Brevo response: ${response.status}")
+            logger.debug("Brevo response: {}", response.status)
             response.status.isSuccess()
         } catch (e: Exception) {
-            println(">>> Error enviando email: ${e.message}")
+            logger.warn("Error enviando email: {}", e.message)
             false
         }
     }

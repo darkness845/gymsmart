@@ -2,9 +2,12 @@ package com.gymsmart.gymsmart.services
 
 import com.gymsmart.gymsmart.model.User
 import org.mindrot.jbcrypt.BCrypt
+import org.slf4j.LoggerFactory
 import java.util.UUID
 
 class UserService(private val turso: TursoService) {
+
+    private val logger = LoggerFactory.getLogger(UserService::class.java)
 
     suspend fun initTable() {
         turso.execute(
@@ -57,21 +60,20 @@ class UserService(private val turso: TursoService) {
         val hash = BCrypt.hashpw(password, BCrypt.gensalt())
         val now = System.currentTimeMillis()
 
-        println(">>> Insertando usuario id=$id email=$email")
+        logger.debug("Insertando usuario id={}", id)
         turso.execute(
             "INSERT INTO users (id, name, email, password_hash, email_verified, created_at) VALUES (?, ?, ?, ?, 0, ?)",
             listOf(id, name, email, hash, now.toString())
         )
-        println(">>> Usuario insertado OK")
 
         val token = UUID.randomUUID().toString()
         val expiresAt = now + (24 * 60 * 60 * 1000)
-        println(">>> Insertando token de verificación token=$token userId=$id expiresAt=$expiresAt")
+        // No se loguea el token: es un secreto de un solo uso, equivalente a una contraseña temporal.
+        logger.debug("Insertando token de verificación para userId={} (expira {})", id, expiresAt)
         turso.execute(
             "INSERT INTO email_verification_tokens (token, user_id, expires_at, used) VALUES (?, ?, ?, 0)",
             listOf(token, id, expiresAt.toString())
         )
-        println(">>> Token insertado OK")
 
         return Result.success(Pair(User(id = id, name = name, email = email), token))
     }

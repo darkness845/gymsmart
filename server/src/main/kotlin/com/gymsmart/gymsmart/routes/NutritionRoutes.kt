@@ -45,21 +45,21 @@ fun Route.nutritionRoutes(nutritionService: NutritionService) {
     }
 
     delete("/nutrition/delete/{id}") {
-        call.sessions.get<UserSession>()
+        val session = call.sessions.get<UserSession>()
             ?: return@delete call.respond(HttpStatusCode.Unauthorized)
         val id = call.parameters["id"]
             ?: return@delete call.respond(HttpStatusCode.BadRequest)
-        nutritionService.deleteMeal(id)
+        nutritionService.deleteMeal(id, session.userId)
         call.respond(HttpStatusCode.OK, "Eliminado")
     }
 
     put("/nutrition/update/{id}") {
-        call.sessions.get<UserSession>()
+        val session = call.sessions.get<UserSession>()
             ?: return@put call.respond(HttpStatusCode.Unauthorized)
         val id = call.parameters["id"]
             ?: return@put call.respond(HttpStatusCode.BadRequest)
         val req = call.receive<MealEntryRequest>()
-        nutritionService.updateMeal(id, req)
+        nutritionService.updateMeal(id, session.userId, req)
         call.respond(HttpStatusCode.OK, "Actualizado")
     }
 

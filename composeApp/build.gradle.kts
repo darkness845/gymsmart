@@ -66,6 +66,9 @@ kotlin {
             implementation("com.google.guava:guava:33.4.0-android")
 
             implementation("androidx.concurrent:concurrent-futures-ktx:1.2.0")
+
+            // Almacenamiento cifrado para la cookie de sesión (EncryptedSharedPreferences)
+            implementation("androidx.security:security-crypto:1.1.0-alpha06")
         }
 
         commonMain.dependencies {

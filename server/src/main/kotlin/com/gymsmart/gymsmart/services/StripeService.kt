@@ -7,8 +7,10 @@ import io.ktor.client.request.forms.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import kotlinx.serialization.json.*
+import org.slf4j.LoggerFactory
 
 class StripeService {
+    private val logger = LoggerFactory.getLogger(StripeService::class.java)
     private val secretKey = System.getenv("STRIPE_SECRET_KEY")
         ?: throw IllegalStateException("STRIPE_SECRET_KEY no definida")
 
@@ -45,11 +47,11 @@ class StripeService {
             }))
         }.bodyAsText()
 
-        println(">>> [Stripe] Charge response: $piRawText")
-
+        // No se loguea piRawText completo: puede incluir el email de facturación (receipt_email) y otros
+        // datos personales de la respuesta de Stripe.
         val piBody = Json.parseToJsonElement(piRawText).jsonObject
         val status = piBody["status"]?.jsonPrimitive?.content
-        println(">>> [Stripe] Charge status: $status")
+        logger.debug("Stripe charge status: {}", status)
 
         return status == "succeeded"
     }

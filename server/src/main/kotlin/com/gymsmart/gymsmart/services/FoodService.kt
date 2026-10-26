@@ -10,6 +10,7 @@ import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import org.slf4j.LoggerFactory
 
 // ── Modelos Open Food Facts ────────────────────────────────────────────────────
 
@@ -46,6 +47,8 @@ data class BarcodeResponse(
 
 class FoodService {
 
+    private val logger = LoggerFactory.getLogger(FoodService::class.java)
+
     private val client = HttpClient(CIO) {
         install(ContentNegotiation) {
             json(Json { ignoreUnknownKeys = true; isLenient = true })
@@ -71,7 +74,7 @@ class FoodService {
             fetchSearch(query, "world")
 
         } catch (e: Exception) {
-            println(">>> OFF searchFood error: ${e.message}")
+            logger.warn("Error en searchFood (Open Food Facts): {}", e.message)
             FoodSearchResponse()
         }
     }
@@ -105,7 +108,7 @@ class FoodService {
             val body = response.body<BarcodeResponse>()
             if (body.status == 1) body.product else null
         } catch (e: Exception) {
-            println(">>> OFF barcode error: ${e.message}")
+            logger.warn("Error en barcode lookup (Open Food Facts): {}", e.message)
             null
         }
     }

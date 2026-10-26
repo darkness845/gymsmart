@@ -17,6 +17,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
+import org.slf4j.LoggerFactory
+
+private val logger = LoggerFactory.getLogger("SubscriptionRoute")
 
 @Serializable
 data class PayCardRequest(
@@ -55,11 +58,13 @@ fun Route.subscriptionRoutes(
             val req = try {
                 call.receive<PayCardRequest>()
             } catch (e: Exception) {
-                println(">>> ERROR deserializando PayCardRequest: ${e.message}")
+                logger.warn("Error deserializando PayCardRequest: {}", e.message)
                 return@post call.respond(HttpStatusCode.BadRequest, "Cuerpo inválido: ${e.message}")
             }
 
-            println(">>> Pay request recibido: card=${req.cardNumber.take(4)}****")
+            // No se loguean datos de la tarjeta (ni siquiera parcialmente): no forma parte del ámbito
+            // de logging aceptable para un flujo de pago, aunque hoy use tokens de test de Stripe.
+            logger.debug("Solicitud de pago recibida para userId={}", session.userId)
 
             val user = userService.findById(session.userId)
                 ?: return@post call.respond(HttpStatusCode.NotFound, "Usuario no encontrado")
@@ -75,22 +80,22 @@ fun Route.subscriptionRoutes(
                 cardName    = req.cardName
             )
 
-            println(">>> Stripe result: $result")
+            logger.debug("Stripe result para userId={}: {}", session.userId, result)
 
             if (!result) return@post call.respond(HttpStatusCode.PaymentRequired, "Pago rechazado")
 
             val duration = 60L * 60 * 1000
             profileService.activatePremium(session.userId, duration)
-            println(">>> Premium activado para ${session.userId}")
+            logger.info("Premium activado para userId={}", session.userId)
 
             // Email con timeout de 10s
             try {
                 withTimeout(10_000) {
                     emailService.sendPurchaseConfirmation(user.email, user.name)
-                    println(">>> Email enviado a ${user.email}")
+                    logger.debug("Email de confirmación de compra enviado para userId={}", session.userId)
                 }
             } catch (e: Exception) {
-                println(">>> Email falló (no crítico): ${e.message}")
+                logger.warn("Email de confirmación falló (no crítico) para userId={}: {}", session.userId, e.message)
             }
 
             call.respond(HttpStatusCode.OK, buildJsonObject { put("ok", true) })

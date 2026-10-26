@@ -42,6 +42,7 @@ class ProfileService(private val turso: TursoService) {
                 activity_level TEXT    NOT NULL,
                 goal           TEXT    NOT NULL,
                 goal_rate      REAL    NOT NULL,
+                has_wearable   INTEGER NOT NULL DEFAULT 0,
                 updated_at     INTEGER NOT NULL,
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )

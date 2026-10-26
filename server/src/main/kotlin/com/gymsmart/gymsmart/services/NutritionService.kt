@@ -77,16 +77,16 @@ class NutritionService(private val turso: TursoService) {
         return turso.extractRows(result)
     }
 
-    suspend fun deleteMeal(id: String) {
-        turso.execute("DELETE FROM meals WHERE id = ?", listOf(id))
+    suspend fun deleteMeal(id: String, userId: String) {
+        turso.execute("DELETE FROM meals WHERE id = ? AND user_id = ?", listOf(id, userId))
     }
 
-    suspend fun updateMeal(id: String, req: MealEntryRequest) {
+    suspend fun updateMeal(id: String, userId: String, req: MealEntryRequest) {
         turso.execute(
-            "UPDATE meals SET grams = ?, kcal_per_100 = ?, proteins_per_100 = ?, carbs_per_100 = ?, fat_per_100 = ? WHERE id = ?",
+            "UPDATE meals SET grams = ?, kcal_per_100 = ?, proteins_per_100 = ?, carbs_per_100 = ?, fat_per_100 = ? WHERE id = ? AND user_id = ?",
             listOf(req.grams.toString(), req.kcalPer100.toString(),
                 req.proteinsPer100.toString(), req.carbsPer100.toString(),
-                req.fatPer100.toString(), id)
+                req.fatPer100.toString(), id, userId)
         )
     }
 

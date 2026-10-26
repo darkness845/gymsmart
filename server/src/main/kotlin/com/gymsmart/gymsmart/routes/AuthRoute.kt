@@ -9,6 +9,9 @@ import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import io.ktor.server.sessions.*
 import kotlinx.serialization.Serializable
+import org.slf4j.LoggerFactory
+
+private val logger = LoggerFactory.getLogger("AuthRoute")
 
 @Serializable data class ForgotPasswordRequest(val email: String)
 @Serializable data class ResetPasswordRequest(val token: String, val newPassword: String = "")
@@ -44,7 +47,7 @@ fun Route.authRoutes(userService: UserService, emailService: EmailService) {
                 val user  = pair.first
                 val token = pair.second
                 val emailSent = emailService.sendEmailVerification(req.email, req.name, token)
-                println(">>> Email enviado: $emailSent — destino: ${req.email}")
+                logger.info("Email de verificación enviado tras registro: {}", emailSent)
                 call.respond(HttpStatusCode.Created, AuthResponse(true, "VERIFY_EMAIL"))
             }
             .onFailure { e ->
@@ -151,7 +154,7 @@ fun Route.authRoutes(userService: UserService, emailService: EmailService) {
         val session = call.sessions.get<UserSession>()
             ?: return@post call.respond(HttpStatusCode.Unauthorized, AuthResponse(false, "Sin sesión"))
 
-        println(">>> change-password session=$session")
+        logger.debug("Solicitud de cambio de contraseña para userId={}", session.userId)
 
         val req = try {
             call.receive<ChangePasswordRequest>()
@@ -175,25 +178,23 @@ fun Route.authRoutes(userService: UserService, emailService: EmailService) {
         val session = call.sessions.get<UserSession>()
             ?: return@put call.respond(HttpStatusCode.Unauthorized, AuthResponse(false, "Sin sesión"))
 
-        println(">>> PUT /auth/profile session=$session")
+        logger.debug("PUT /auth/profile para userId={}", session.userId)
 
         val req = try {
             call.receive<UpdatePersonalDataRequest>()
         } catch (e: Exception) {
-            println(">>> ERROR recibiendo body: ${e.message}")
+            logger.warn("Error recibiendo body de /auth/profile: {}", e.message)
             return@put call.respond(HttpStatusCode.BadRequest, AuthResponse(false, "Cuerpo inválido"))
         }
 
-        println(">>> req=$req")
-
         userService.updatePersonalData(session.userId, req.name, req.phone, req.country, req.birthDate)
             .onSuccess {
-                println(">>> updatePersonalData OK")
+                logger.debug("updatePersonalData OK para userId={}", session.userId)
                 call.sessions.set(UserSession(session.userId, session.email, req.name))
                 call.respond(HttpStatusCode.OK, AuthResponse(true, "Datos actualizados"))
             }
             .onFailure { e ->
-                println(">>> updatePersonalData ERROR: ${e.message}")
+                logger.warn("updatePersonalData ERROR para userId={}: {}", session.userId, e.message)
                 call.respond(HttpStatusCode.InternalServerError, AuthResponse(false, e.message ?: "Error"))
             }
     }

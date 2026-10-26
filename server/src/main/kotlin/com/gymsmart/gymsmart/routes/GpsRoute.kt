@@ -18,6 +18,9 @@ import com.gymsmart.gymsmart.model.SaveRouteResponse
 import com.gymsmart.gymsmart.model.UserSession
 import com.gymsmart.gymsmart.services.GpsService
 import io.ktor.server.sessions.*
+import org.slf4j.LoggerFactory
+
+private val logger = LoggerFactory.getLogger("GpsRoute")
 
 @Serializable
 data class GpsLocation(
@@ -64,8 +67,7 @@ fun Route.gpsRoutes(gpsService: GpsService) {
                 val routeId = gpsService.saveRoute(session.userId, req)
                 call.respond(HttpStatusCode.Created, SaveRouteResponse(routeId))
             } catch (e: Exception) {
-                println("❌ Error guardando ruta: ${e.message}")
-                e.printStackTrace()
+                logger.error("Error guardando ruta para userId={}", session.userId, e)
                 call.respond(HttpStatusCode.InternalServerError, "Error: ${e.message}")
             }
         }
@@ -161,7 +163,7 @@ suspend fun getLocation(): GpsLocation {
             GpsLocation(lat = 40.4168, lon = -3.7038, city = "Madrid (fallback)", country = "ES")
         }
     } catch (e: Exception) {
-        println("⚠️  Error obteniendo GPS: ${e.message}")
+        logger.warn("Error obteniendo geolocalización por IP: {}", e.message)
         GpsLocation(lat = 40.4168, lon = -3.7038, city = "Madrid (fallback)", country = "ES")
     }
 }

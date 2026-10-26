@@ -17,6 +17,7 @@ class GpsService(private val turso: TursoService) {
                 duration_seconds INTEGER NOT NULL,
                 started_at       INTEGER NOT NULL,
                 created_at       INTEGER NOT NULL,
+                is_public        INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
             )
         """)

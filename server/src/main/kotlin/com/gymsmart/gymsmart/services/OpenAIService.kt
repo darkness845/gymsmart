@@ -6,9 +6,11 @@ import io.ktor.client.request.*
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.*
 import kotlinx.serialization.json.*
+import org.slf4j.LoggerFactory
 
 class OpenAIService {
 
+    private val logger = LoggerFactory.getLogger(OpenAIService::class.java)
     private val client = HttpClient()
 
     private val apiKey =
@@ -83,7 +85,7 @@ class OpenAIService {
         }
 
         val raw = response.bodyAsText()
-        println("OPENAI RAW RESPONSE:\n$raw")
+        logger.debug("OpenAI raw response: {}", raw)
 
         val json = Json.parseToJsonElement(raw).jsonObject
 
