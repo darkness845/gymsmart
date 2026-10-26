@@ -1,13 +1,8 @@
 package com.gymsmart.gymsmart.config
 
 object AppConfig {
-    // Cambia según donde ejecutes:
-    // Web/Desktop: "http://localhost:8080"
-    // Android físico: "http://192.168.1.140:8080"
-    // Mirar en el cmd el comando ipconfig y poner el puerto de ipv4
-    //const val BASE_URL = "http://192.168.1.140:8080"
-    // const val BASE_URL = "http://192.168.1.145:8080" DANI
-    //const val BASE_URL = "http://100.91.80.89:8080" //JONY
-
-    const val BASE_URL = "https://gymsmart-server.onrender.com" //Render
+    // Para probar contra un servidor local en vez de Render, comenta la línea de abajo y usa
+    // "http://localhost:8080" (Web/Desktop) o "http://<tu IP local>:8080" (Android físico/emulador,
+    // mirando la IPv4 con `ipconfig`/`ifconfig`).
+    const val BASE_URL = "https://gymsmart-server.onrender.com"
 }

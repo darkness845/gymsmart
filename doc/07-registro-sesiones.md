@@ -82,7 +82,25 @@ Bitácora corta por sesión de trabajo sobre el endurecimiento del proyecto. Ent
 - **Estado de Fase 2 al cierre de esta sesión**: 7 de 10 hallazgos resueltos. Quedan #9 (logging del
   cliente, movido a Fase 3 porque requiere elegir librería de logging multiplataforma) y #6
   (Stripe/PCI, diferido a propósito mientras no sea funcional).
-- **Siguiente sesión**: decidir cuándo desplegar a Render (nada de esto está en producción todavía);
-  probar el cambio de Android en un dispositivo/emulador real; seguir con el resto de Fase 3 (limpieza:
-  `AndroidGpsTracker.kt`, `PermissionHelper.kt`, `WeightService.addWeight`, inconsistencias de
-  `02-convenciones.md`, logging del cliente).
+### 2026-10-26 (continuación 2) — Fase 3: limpieza de código muerto
+
+- Usuario dijo "sigue" → se continuó con la limpieza listada en `05-deuda-tecnica.md`:
+  - Verificado (grep, sin referencias externas) y eliminado: `AndroidGpsTracker.kt`,
+    `PermissionHelper.kt`.
+  - Eliminado `WeightService.addWeight` (método muerto y roto, nadie lo llamaba).
+  - Movidos `Product`/`Nutriments`/`FoodSearchResponse` de `NutritionScreen.kt` a
+    `model/NutritionModels.kt`; actualizado el import en `NutritionService.kt`.
+  - Unificada la duplicación de `GpsService.getRoutesByUser`/`getCommunityRoutes` en un método privado
+    `queryRoutes(whereClause, params)`.
+  - Limpiados los comentarios con IPs y nombres de personas (`DANI`, `JONY`) en `AppConfig.kt`.
+  - Verificado con `./gradlew :composeApp:compileKotlinJvm` y `:server:compileKotlin` tras cada tanda →
+    `BUILD SUCCESSFUL`. No se tocó Android directamente en esta tanda (ya se había avisado que no hay
+    SDK Android en este entorno).
+  - **No se tocó** `TrainingScreen`/`TrainingService` (decisión del usuario de dejarlo como está) ni la
+    estrategia de múltiples `HttpClient`/DI (requiere decidir enfoque antes de tocarlo).
+- **Nada de esta tanda se ha commiteado todavía** — queda en el working tree, pendiente de que el
+  usuario confirme (como hizo con la tanda de seguridad).
+- **Siguiente sesión**: confirmar commit de esta limpieza; decidir cuándo desplegar a Render todo lo de
+  Fase 2; probar el cambio de cookie cifrada de Android en un dispositivo/emulador real; seguir con lo
+  que queda de Fase 3 (logging del cliente con una librería multiplataforma, estrategia de DI mínima) o
+  pasar a Fase 4 (validación de fiabilidad de nutrición/GPS/wearable).

@@ -15,27 +15,29 @@ acción se ejecuta sin confirmación del usuario, aunque el riesgo sea bajo.
 
 | Archivo | Veredicto | Evidencia | Acción propuesta |
 |---|---|---|---|
-| `composeApp/src/androidMain/.../AndroidGpsTracker.kt` | Código muerto | Implementación alternativa de GPS no referenciada desde ningún sitio; postea a `/gps` (endpoint que no es el real `/gps/routes/*`). | Eliminar en Fase 3. |
-| `composeApp/src/androidMain/.../PermissionHelper.kt` | Código muerto | No referenciado; `MainActivity` gestiona permisos directamente con `rememberLauncherForActivityResult`. | Eliminar en Fase 3. |
-| `composeApp/.../services/WeightService.kt` función `addWeight` | Código muerto y roto | `client.post(".../profile/save") { }` con bloque vacío — no fija `contentType` ni `setBody`, nunca envía el peso. Nadie lo llama; `WeightScreen` usa `profileService.saveProfile()` en su lugar. | Eliminar el método en Fase 3. |
+| `composeApp/src/androidMain/.../AndroidGpsTracker.kt` | Código muerto | Implementación alternativa de GPS no referenciada desde ningún sitio; postea a `/gps` (endpoint que no es el real `/gps/routes/*`). | ✅ **Eliminado** (2026-10-26), verificado sin referencias antes de borrar. |
+| `composeApp/src/androidMain/.../PermissionHelper.kt` | Código muerto | No referenciado; `MainActivity` gestiona permisos directamente con `rememberLauncherForActivityResult`. | ✅ **Eliminado** (2026-10-26), verificado sin referencias antes de borrar. |
+| `composeApp/.../services/WeightService.kt` función `addWeight` | Código muerto y roto | `client.post(".../profile/save") { }` con bloque vacío — no fija `contentType` ni `setBody`, nunca envía el peso. Nadie lo llama; `WeightScreen` usa `profileService.saveProfile()` en su lugar. | ✅ **Eliminado** (2026-10-26), verificado sin llamadas antes de borrar. |
 | `composeApp/.../screens/TrainingScreen.kt` + `TrainingService.kt` | Placeholder sin terminar | Mensaje de error fijo, botón deshabilitado "próximamente", colores hardcodeados, llama a `"$BASE_URL/"` (raíz) porque no existe `TrainingRoute` en el servidor. | Decidir con el usuario: ¿se completa como funcionalidad real (Fase 5/6) o se retira del menú hasta entonces? No borrar sin decidir alcance. |
 
 ## Inconsistencias de arquitectura (no son "código muerto", pero generan confusión)
 
-- **Modelos fuera de `model/`**: `Product`/`Nutriments` están definidos dentro de `NutritionScreen.kt` en
-  vez de en la carpeta `model/` del cliente.
+- ✅ **Modelos fuera de `model/`** — arreglado (2026-10-26): `Product`/`Nutriments`/`FoodSearchResponse`
+  movidos de `NutritionScreen.kt` a `model/NutritionModels.kt`; `NutritionService.kt` actualizado para
+  importarlos desde `model` en vez de `screens`.
 - **`TrainingService.kt` rompe el patrón del resto**: usa una función suelta + `HttpClient` top-level
-  propio, en vez de la clase `XService(client: HttpClient)` que usan todos los demás servicios.
+  propio, en vez de la clase `XService(client: HttpClient)` que usan todos los demás servicios. **No se
+  toca** — el usuario decidió dejar `TrainingScreen`/`TrainingService` como están por ahora.
 - **Múltiples `HttpClient`/`AuthService` por pantalla**: al no haber DI, cada pantalla crea sus propias
   instancias (ver detalle en [01-arquitectura.md](01-arquitectura.md)). No es código muerto, pero es la
-  raíz de bugs como la posible pérdida de cookie de sesión en `WeightScreen`.
-- **`GpsService.getRoutesByUser` y `getCommunityRoutes`** (servidor) son prácticamente la misma query con
-  distinto `WHERE` — se puede unificar.
-- **Comentarios con URLs/IPs y nombres de personas** en `AppConfig.kt` (residuo de desarrollo entre
-  compañeros/pruebas) — limpiar en Fase 3.
-- **Esquema de BBDD desincronizado del código** (`is_public`, `has_wearable` usados pero no declarados en
-  `CREATE TABLE IF NOT EXISTS`) — no es código muerto, es un riesgo de integridad; ver
-  [03-seguridad.md](03-seguridad.md) y tratarlo junto con la limpieza del servidor.
+  raíz de bugs como la posible pérdida de cookie de sesión en `WeightScreen`. Pendiente — requiere decidir
+  una estrategia de DI (aunque sea mínima) antes de tocarlo, no es un cambio de una línea.
+- ✅ **`GpsService.getRoutesByUser` y `getCommunityRoutes`** (servidor) — arreglado (2026-10-26):
+  unificadas en un método privado `queryRoutes(whereClause, params)` que ambas reutilizan.
+- ✅ **Comentarios con URLs/IPs y nombres de personas** en `AppConfig.kt` — arreglado (2026-10-26):
+  sustituidos por una instrucción genérica de cómo apuntar a un servidor local.
+- ✅ **Esquema de BBDD desincronizado del código** — arreglado en Fase 2, ver
+  [03-seguridad.md](03-seguridad.md) hallazgo #7.
 
 ## Qué NO se toca sin decisión explícita del usuario
 

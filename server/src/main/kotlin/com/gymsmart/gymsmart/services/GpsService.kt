@@ -76,17 +76,17 @@ class GpsService(private val turso: TursoService) {
         return routeId
     }
 
-    suspend fun getRoutesByUser(userId: String): List<GpsRouteResponse> {
+    private suspend fun queryRoutes(whereClause: String, params: List<String>): List<GpsRouteResponse> {
         val result = turso.execute(
             """SELECT r.id, r.user_id, r.name, r.distance_meters, r.duration_seconds,
-                          r.started_at, r.created_at, r.is_public,
-                          COUNT(p.id) as point_count
-                    FROM gps_routes r
-                    LEFT JOIN gps_points p ON p.route_id = r.id
-                    WHERE r.user_id = ?
-                    GROUP BY r.id
-                    ORDER BY r.created_at DESC""",
-                    listOf(userId)
+                      r.started_at, r.created_at, r.is_public,
+                      COUNT(p.id) as point_count
+               FROM gps_routes r
+               LEFT JOIN gps_points p ON p.route_id = r.id
+               WHERE $whereClause
+               GROUP BY r.id
+               ORDER BY r.created_at DESC""",
+            params
         )
         return turso.extractRows(result).map { row ->
             GpsRouteResponse(
@@ -102,6 +102,9 @@ class GpsService(private val turso: TursoService) {
             )
         }
     }
+
+    suspend fun getRoutesByUser(userId: String): List<GpsRouteResponse> =
+        queryRoutes("r.user_id = ?", listOf(userId))
 
     suspend fun getRoutePoints(routeId: String, userId: String): List<RoutePointDto>? {
         // Si la ruta es pública cualquiera puede verla, si es privada solo el dueño
@@ -167,29 +170,6 @@ class GpsService(private val turso: TursoService) {
         return true
     }
 
-    suspend fun getCommunityRoutes(): List<GpsRouteResponse> {
-        val result = turso.execute(
-            """SELECT r.id, r.user_id, r.name, r.distance_meters, r.duration_seconds,
-                  r.started_at, r.created_at, r.is_public,
-                  COUNT(p.id) as point_count
-           FROM gps_routes r
-           LEFT JOIN gps_points p ON p.route_id = r.id
-           WHERE r.is_public = 1
-           GROUP BY r.id
-           ORDER BY r.created_at DESC"""
-        )
-        return turso.extractRows(result).map { row ->
-            GpsRouteResponse(
-                id              = row[0] ?: "",
-                userId          = row[1] ?: "",
-                name            = row[2] ?: "",
-                distanceMeters  = row[3]?.toDoubleOrNull() ?: 0.0,
-                durationSeconds = row[4]?.toLongOrNull() ?: 0L,
-                startedAt       = row[5]?.toLongOrNull() ?: 0L,
-                createdAt       = row[6]?.toLongOrNull() ?: 0L,
-                isPublic        = row[7]?.toIntOrNull() == 1,
-                pointCount      = row[8]?.toIntOrNull() ?: 0
-            )
-        }
-    }
+    suspend fun getCommunityRoutes(): List<GpsRouteResponse> =
+        queryRoutes("r.is_public = 1", emptyList())
 }

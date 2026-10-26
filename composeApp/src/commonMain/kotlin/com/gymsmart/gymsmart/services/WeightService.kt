@@ -14,11 +14,6 @@ class WeightService(private val client: HttpClient) {
     suspend fun getHistory(): List<WeightEntry> =
         client.get("${AppConfig.BASE_URL}/weight/history").body()
 
-    suspend fun addWeight(weightKg: Float) {
-        client.post("${AppConfig.BASE_URL}/profile/save") {
-        }
-    }
-
     suspend fun analyzeBody(
         imageBase64: String
     ): BodyAnalysisResponse {

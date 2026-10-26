@@ -38,7 +38,10 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.gymsmart.gymsmart.BarcodeScannerSheet
 import com.gymsmart.gymsmart.config.AppConfig
+import com.gymsmart.gymsmart.model.FoodSearchResponse
 import com.gymsmart.gymsmart.model.MealEntry
+import com.gymsmart.gymsmart.model.Nutriments
+import com.gymsmart.gymsmart.model.Product
 import com.gymsmart.gymsmart.services.HealthDataProvider
 import com.gymsmart.gymsmart.services.NutritionService
 import com.gymsmart.gymsmart.services.ProfileService
@@ -50,31 +53,8 @@ import io.ktor.client.statement.*
 import io.ktor.serialization.kotlinx.json.*
 import kotlinx.coroutines.launch
 import kotlinx.datetime.*
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlin.time.Clock
-
-// ── Modelos ───────────────────────────────────────────────────────────────────
-
-@Serializable
-data class Nutriments(
-    @SerialName("energy-kcal_100g") val energy_kcal_100g: Double? = null,
-    @SerialName("energy-kcal")      val energy_kcal: Double? = null,
-    val proteins_100g: Double? = null,
-    val carbohydrates_100g: Double? = null,
-    val fat_100g: Double? = null
-)
-
-@Serializable
-data class Product(
-    val product_name: String? = null,
-    val brands: String? = null,
-    val nutriments: Nutriments? = null
-)
-
-@Serializable
-data class FoodSearchResponse(val products: List<Product> = emptyList())
 
 enum class MealType(val label: String, val emoji: String) {
     DESAYUNO("Desayuno", "🌅"),

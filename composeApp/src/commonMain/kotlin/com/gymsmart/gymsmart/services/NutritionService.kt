@@ -2,8 +2,6 @@ package com.gymsmart.gymsmart.services
 
 import com.gymsmart.gymsmart.config.AppConfig
 import com.gymsmart.gymsmart.model.*
-import com.gymsmart.gymsmart.screens.Nutriments
-import com.gymsmart.gymsmart.screens.Product
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.request.*
