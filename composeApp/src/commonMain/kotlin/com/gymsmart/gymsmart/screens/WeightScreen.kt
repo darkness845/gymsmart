@@ -5,6 +5,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -19,6 +20,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -35,6 +37,7 @@ import com.gymsmart.gymsmart.services.WeightService
 import com.gymsmart.gymsmart.services.byteArrayToImageBitmap
 import com.gymsmart.gymsmart.services.rememberImagePicker
 import com.gymsmart.gymsmart.ui.theme.GymSmartColors
+import com.gymsmart.gymsmart.validation.validateWeightKg
 import kotlinx.coroutines.launch
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -57,6 +60,9 @@ fun WeightScreen(
     var entries by remember { mutableStateOf(listOf<WeightEntry>()) }
     var showDialog by remember { mutableStateOf(false) }
     var inputWeight by remember { mutableStateOf("") }
+    // VAL-1 (doc/08-backlog-mejoras.md): antes un peso vacío o mal escrito simplemente no hacía nada
+    // al pulsar el botón (`toFloatOrNull() ?: return@Button`), sin ninguna explicación visible.
+    var inputWeightError by remember { mutableStateOf<String?>(null) }
     var previewBytes by remember { mutableStateOf<ByteArray?>(null) }
     var analysis by remember { mutableStateOf<BodyAnalysisResponse?>(null) }
     var analysisError by remember { mutableStateOf<String?>(null) }
@@ -272,7 +278,7 @@ fun WeightScreen(
                 ) {
                     Text("Hoy: $today", fontWeight = FontWeight.Bold, color = GymSmartColors.TextPrimary)
                     Button(
-                        onClick = { showDialog = true },
+                        onClick = { inputWeightError = null; showDialog = true },
                         colors = ButtonDefaults.buttonColors(
                             containerColor = GymSmartColors.Primary,
                             contentColor = GymSmartColors.OnPrimary,
@@ -420,7 +426,7 @@ fun WeightScreen(
     // DIALOG
     if (showDialog) {
         AlertDialog(
-            onDismissRequest = { showDialog = false },
+            onDismissRequest = { inputWeightError = null; showDialog = false },
             containerColor = GymSmartColors.SurfaceElevated,
             titleContentColor = GymSmartColors.TextPrimary,
             textContentColor = GymSmartColors.TextSecondary,
@@ -428,9 +434,12 @@ fun WeightScreen(
             text = {
                 OutlinedTextField(
                     value = inputWeight,
-                    onValueChange = { inputWeight = it },
+                    onValueChange = { inputWeight = it; inputWeightError = null },
                     label = { Text("Peso (kg)") },
                     singleLine = true,
+                    isError = inputWeightError != null,
+                    supportingText = inputWeightError?.let { { Text(it) } },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = GymSmartColors.Primary,
                         unfocusedBorderColor = GymSmartColors.Outline,
@@ -447,12 +456,17 @@ fun WeightScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        val weightValue = inputWeight.toFloatOrNull() ?: return@Button
+                        // VAL-1 (doc/08-backlog-mejoras.md): antes un peso vacío o mal escrito no hacía
+                        // nada (toFloatOrNull() ?: return@Button), sin avisar. Misma validación que
+                        // ProfileScreen/Onboarding (30-300 kg), reutilizada en vez de duplicarla.
+                        val error = validateWeightKg(inputWeight)
+                        if (error != null) { inputWeightError = error; return@Button }
+                        val weightValue = inputWeight.toDouble()
                         scope.launch {
                             try {
                                 val profile = currentProfile?.profile ?: return@launch
                                 val request = ProfileRequest(
-                                    weightKg = weightValue.toDouble(),
+                                    weightKg = weightValue,
                                     heightCm = profile.heightCm,
                                     age = profile.age,
                                     sex = profile.sex,
@@ -461,13 +475,22 @@ fun WeightScreen(
                                     goalRate = profile.goalRate,
                                     hasWearable = profile.activityLevel == "wearable"
                                 )
-                                profileService.saveProfile(request).onSuccess {
-                                    entries = weightService.getHistory()
-                                }
-                                inputWeight = ""
-                                showDialog = false
+                                // Antes el diálogo se cerraba y el campo se vaciaba sin comprobar si
+                                // saveProfile() había tenido éxito (ERR-1 en doc/08-backlog-mejoras.md) —
+                                // ahora solo se cierra dentro de onSuccess; si falla, se queda abierto
+                                // con el peso introducido y un error visible.
+                                profileService.saveProfile(request)
+                                    .onSuccess {
+                                        entries = weightService.getHistory()
+                                        inputWeight = ""
+                                        inputWeightError = null
+                                        showDialog = false
+                                    }
+                                    .onFailure {
+                                        inputWeightError = "No se pudo guardar. Inténtalo de nuevo."
+                                    }
                             } catch (e: Exception) {
-                                e.printStackTrace()
+                                inputWeightError = "No se pudo guardar. Inténtalo de nuevo."
                             }
                         }
                     },
@@ -482,7 +505,7 @@ fun WeightScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showDialog = false }) {
+                TextButton(onClick = { inputWeightError = null; showDialog = false }) {
                     Text("Cancelar", color = GymSmartColors.TextSecondary)
                 }
             }

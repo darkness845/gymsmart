@@ -19,6 +19,10 @@ import androidx.compose.ui.unit.sp
 import com.gymsmart.gymsmart.model.ProfileRequest
 import com.gymsmart.gymsmart.services.ProfileService
 import com.gymsmart.gymsmart.ui.theme.GymSmartColors
+import com.gymsmart.gymsmart.validation.validateAge
+import com.gymsmart.gymsmart.validation.validateGoalRate
+import com.gymsmart.gymsmart.validation.validateHeightCm
+import com.gymsmart.gymsmart.validation.validateWeightKg
 import kotlinx.coroutines.launch
 
 private data class FormState(
@@ -607,24 +611,18 @@ private fun MacroBox(label: String, value: String, color: androidx.compose.ui.gr
 }
 
 private fun validate(step: Step, f: FormState): String? = when (step) {
-    Step.BODY -> {
-        val w = f.weightKg.toDoubleOrNull()
-        val h = f.heightCm.toDoubleOrNull()
-        val a = f.age.toIntOrNull()
-        when {
-            w == null || w !in 30.0..300.0  -> "Introduce un peso válido (30–300 kg)"
-            h == null || h !in 100.0..250.0 -> "Introduce una altura válida (100–250 cm)"
-            a == null || a !in 14..100      -> "Introduce una edad válida (14–100 años)"
-            f.sex.isEmpty()                  -> "Selecciona tu sexo biológico"
-            else                             -> null
-        }
-    }
+    Step.BODY ->
+        validateWeightKg(f.weightKg)
+            ?: validateHeightCm(f.heightCm)
+            ?: validateAge(f.age)
+            ?: if (f.sex.isEmpty()) "Selecciona tu sexo biológico" else null
     Step.WEARABLE  -> if (f.hasWearable == null) "Selecciona una opción" else null
     Step.ACTIVITY  -> if (f.activityLevel.isEmpty()) "Selecciona tu nivel de actividad" else null
-    Step.GOAL -> when {
-        f.goal.isEmpty()                          -> "Selecciona tu objetivo"
-        f.goal != "maintain" && f.goalRate == 0.0 -> "Selecciona el ritmo de cambio"
-        else                                       -> null
-    }
+    Step.GOAL ->
+        if (f.goal.isEmpty()) "Selecciona tu objetivo"
+        // El Onboarding guarda el ritmo como Double (0.0 = sin seleccionar) en vez del String del
+        // desplegable que usa ProfileScreen — se traduce a "" para reusar la misma validación.
+        else validateGoalRate(f.goal, if (f.goalRate == 0.0) "" else f.goalRate.toString())
+            ?.let { "Selecciona el ritmo de cambio" }
     Step.SUMMARY -> null
 }

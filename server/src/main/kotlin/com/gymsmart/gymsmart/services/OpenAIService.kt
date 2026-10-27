@@ -19,6 +19,12 @@ class OpenAIService {
     private val logger = LoggerFactory.getLogger(OpenAIService::class.java)
     private val client = HttpClient()
 
+    // IA-3 (doc/08-backlog-mejoras.md): el `Json` global por defecto es estricto con los tipos — si el
+    // modelo devuelve, por ejemplo, `"bodyFat": 15` (número) en vez de `"bodyFat": "15"` (string), el
+    // decodificador lanzaba excepción y el análisis entero se perdía por un detalle de formato que no
+    // afecta al contenido real de la respuesta. `isLenient` acepta esa clase de discrepancias de tipo.
+    private val lenientJson = Json { isLenient = true; ignoreUnknownKeys = true }
+
     private val apiKey =
         System.getenv("OPENAI_API_KEY") ?: error("OPENAI_API_KEY missing")
 
@@ -80,6 +86,16 @@ class OpenAIService {
 
             put("model", "gpt-4o")
 
+            // IA-2 (doc/08-backlog-mejoras.md): sin esto, la misma foto analizada dos veces podía dar
+            // porcentajes distintos (temperature por defecto es 1.0, máxima variabilidad). Un valor bajo
+            // y fijo no elimina la variabilidad del todo (sigue siendo un modelo probabilístico), pero la
+            // reduce mucho — razonable para una estimación que se quiere consistente, no creativa.
+            put("temperature", 0.2)
+            // Modo JSON nativo de gpt-4o: más fiable que pedírselo solo por prompt (que ya de por sí
+            // podía devolver markdown, de ahí el `replace` de más abajo, que se deja como red de
+            // seguridad por si el modelo lo ignora).
+            putJsonObject("response_format") { put("type", "json_object") }
+
             putJsonArray("messages") {
 
                 add(buildJsonObject {
@@ -115,10 +131,14 @@ class OpenAIService {
                                 }
                                 
                                 IMPORTANTE:
-                                - Si no estás seguro, estima un valor razonable basado en el físico visible.
-                                - Nunca devuelvas campos vacíos.
-                                - NO digas que no puedes ver la imagen
-                                - Usa estimaciones razonables
+                                - Estima siempre un valor razonable basado en el físico visible, nunca
+                                  devuelvas campos vacíos ni digas que no puedes ver la imagen: bodyFat,
+                                  estimatedWeight, muscleMass y physiqueType deben llevar siempre un
+                                  valor.
+                                - Si la foto es de mala calidad, el ángulo no es claro o cualquier otro
+                                  motivo hace la estimación poco fiable, acláralo en el campo "summary"
+                                  en vez de fingir una certeza que no tienes — pero igual da tu mejor
+                                  estimación en los demás campos.
                                 """
                             )
                         })
@@ -168,7 +188,7 @@ class OpenAIService {
             .trim()
 
         return try {
-            Json.decodeFromString<BodyAnalysisResponse>(cleaned)
+            lenientJson.decodeFromString<BodyAnalysisResponse>(cleaned)
         } catch (e: Exception) {
             throw IllegalStateException("JSON inválido del modelo:\n$cleaned", e)
         }

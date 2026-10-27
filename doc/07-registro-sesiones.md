@@ -457,3 +457,56 @@ de encontrar fallos y mejoras). Se repartió en cuatro frentes en paralelo: GPS 
   consciente, no un "me olvidé de la parte difícil".
 - Con esto, todos los bloques planeados de la Fase 5 **y** WEAR-3 quedan cerrados. Lo que queda es
   backlog residual por severidad (GPS-5/6, IA-2/3, VAL-1/2, PERM-1, y el resto de 🟡).
+- El usuario preguntó qué significaba exactamente ese "backlog residual" — se le detalló cada hallazgo
+  en lenguaje llano. Luego preguntó qué fases quedan en general — se repasó el roadmap completo
+  (Fase 2 con 2 cosas diferidas a propósito más el despliegue a Render pendiente, Fase 3 con logging del
+  cliente y estrategia de DI pendientes, Fase 5 con el backlog residual, Fase 6 bloqueada hasta cerrar
+  1-5). El usuario preguntó qué hacer antes de entrar en Fase 6, dado que para ese punto él habrá tenido
+  que probar la app de verdad. **Se acordó explícitamente**: cerrar el backlog pequeño que no toca
+  Android (VAL-1/2, IA-2/3 — rápidos, no añaden más superficie sin probar) y después parar de tocar
+  código, para que el usuario haga una pasada de prueba real cubriendo todo lo acumulado sin verificar
+  (GPS-1, cambio de motor de red, Health Connect, cookie cifrada, 401 centralizado...) antes de cerrar
+  los cabos de Fase 2/3 o entrar en Fase 6. El usuario confirmó ese plan ("vale, me parece bien").
+
+### 2026-10-27 (continuación 4) — Backlog residual: VAL-1, VAL-2, IA-2, IA-3
+
+- **VAL-1**: se extrajo la validación de peso/altura/edad/ritmo de `OnboardingScreen` (que ya la tenía
+  bien hecha) a `validation/ProfileValidation.kt` (nuevo, `commonMain`): `validateWeightKg`,
+  `validateHeightCm`, `validateAge`, `validateGoalRate`. `OnboardingScreen.validate()` se reescribió para
+  usarlas en vez de duplicar la lógica. `ProfileScreen`: el botón de guardar datos físicos antes solo
+  validaba el ritmo (`rateError: Boolean`); se generalizó a `profileError: String?` que cubre los 4
+  campos con un mensaje concreto. `WeightScreen`: el diálogo de añadir peso no validaba nada
+  (`toFloatOrNull() ?: return@Button`, sin explicación si fallaba) ni fijaba `keyboardType` — ahora
+  valida con la misma función, muestra el error con `isError`/`supportingText` en el propio campo, y
+  pone `KeyboardType.Decimal`.
+- **De rebote (no pedido explícitamente, pero imposible de ignorar al tocar esas líneas)**: el botón de
+  guardar peso de `WeightScreen` cerraba el diálogo y vaciaba el campo sin comprobar si `saveProfile()`
+  había tenido éxito — una instancia exacta de ERR-1. Se corrigió en el mismo cambio: ahora solo se
+  cierra dentro de `onSuccess`, y si falla (`onFailure` o excepción) se queda abierto con el peso
+  introducido y un error visible. El resto de instancias de ERR-1 (catalogadas en otros archivos) sigue
+  sin tocar — no se amplió el alcance más allá de esta coincidencia directa.
+- **VAL-2**: en `ProfileScreen`, guardar los datos personales (nombre/teléfono/país/fecha de nacimiento)
+  recalculaba la edad desde la fecha de nacimiento y, si procedía, reguardaba el perfil físico entero a
+  escondidas — pero con `goalRate.toDoubleOrNull() ?: 0.0`, saltándose la validación que sí tiene el
+  botón de guardado físico. Se cambió la condición para reguardar solo si peso/altura/ritmo pasan la
+  misma validación del botón físico; si no pasan, se omite el reguardado en silencio (decisión
+  deliberada: es un efecto derivado de un botón que el usuario no pulsó para esto, así que no se le
+  muestra un error ajeno — simplemente ya no se corrompe el dato con ceros). El `catch (_: Exception) {}`
+  que protege el parseo de la fecha se dejó igual, a propósito: protege un cálculo auxiliar no crítico,
+  no el guardado de los datos personales en sí (que ya tiene su propio flujo de éxito/fallo).
+- **IA-2**: en `OpenAIService.kt` (servidor), se añadió `temperature = 0.2` (bajo pero no 0, sigue siendo
+  una estimación) y `response_format: {"type": "json_object"}` (modo JSON nativo de gpt-4o) a la
+  petición. Se suavizó el prompt: ya no obliga al modelo a fingir certeza absoluta — puede señalar en el
+  campo `summary` cuando la foto no permite una estimación fiable, sin dejar de dar una estimación en los
+  4 campos obligatorios (romper ese contrato rompería el parseo en el cliente).
+- **IA-3**: se añadió una instancia de `Json` dedicada con `isLenient = true` (y `ignoreUnknownKeys =
+  true`) para decodificar la respuesta del modelo, en vez de usar el `Json` global estricto. Antes, si el
+  modelo devolvía un número donde se esperaba un string (p. ej. `"bodyFat": 15` en vez de `"15"`), el
+  parseo lanzaba excepción y se perdía el análisis entero por un detalle de formato irrelevante para el
+  contenido. No cubre el caso de que el modelo omita un campo entero — ahí sigue lanzando excepción,
+  correctamente (no hay nada razonable que inventar para un campo que no vino).
+- Los cuatro cambios compilan limpio en los cuatro targets verificables aquí
+  (`:composeApp:compileKotlinJvm`, `compileKotlinJs`, `compileKotlinWasmJs`, `:server:compileKotlin`) —
+  ninguno toca código Android, así que no se añade nada nuevo a la lista de "sin verificar".
+- Con esto se cierra el backlog acordado antes de la pausa. **Pendiente de que el usuario confirme el
+  commit**; después, según lo acordado, toca que él pruebe la app en su máquina antes de seguir.

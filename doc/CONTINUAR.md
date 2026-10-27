@@ -30,11 +30,52 @@ ataque" de [08-backlog-mejoras.md](08-backlog-mejoras.md):
 | 4 | Resiliencia transversal (cliente HTTP único, timeouts, 401 centralizado) | ✅ Completo |
 | 5 | Coste y seguridad (gate premium real, redimensionar imagen IA, caché OFF) | ✅ Completo |
 | — | WEAR-3 (refresco periódico de datos de la pulsera) | ✅ Completo |
+| — | VAL-1/VAL-2 (validación de peso/altura/edad/ritmo) e IA-2/IA-3 (reproducibilidad y parseo del análisis) | ✅ Completo |
+
+**Importante para la próxima sesión**: el usuario y Claude acordaron explícitamente (2026-10-27) que,
+tras cerrar este backlog pequeño, **toca parar de tocar código y que el usuario pruebe la app de verdad**
+en su máquina (IntelliJ, con Android SDK) antes de seguir. Hay bastante acumulado sin verificar en este
+entorno (ver la sección de abajo). Si el usuario vuelve pidiendo seguir con más desarrollo sin haber
+mencionado una prueba, está bien seguir — pero no hay que insistir en bloquear el trabajo esperando esa
+prueba; es una recomendación acordada, no una regla dura. Lo que sí hay que evitar es seguir
+amontonando más cambios Android-only sin probar los que ya hay, salvo que el usuario lo pida.
 
 ## Lo último que se hizo
 
-**WEAR-3 (refresco de datos de la pulsera) arreglado**, con un enfoque deliberadamente más simple que
-el que se había esbozado en el hallazgo original:
+**Backlog residual cerrado: VAL-1, VAL-2, IA-2, IA-3.** Tras cerrar los 5 bloques + WEAR-3, se acordó
+con el usuario rematar estos cuatro hallazgos (rápidos, sin tocar Android) antes de parar a probar:
+
+- **VAL-1 (validación de peso/altura/edad/ritmo)**: `ProfileScreen` y `WeightScreen` convertían con
+  `toDoubleOrNull() ?: 0.0` y mandaban ceros en silencio si el campo estaba vacío o mal escrito. La
+  validación correcta ya existía, pero solo en `OnboardingScreen`. Se extrajo a
+  `validation/ProfileValidation.kt` (nuevo: `validateWeightKg`, `validateHeightCm`, `validateAge`,
+  `validateGoalRate`) y las tres pantallas la reutilizan ahora. `WeightScreen` además ganó
+  `keyboardType = Decimal` y un error visible en el propio campo (antes un valor inválido no hacía nada
+  al pulsar "Guardar", sin explicación).
+- **De rebote, se arregló también una instancia de ERR-1**: al tocar el diálogo de añadir peso de
+  `WeightScreen` para VAL-1, se vio que se cerraba y vaciaba el campo sin comprobar si `saveProfile()`
+  había tenido éxito. Ahora solo se cierra dentro de `onSuccess`; si falla, se queda abierto con el peso
+  introducido y un error visible. El resto de instancias de ERR-1 sigue abierto.
+- **VAL-2 (guardado de datos personales saltaba la validación del ritmo)**: guardar nombre/teléfono/etc.
+  recalculaba la edad desde la fecha de nacimiento y, si procedía, reguardaba todo el perfil físico a
+  escondidas con `goalRate.toDoubleOrNull() ?: 0.0` — si el usuario había elegido "perder peso" sin
+  ritmo, ese reguardado derivado grababa un déficit de 0.0 en silencio. Ahora ese reguardado solo se hace
+  si pasa la misma validación que el botón físico; si no, se omite en silencio (no se le muestra un error
+  al usuario por un efecto derivado de un botón que no pulsó — simplemente ya no corrompe el dato).
+- **IA-2 (análisis no reproducible)**: `OpenAIService` no fijaba `temperature` ni `response_format`.
+  Ahora fija `temperature = 0.2` y `response_format: json_object`. El prompt ya no obliga a fingir
+  certeza — puede avisar en `summary` cuando la foto no permite una estimación fiable.
+- **IA-3 (parseo frágil)**: se decodifica ahora con un `Json { isLenient = true }` dedicado en vez del
+  estricto por defecto, así que un número donde se esperaba texto ya no revienta el análisis entero.
+- Los cuatro compilan limpio en los targets verificables aquí (`:composeApp:compileKotlinJvm`,
+  `compileKotlinJs`, `compileKotlinWasmJs`, `:server:compileKotlin`) — **ninguno toca código Android**,
+  así que no añaden nada a la lista de "sin verificar".
+- Pendiente de que el usuario confirme el commit.
+
+### Resumen de lo hecho en WEAR-3 (refresco de datos de la pulsera), ya commiteado antes de esto (commit `5419f2c`)
+
+Arreglado con un enfoque deliberadamente más simple que el que se había esbozado en el hallazgo
+original:
 
 - El análisis original proponía mover la lectura de Health Connect a un `WorkManager` periódico con
   caché local — arquitectura más grande, Android-only, con el mismo problema de no poder verificarse en
@@ -59,9 +100,8 @@ el que se había esbozado en el hallazgo original:
 - `ProfileScreen.kt` también lee pasos/calorías, pero ahí es solo un dato informativo al editar el
   perfil (no alimenta ningún presupuesto que se vea todo el día) — se dejó como lectura única a
   propósito, para no añadir complejidad donde no cambia nada visible.
-- Pendiente de que el usuario confirme el commit.
 
-### Resumen de lo hecho en el bloque 5 (coste y seguridad), ya commiteado antes de esto
+### Resumen de lo hecho en el bloque 5 (coste y seguridad), ya commiteado antes de esto (commit `45879a9`)
 
 Cerrado el bloque 5 (coste y seguridad) entero: SEC-1, IA-1, OFF-1. Todos son cambios de servidor,
 verificados con `:server:compileKotlin` (sin limitación de Android SDK en ninguno de los tres).
@@ -83,9 +123,8 @@ verificados con `:server:compileKotlin` (sin limitación de Android SDK en ningu
   resultado vacío o un fallo nunca se cachea (podría ser un fallo transitorio de OFF, no "no existe").
   Reduce el riesgo de que OFF bloquee la única IP de Render por exceso de peticiones repetidas.
 - Al implementar SEC-1/IA-1/OFF-1 no hubo errores de compilación — los tres pasaron a la primera.
-- Esto cierra el bloque 5. **Pendiente de que el usuario confirme el commit.**
 
-### Resumen de lo hecho en el bloque 4 (resiliencia transversal), ya commiteado antes de esto
+### Resumen de lo hecho en el bloque 4 (resiliencia transversal), ya commiteado antes de esto (commit `1199fd6`)
 
 - **HTTP-1 (cliente único)**: había 5 instancias de `AuthService()`/`HttpClient` (una por pantalla:
   `NavGraph`, `WeightScreen`, `DashboardScreen`, `ProfileScreen`, `SubscriptionScreen`). Ahora `NavGraph`
@@ -141,19 +180,23 @@ verificados con `:server:compileKotlin` (sin limitación de Android SDK en ningu
 
 ## Lo siguiente que hay que hacer
 
-Con los 5 bloques de la Fase 5 y WEAR-3 cerrados, **no queda nada estructurado en bloques** — lo que
-sigue es backlog residual por severidad (ver `08-backlog-mejoras.md`), sin orden obligatorio:
+**Recomendación acordada con el usuario (2026-10-27): parar aquí y que pruebe la app de verdad** antes
+de seguir tocando código — ver el aviso al principio de este documento y el checklist de abajo. Si el
+usuario pide seguir con más desarrollo sin haber probado, no bloquear por eso, pero no hay que ofrecerse
+a seguir acumulando cambios Android-only por iniciativa propia.
+
+Si se retoma el trabajo de código (ahora o después de probar), lo que queda es backlog residual por
+severidad (ver `08-backlog-mejoras.md`), sin orden obligatorio:
 
 - GPS-5/GPS-6 (filtros de velocidad/precisión sin comprobar `hasSpeed()`/`hasAccuracy()`; duración que
-  incluye el tiempo parado).
-- IA-2/IA-3 (cifras del análisis no reproducibles sin `temperature`/`response_format`; parseo frágil de
-  la respuesta del modelo).
-- VAL-1/VAL-2 (validación de inputs en `ProfileScreen`/`WeightScreen` — la validación correcta ya existe
-  en `OnboardingScreen`, solo falta extraerla y reutilizarla).
+  incluye el tiempo parado) — toca `GpsScreen.kt`, común, sí verificable aquí.
 - PERM-1 (callbacks de permisos de cámara/GPS que pueden perderse en una recomposición de
   `MainActivity.kt` — Android-only, sin poder verificar aquí).
-- El resto de 🟡 Bajos: seguridad/configuración menor, datos de alimentos, análisis IA sin persistir,
-  código muerto/inconsistencias menores, UI-1/UI-2.
+- El resto de 🟡 Bajos: seguridad/configuración menor (`usesCleartextTraffic`, `allowBackup`), datos de
+  alimentos (paginación, `lc=es`), análisis IA sin persistir histórico, código muerto/inconsistencias
+  menores, UI-1/UI-2.
+- Cabos sueltos de Fase 2/3 (fuera de la Fase 5): logging del cliente, estrategia de DI mínima, y
+  decidir cuándo desplegar todo lo acumulado a Render (hoy sigue todo solo en local).
 
 Ninguno de estos requiere decisiones de producto tan grandes como GPS-1 — se puede proceder sin
 bloquear en una respuesta del usuario, salvo que él indique otra prioridad.
@@ -198,6 +241,9 @@ real. Se mantiene al día conforme se añaden más cambios Android-only:
   mejora futura, no se hace ahora (confirmado 2026-10-27).
 - El usuario no probará nada en dispositivo real hasta terminar toda la Fase 5 — no insistir en pruebas
   por bloque, mantener la lista de verificación pendiente completa y al día.
+- Acordado (2026-10-27): antes de entrar en Fase 6 (funcionalidades nuevas) hace falta que el usuario
+  pruebe la app de verdad — por eso, una vez cerrado el backlog pequeño de la Fase 5, toca parar de
+  acumular más cambios sin verificar y dejar que pruebe, en vez de seguir ofreciendo más desarrollo.
 
 ## Descubrimiento útil para el futuro
 

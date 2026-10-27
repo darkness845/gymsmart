@@ -34,6 +34,10 @@ import com.gymsmart.gymsmart.services.HealthDataProvider
 import com.gymsmart.gymsmart.services.ProfileService
 import com.gymsmart.gymsmart.services.SubscriptionService
 import com.gymsmart.gymsmart.ui.theme.GymSmartColors
+import com.gymsmart.gymsmart.validation.validateAge
+import com.gymsmart.gymsmart.validation.validateGoalRate
+import com.gymsmart.gymsmart.validation.validateHeightCm
+import com.gymsmart.gymsmart.validation.validateWeightKg
 import androidx.compose.foundation.text.KeyboardOptions
 import kotlinx.coroutines.launch
 import kotlinx.datetime.LocalDate
@@ -102,7 +106,11 @@ fun ProfileScreen(
     var goal          by remember { mutableStateOf("maintain") }
     var goalRate      by remember { mutableStateOf("0.5") }
     var isSaving      by remember { mutableStateOf(false) }
-    var rateError     by remember { mutableStateOf(false) }
+    // VAL-1 (doc/08-backlog-mejoras.md): antes solo existía esta validación para el ritmo semanal;
+    // peso/altura/edad se mandaban con toDoubleOrNull() ?: 0.0 sin avisar si el campo estaba vacío o
+    // mal escrito (p. ej. con coma decimal). Ahora cubre los cuatro campos con la misma validación
+    // que ya existía en OnboardingScreen (extraída a validation/ProfileValidation.kt).
+    var profileError  by remember { mutableStateOf<String?>(null) }
 
     // Suscripción
     var subStatus by remember { mutableStateOf<SubscriptionStatus?>(null) }
@@ -274,14 +282,25 @@ fun ProfileScreen(
                                         if (today.month.number < birth.month.number ||
                                             (today.month.number == birth.month.number && today.day < birth.day))
                                             calculatedAge--
-                                        if (calculatedAge in 14..100 && weight.isNotBlank() && height.isNotBlank()) {
+                                        // VAL-2 (doc/08-backlog-mejoras.md): este reguardado del perfil es un
+                                        // efecto derivado de editar los datos personales (la fecha de
+                                        // nacimiento cambia la edad), no la acción que el usuario pidió al
+                                        // pulsar este botón — si peso/altura/ritmo no son válidos ahora
+                                        // mismo, se omite el reguardado en silencio en vez de mandar ceros al
+                                        // servidor (antes: `toDoubleOrNull() ?: 0.0`, se saltaba además la
+                                        // validación del ritmo que sí tiene el botón de guardar físico).
+                                        val physicalDataValid = calculatedAge in 14..100 &&
+                                            validateWeightKg(weight) == null &&
+                                            validateHeightCm(height) == null &&
+                                            validateGoalRate(goal, goalRate) == null
+                                        if (physicalDataValid) {
                                             age = calculatedAge.toString()
                                             val request = ProfileRequest(
-                                                weightKg = weight.toDoubleOrNull() ?: 0.0,
-                                                heightCm = height.toDoubleOrNull() ?: 0.0,
+                                                weightKg = weight.toDouble(),
+                                                heightCm = height.toDouble(),
                                                 age = calculatedAge, sex = sex,
                                                 activityLevel = activityLevel, goal = goal,
-                                                goalRate = if (goal == "maintain") 0.0 else goalRate.toDoubleOrNull() ?: 0.0,
+                                                goalRate = if (goal == "maintain") 0.0 else goalRate.toDouble(),
                                                 hasWearable = steps != null
                                             )
                                             profileService.saveProfile(request).onSuccess { response ->
@@ -422,9 +441,9 @@ fun ProfileScreen(
                     )
                 }
 
-                AnimatedVisibility(visible = rateError) {
+                AnimatedVisibility(visible = profileError != null) {
                     Text(
-                        "⚠️ Selecciona un ritmo semanal",
+                        "⚠️ ${profileError.orEmpty()}",
                         color = GymSmartColors.Warning,
                         style = MaterialTheme.typography.bodySmall
                     )
@@ -433,14 +452,18 @@ fun ProfileScreen(
                 Button(
                     onClick = {
                         scope.launch {
-                            if (goal != "maintain" && goalRate.isBlank()) { rateError = true; return@launch }
-                            rateError = false; isSaving = true
+                            val error = validateWeightKg(weight)
+                                ?: validateHeightCm(height)
+                                ?: validateAge(age)
+                                ?: validateGoalRate(goal, goalRate)
+                            if (error != null) { profileError = error; return@launch }
+                            profileError = null; isSaving = true
                             val request = ProfileRequest(
-                                weightKg = weight.toDoubleOrNull() ?: 0.0,
-                                heightCm = height.toDoubleOrNull() ?: 0.0,
-                                age = age.toIntOrNull() ?: 0, sex = sex,
+                                weightKg = weight.toDouble(),
+                                heightCm = height.toDouble(),
+                                age = age.toInt(), sex = sex,
                                 activityLevel = activityLevel, goal = goal,
-                                goalRate = if (goal == "maintain") 0.0 else goalRate.toDoubleOrNull() ?: 0.0,
+                                goalRate = if (goal == "maintain") 0.0 else goalRate.toDouble(),
                                 hasWearable = steps != null
                             )
                             profileService.saveProfile(request).onSuccess { response ->

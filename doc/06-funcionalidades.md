@@ -154,10 +154,13 @@ una regresión (ya arreglada).**
   máximo 1024px de lado largo en el servidor antes de mandarla (gpt-4o reescala internamente a ≤768px,
   así que la resolución extra se descartaba sin ninguna ganancia). Nota: esto reduce el payload hacia
   OpenAI, no el payload cliente→servidor — el cliente sigue mandando la imagen completa al endpoint.
-- 🟠 **Las cifras no son reproducibles**: sin `temperature` fijada (por defecto 1.0) ni
-  `response_format: json_object`. La misma foto da porcentajes distintos en dos análisis. Y el prompt
-  fuerza al modelo a no admitir incertidumbre y a no dejar campos vacíos, así que **siempre devuelve un
-  número**, aunque la foto no permita estimarlo, sin indicador de confianza (IA-2).
+- ✅ **Arreglado (IA-2): las cifras son ahora mucho más reproducibles.** `temperature = 0.2` y
+  `response_format: json_object` fijos. El prompt ya no obliga a fingir certeza: puede avisar en el
+  campo `summary` cuando la foto no permite una estimación fiable, sin dejar de dar una estimación en
+  los campos obligatorios.
+- ✅ **Arreglado (IA-3): el parseo ya no revienta por un detalle de formato.** Se decodifica con un
+  `Json` tolerante (`isLenient = true`) en vez del estricto por defecto — antes, si el modelo devolvía
+  un número donde se esperaba texto, se perdía el análisis entero.
 - 🟡 **El resultado no se persiste**: se pierde al salir de la pantalla. No hay histórico de composición
   corporal ni comparación en el tiempo — siendo la única función premium y la más caro por uso, es la
   mejora de producto más evidente.

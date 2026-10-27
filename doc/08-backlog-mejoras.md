@@ -209,14 +209,25 @@ el uso real lo justifica. Verificado con `:server:compileKotlin`. | `BodyAnalysi
 - ✅ **NUT-4 — Arreglado.** No se filtraban los productos sin datos nutricionales: `nutriments = null`
   se mostraba como "0 kcal/100g" y se podía añadir. Ahora se filtran y se distingue "sin resultados" de
   "falló la búsqueda".
-- **IA-2 — Las cifras del análisis no son reproducibles.** `OpenAIService.kt` no fija `temperature` (por
-  defecto 1.0 → máxima variabilidad) ni usa `response_format: {"type":"json_object"}`, que gpt-4o soporta
-  de forma nativa. La misma foto analizada dos veces da porcentajes distintos. Además el prompt instruye
-  explícitamente al modelo a no admitir que no puede estimar y a no devolver campos vacíos: **se fuerza
-  que siempre salga un número**, aunque la foto no lo permita, sin ningún indicador de confianza.
-- **IA-3 — El parseo del análisis es frágil.** Los 5 campos de `BodyAnalysisResponse` son `String` no
-  nulables sin valor por defecto: si el modelo omite uno, devuelve números en vez de strings, o se niega
-  a responder, el parseo lanza excepción.
+- ✅ **IA-2 — Arreglado.** `OpenAIService.kt` no fijaba `temperature` (por defecto 1.0 → máxima
+  variabilidad) ni usaba `response_format: {"type":"json_object"}`, que gpt-4o soporta de forma nativa —
+  la misma foto analizada dos veces podía dar porcentajes distintos. Ahora la petición fija
+  `temperature = 0.2` (bajo pero no 0: sigue siendo una estimación, no busca ser robótica, pero reduce
+  mucho la variabilidad) y `response_format: json_object`. Además el prompt obligaba al modelo a no
+  admitir nunca que no podía estimar algo y a no devolver campos vacíos — **se suavizó**: los 4 campos
+  numéricos/categóricos siguen siendo obligatorios (si se dejan abiertos, rompe el contrato con el
+  cliente), pero ahora se le permite explícitamente usar el campo `summary` (texto libre) para avisar
+  cuando la estimación es poco fiable, en vez de fingir una certeza que no tiene. Verificado con
+  `:server:compileKotlin`. | `OpenAIService.kt`
+- ✅ **IA-3 — Arreglado.** Los 5 campos de `BodyAnalysisResponse` son `String` no nulables sin valor por
+  defecto: si el modelo devolvía un número en vez de un string para alguno (p. ej. `"bodyFat": 15` en vez
+  de `"15"`), el `Json` global por defecto (estricto con los tipos) lanzaba excepción y se perdía el
+  análisis entero por un detalle de formato que no afecta al contenido real de la respuesta. Ahora se
+  decodifica con una instancia `Json { isLenient = true; ignoreUnknownKeys = true }` dedicada, que tolera
+  esa clase de discrepancias de tipo. **No cubre** el caso de que el modelo omita un campo entero o se
+  niegue a responder del todo — ahí sigue lanzando excepción (correcto: no hay nada razonable que
+  inventar en el cliente para un campo que no vino). Verificado con `:server:compileKotlin`. |
+  `OpenAIService.kt`
 
 ### Resiliencia
 
@@ -252,10 +263,12 @@ el uso real lo justifica. Verificado con `:server:compileKotlin`. | `BodyAnalysi
   kcal que se usa precisamente en el gimnasio y en la calle, es la limitación funcional más grande.
 - **ERR-1 — Patrón generalizado de tragarse errores** devolviendo valores vacíos, de modo que el usuario
   no distingue "no hay datos" de "ha fallado": `ProfileScreen.kt:446-450` guarda el perfil sin
-  `onFailure` (el spinner se apaga y no pasa nada); `WeightScreen` cerraba el diálogo como si hubiera
-  guardado aunque fallara; `getFoodHistory`/`getFavorites` devuelven `emptyList()`;
-  `GpsService.deleteRoute` **no comprueba el status** y devuelve éxito siempre (sus hermanas
-  `publishRoute`/`unpublishRoute` sí lo comprueban: inconsistencia clara).
+  `onFailure` (el spinner se apaga y no pasa nada); ~~`WeightScreen` cerraba el diálogo como si hubiera
+  guardado aunque fallara~~ **arreglado de rebote al implementar VAL-1** (ver más abajo: ahora el diálogo
+  de añadir peso solo se cierra dentro de `onSuccess`, y si falla se queda abierto con un error visible);
+  `getFoodHistory`/`getFavorites` devuelven `emptyList()`; `GpsService.deleteRoute` **no comprueba el
+  status** y devuelve éxito siempre (sus hermanas `publishRoute`/`unpublishRoute` sí lo comprueban:
+  inconsistencia clara). El resto de instancias de este patrón sigue sin arreglar.
 - **IA-4 — Todos los fallos del análisis son silenciosos también en el servidor**:
   `BodyAnalysisRoute.kt:37-41` responde `mapOf("error" to ...)` **con HTTP 200**, así que el cliente
   intenta deserializarlo como un análisis válido y falla. Además devuelve `e.message` crudo, que incluye
@@ -263,17 +276,31 @@ el uso real lo justifica. Verificado con `:server:compileKotlin`. | `BodyAnalysi
 
 ### Validación y estado
 
-- **VAL-1 — `ProfileScreen` y `WeightScreen` no validan la entrada.** Convierten con `toDoubleOrNull() ?:
-  0.0` y envían **ceros** si el campo está vacío o mal escrito. Disparador muy probable: el teclado
-  español ofrece **coma**, y `"75,5".toDoubleOrNull()` es `null` → se manda 0.0 → el servidor rechaza →
-  no se muestra ningún error. Además el campo de peso de `WeightScreen` no fija `keyboardType`.
-  **La validación correcta ya existe en `OnboardingScreen.kt:610-630`** (rangos reales y mensajes claros)
-  — extraerla a un validador compartido arregla ambas pantallas de golpe.
-- **VAL-2 — Guardar los datos personales recalcula los objetivos a escondidas**
-  (`ProfileScreen.kt:266-293`) y, al hacerlo, **se salta la validación `rateError`** que sí tiene el
-  guardado físico: si el usuario cambió el objetivo a "perder peso" sin elegir ritmo, su déficit se graba
-  como 0.0 → objetivos de mantenimiento, en silencio. El `catch (_: Exception) {}` se come cualquier
-  error.
+- ✅ **VAL-1 — Arreglado.** `ProfileScreen` y `WeightScreen` convertían con `toDoubleOrNull() ?: 0.0` y
+  enviaban **ceros** si el campo estaba vacío o mal escrito (p. ej. coma decimal en vez de punto). La
+  validación correcta ya existía, pero solo en `OnboardingScreen.kt`. Ahora está extraída a
+  `validation/ProfileValidation.kt` (`validateWeightKg`, `validateHeightCm`, `validateAge`,
+  `validateGoalRate` — mismos rangos: peso 30–300kg, altura 100–250cm, edad 14–100) y las tres pantallas
+  la reutilizan: `OnboardingScreen` (se quitó la duplicación), `ProfileScreen` (el botón de guardar datos
+  físicos ahora muestra un error concreto para cualquiera de los 4 campos, antes solo existía para el
+  ritmo), `WeightScreen` (el diálogo de añadir peso ahora valida el rango, muestra el error con
+  `isError`/`supportingText` en el propio campo, y fija `keyboardType = Decimal`; antes un valor inválido
+  simplemente no hacía nada al pulsar "Guardar", sin explicación). Verificado con
+  `:composeApp:compileKotlinJvm`, `compileKotlinJs`, `compileKotlinWasmJs` (los tres `BUILD
+  SUCCESSFUL`). | `validation/ProfileValidation.kt` (nuevo), `OnboardingScreen.kt`, `ProfileScreen.kt`,
+  `WeightScreen.kt`
+- ✅ **VAL-2 — Arreglado.** Guardar los datos personales (`ProfileScreen.kt`) recalculaba la edad desde
+  la fecha de nacimiento y, si procedía, reguardaba todo el perfil físico a escondidas — pero con
+  `goalRate.toDoubleOrNull() ?: 0.0`, saltándose la validación que sí tiene el botón de guardado físico:
+  si el usuario había cambiado el objetivo a "perder peso" sin elegir ritmo, ese reguardado derivado
+  grababa un déficit de 0.0 (objetivo de mantenimiento) en silencio. Ahora ese reguardado solo se hace si
+  peso/altura/ritmo pasan la misma validación que usa el botón físico (reutilizando
+  `validation/ProfileValidation.kt`); si no pasan, se omite el reguardado en silencio **en vez de** mandar
+  ceros — es un efecto derivado de un botón distinto al que el usuario pulsó, así que no se le muestra un
+  error por algo que no pidió hacer explícitamente, simplemente no se corrompe el dato. El
+  `catch (_: Exception) {}` que protege el parseo de la fecha se deja igual a propósito (protege un
+  cálculo auxiliar no crítico, no el guardado de datos personales en sí, que ya tiene su propio manejo de
+  éxito/fallo). Verificado con `:composeApp:compileKotlinJvm`. | `ProfileScreen.kt`
 - **PERM-1 — Los callbacks de permisos pueden perderse en una recomposición.**
   `MainActivity.kt:54-55` declara `pendingLocationCallback` y `pendingCameraCallback` como `var` locales
   **sin `remember`** dentro de `setContent`: cada recomposición los resetea a `null` mientras el launcher
@@ -393,4 +420,8 @@ el uso real lo justifica. Verificado con `:server:compileKotlin`. | `BodyAnalysi
    y códigos de barras de Open Food Facts).
 6. ✅ **WEAR-3** — arreglado con un enfoque más simple que el planteado originalmente (refresco
    periódico en pantalla en vez de `WorkManager` en segundo plano — ver el hallazgo para el porqué).
-7. El resto por severidad: GPS-5/6, IA-2/3, VAL-1/2, PERM-1, etc.
+7. ✅ **IA-2/IA-3 y VAL-1/VAL-2** — arreglados del backlog residual (temperatura/`response_format` fijos
+   y parseo tolerante en el análisis por IA; validación de peso/altura/edad/ritmo extraída y reutilizada
+   en `ProfileScreen`/`WeightScreen`/`OnboardingScreen`). De rebote, se arregló también la instancia de
+   `WeightScreen` del hallazgo ERR-1 (el diálogo ya no se cierra como si hubiera guardado si falla).
+8. El resto por severidad, todavía abierto: GPS-5/6, PERM-1, el resto de ERR-1, y los 🟡 Bajos.
