@@ -292,3 +292,97 @@ de encontrar fallos y mejoras). Se repartió en cuatro frentes en paralelo: GPS 
   GPS/wearable (medir precisión real, considerar la mejora de sincronización en segundo plano) o se
   pasa directamente a Fase 5; decidir cuándo desplegar todo lo acumulado a Render; probar en un
   dispositivo real el cambio de cookie cifrada de Android.
+
+### 2026-10-26 (continuación 4) — Fase 4 completa: investigación exhaustiva de GPS, wearable, IA, OFF y resiliencia
+
+- Usuario pidió investigar a fondo ("dale a tope, investiga bien todo... encontrar mejoras o fallos").
+  Se auditó en profundidad: captura y persistencia de rutas GPS (`GpsScreen.kt`, `GpsService.kt`,
+  `LocationService`), integración con Health Connect (`HealthConnectProvider.kt`), el flujo completo del
+  análisis corporal por IA (cliente → `BodyAnalysisRoute.kt` → `OpenAIService.kt`), el cliente de Open
+  Food Facts (`FoodService.kt`), el manejo de errores/resiliencia transversal de todas las pantallas, y
+  una pasada por el resto de pantallas no cubiertas todavía (`ProfileScreen`, `WeightScreen`,
+  `SubscriptionScreen`, `MainActivity.kt`).
+- Resultado: **`doc/08-backlog-mejoras.md`** (nuevo), con ~60 hallazgos priorizados (🔴/🟠/🟡) y un
+  "orden de ataque" para la Fase 5. Tres regresiones/bugs reales arreglados en el acto porque los
+  encontraron investigaciones independientes señalando el mismo síntoma: R1 (análisis de IA roto por el
+  fix de sesión de Fase 2 — `HttpClient` sin cookies en `WeightScreen`), R2 (crash de `WeightScreen` sin
+  conexión), R3 (estado premium no se cargaba sin historial de peso). Lección registrada en
+  `02-convenciones.md` (verificar qué cliente HTTP usa una llamada antes de exigirle sesión).
+- `doc/06-funcionalidades.md` ampliado con el veredicto de GPS, wearable, IA y training.
+- Esto cerró la Fase 4 por completo. Usuario pidió commitear y seguir con la Fase 5 si no quedaba nada
+  más de la 4.
+
+### 2026-10-26/27 — Fase 5, bloques 1 y 2 (pérdida de datos y fiabilidad de kcal)
+
+- **Bloque 1** (pérdida de datos y funciones muertas): RED-1 (fallo de red podía sobrescribir el perfil
+  real vía Onboarding — se añadió `networkError` a `AuthResponse`, `hasProfile()` pasó a `Boolean?`,
+  pantalla de arranque con reintento en vez de adivinar destino), NUT-1 (barcode 404 se guardaba como
+  comida de 0 kcal), NUT-2 (comida nueva no se podía editar/borrar — el servidor no devolvía el id
+  generado), AUTH-1 (cuenta sin verificar era un callejón sin salida — `LoginScreen` no ofrecía
+  verificar/reenviar código), DB-1 (errores de Turso se convertían en silencio en "éxito" — se añadió
+  `TursoException` y el plugin `StatusPages` que no existía).
+- **Bloque 2** (fiabilidad del conteo de kcal): NUT-3 (objetivos inventados mostrados como reales si
+  fallaba la carga del perfil), NUT-4 (productos sin datos nutricionales se podían añadir como 0 kcal),
+  WEAR-1/WEAR-2 (el wearable podía contar de más —fuentes sin deduplicar— y de menos a la vez —
+  `readRecords` sin paginar, truncaba en los primeros 1000 registros—; migrado a `aggregate()`).
+- Cada tanda verificada con `:server:compileKotlin`/`:composeApp:compileKotlinJvm` y commiteada tras
+  confirmación del usuario.
+
+### 2026-10-27 — Fase 5 bloque 3 (GPS) completo + sistema de continuidad entre sesiones
+
+- El usuario pidió explícitamente un sistema para que una sesión nueva de Claude Code pueda retomar el
+  trabajo sin perder el ritmo cuando el contexto se llene. Se creó **`CLAUDE.md`** (raíz, se autocarga al
+  iniciar Claude Code) y **`doc/CONTINUAR.md`** (foto rápida del estado, no un historial — se actualiza
+  cada vez que se termina algo, no solo al final de la sesión).
+- Cerrado el bloque 3 (GPS) entero: GPS-4 (guardado de rutas por lotes en Turso vía
+  `TursoService.executeBatch()`, de N+1 peticiones a ~5), GPS-2 (un hueco de señal >100m ya no mata la
+  grabación en cascada — se actualiza el punto de referencia aunque no se sume la distancia), GPS-3 (la
+  ruta en curso se guarda periódicamente en `RouteRecoveryStore`, nuevo, `expect/actual`, real en Android
+  vía `SharedPreferences` — se ofrece recuperarla si Android mata el proceso), y **GPS-1** (el cambio más
+  invasivo de todo el backlog: `GpsTrackingService` nuevo, foreground service tipo `location` con
+  notificación mínima, para que el tracking no se detenga al bloquear el móvil, controlado desde
+  `GpsScreen.kt` vía `BackgroundTrackingController` nuevo).
+- Para GPS-1 se preguntó al usuario por el diseño exacto de la notificación (botón de parar, stats en
+  vivo) y no hubo respuesta a tiempo — se tomó la decisión más simple (notificación fija, sin botón) para
+  no bloquear el trabajo, documentando explícitamente que quedaba sin confirmar.
+- Verificado con `:composeApp:compileKotlinJvm`, `compileKotlinJs`, `compileKotlinWasmJs` (los tres
+  `BUILD SUCCESSFUL`); se descubrió que `:composeApp:compileKotlinIosSimulatorArm64` **sí compila en
+  este entorno sin Xcode** (solo falla por el bug ya documentado de `MainViewController.kt`) — útil para
+  la futura Fase 6 (iOS). El `Service` de Android no se pudo compilar aquí (sin SDK).
+- Usuario confirmó commit de todo el bloque 3 + el sistema de continuidad (commit `ff98ae7`).
+- A continuación, el usuario confirmó: la mejora de la notificación de GPS-1 (botón de parar, stats en
+  vivo, pedir `POST_NOTIFICATIONS` en runtime) **queda como mejora futura** (anotada como GPS-1b), no se
+  hace ahora. También confirmó que no probará nada en dispositivo real hasta terminar toda la Fase 5 —
+  lo probará todo de una vez al final; mientras tanto, mantener la lista de verificación pendiente
+  completa y al día en `CONTINUAR.md`.
+
+### 2026-10-27 (continuación) — Fase 5 bloque 4 (resiliencia transversal) completo
+
+- **HTTP-1 (cliente HTTP único)**: de las 5 instancias de `AuthService()`/`HttpClient` repartidas por
+  pantalla (`NavGraph`, `WeightScreen`, `DashboardScreen`, `ProfileScreen`, `SubscriptionScreen` — causa
+  raíz directa de la regresión R1 de Fase 4), se pasó a una única instancia creada en `NavGraph` y
+  pasada como parámetro a las 4 pantallas que creaban la suya. `ProfileScreen` reutiliza además el
+  `profileService` ya compartido en vez de crear uno nuevo.
+- **RED-2 (timeouts + motor de red determinista)**: se quitó `ktor-client-android` del classpath de
+  Android (coexistía con `ktor-client-okhttp`, hacía que el motor elegido no fuera determinista). Se
+  instaló el plugin `HttpTimeout` en el cliente único (`requestTimeoutMillis = 45_000`,
+  `connectTimeoutMillis = 15_000`, `socketTimeoutMillis = 45_000`, generosos por los cold starts de
+  Render gratuito).
+- **RED-3 (401 centralizado)**: `AuthService` instala un `HttpResponseValidator` que detecta cualquier
+  401 fuera de las rutas `/auth` (que ya gestionan su propio 401 como parte del flujo normal) y expone
+  `sessionExpired: StateFlow<Boolean>`. `NavGraph` lo observa; si se activa, limpia la pila de
+  navegación y manda a `LoginScreen` con un aviso visible. Queda pendiente, a propósito, la parte de
+  RED-3 sobre metadatos de cookie (expiración/dominio/path/secure) — cambio más grande, menor impacto
+  ahora que el 401 ya es centralizado.
+- Al implementarlo apareció un bug de sintaxis propio (un comentario KDoc con el literal `/auth/*` abría
+  un comentario de bloque anidado sin querer) y dos errores de API de Ktor (`HttpResponseValidator` es
+  una función de extensión sobre la config del cliente, no algo que se instale con `install(...)`; y
+  `HttpResponse` no tiene `.request` directo, es `.call.request`) — los tres corregidos y vueltos a
+  compilar antes de seguir.
+- Verificado con `:composeApp:compileKotlinJvm`, `compileKotlinJs`, `compileKotlinWasmJs`,
+  `:server:compileKotlin` (todos `BUILD SUCCESSFUL`) y de nuevo `compileKotlinIosSimulatorArm64` (mismo
+  fallo ya documentado, no relacionado). **Sin verificar con build real de Android** — el cambio de
+  motor de red es justo lo que más conviene probar antes de confiar en los tiempos reales.
+- Con esto se cierra el bloque 4 de la Fase 5. Siguiente: bloque 5 (SEC-1 gate premium, IA-1 redimensionar
+  imagen, OFF-1 caché) o WEAR-3 (sync del wearable en segundo plano) — ninguno requiere una decisión de
+  producto grande como GPS-1.

@@ -20,12 +20,22 @@ import com.gymsmart.gymsmart.ui.theme.GymSmartColors
 import kotlinx.coroutines.launch
 
 @Composable
-fun LoginScreen(navController: NavController, authService: AuthService, profileService: ProfileService) {
+fun LoginScreen(
+    navController: NavController,
+    authService: AuthService,
+    profileService: ProfileService,
+    sessionExpiredNotice: Boolean = false,
+    onNoticeShown: () -> Unit = {}
+) {
 
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
-    var errorMsg by remember { mutableStateOf("") }
+    var errorMsg by remember { mutableStateOf(if (sessionExpiredNotice) "Tu sesión caducó, inicia sesión de nuevo." else "") }
     var isLoading by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        if (sessionExpiredNotice) onNoticeShown()
+    }
 
     // Cuenta registrada pero sin verificar: sin esto, el usuario quedaba en un callejón sin salida
     // (ver AUTH-1 en doc/08-backlog-mejoras.md) — no había forma de introducir el código ni de

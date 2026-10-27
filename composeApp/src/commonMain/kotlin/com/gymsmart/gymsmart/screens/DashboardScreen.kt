@@ -33,9 +33,9 @@ import kotlinx.coroutines.launch
 @Composable
 fun DashboardScreen(
     navController: NavController,
-    healthDataProvider: HealthDataProvider
+    healthDataProvider: HealthDataProvider,
+    authService: AuthService
 ) {
-    val authService = remember { AuthService() }
     val scope = rememberCoroutineScope()
 
     var todaySteps    by remember { mutableStateOf<Long?>(null) }

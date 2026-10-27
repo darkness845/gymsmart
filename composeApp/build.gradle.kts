@@ -46,7 +46,10 @@ kotlin {
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.androidx.activity.compose)
             implementation(libs.androidx.core.ktx)
-            implementation(libs.ktor.clientAndroid)
+            // Antes también estaba libs.ktor.clientAndroid (motor legacy basado en HttpURLConnection):
+            // con los dos en el classpath, qué motor cargaba Ktor no era determinista (RED-2 en
+            // doc/08-backlog-mejoras.md). Solo OkHttp, que es el más fiable y el único con
+            // soporte completo de HttpTimeout.
             implementation("io.ktor:ktor-client-okhttp:3.3.3")
 
             implementation("com.google.android.gms:play-services-location:21.3.0")

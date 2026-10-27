@@ -96,6 +96,21 @@ fun NavGraph(
     var startDestination by remember { mutableStateOf<String?>(null) }
     var startupError by remember { mutableStateOf(false) }
     var retryTrigger by remember { mutableStateOf(0) }
+    var sessionExpiredNotice by remember { mutableStateOf(false) }
+
+    // Centraliza el 401: antes cada pantalla se quedaba con datos vacíos sin explicación cuando la
+    // sesión caducaba a mitad de uso (RED-3 en doc/08-backlog-mejoras.md). Ahora, en cuanto cualquier
+    // llamada autenticada recibe un 401, se manda al login con aviso, desde cualquier pantalla.
+    val sessionExpired by authService.sessionExpired.collectAsState()
+    LaunchedEffect(sessionExpired) {
+        if (sessionExpired && navController.currentDestination?.route != Screen.Login.route) {
+            sessionExpiredNotice = true
+            navController.navigate(Screen.Login.route) {
+                popUpTo(0) { inclusive = true }
+            }
+            authService.acknowledgeSessionExpired()
+        }
+    }
 
     // Un fallo de red aquí NUNCA debe decidir "no hay sesión" ni "no tiene perfil": antes eso podía
     // expulsar al login a un usuario con sesión válida, o peor, mandarlo a rehacer el onboarding y
@@ -125,7 +140,13 @@ fun NavGraph(
 
     NavHost(navController = navController, startDestination = startDestination!!) {
         composable(Screen.Login.route) {
-            LoginScreen(navController, authService, profileService)
+            LoginScreen(
+                navController = navController,
+                authService = authService,
+                profileService = profileService,
+                sessionExpiredNotice = sessionExpiredNotice,
+                onNoticeShown = { sessionExpiredNotice = false }
+            )
         }
         composable(Screen.Register.route) {
             RegisterScreen(navController, authService)
@@ -143,7 +164,8 @@ fun NavGraph(
         composable(Screen.Dashboard.route) {
             DashboardScreen(
                 navController = navController,
-                healthDataProvider = healthDataProvider
+                healthDataProvider = healthDataProvider,
+                authService = authService
             )
         }
         composable(Screen.Nutrition.route) {
@@ -167,7 +189,7 @@ fun NavGraph(
             )
         }
         composable(Screen.Weight.route) {
-            WeightScreen(navController)
+            WeightScreen(navController, authService)
         }
 
         composable<RouteDetailArgs> { backStackEntry ->
@@ -218,12 +240,14 @@ fun NavGraph(
         composable(Screen.Profile.route) {
             ProfileScreen(
                 navController      = navController,
-                healthDataProvider = healthDataProvider
+                healthDataProvider = healthDataProvider,
+                authService        = authService,
+                profileService     = profileService
             )
         }
 
         composable(Screen.Subscription.route) {
-            SubscriptionScreen(navController)
+            SubscriptionScreen(navController, authService)
         }
     }
 }

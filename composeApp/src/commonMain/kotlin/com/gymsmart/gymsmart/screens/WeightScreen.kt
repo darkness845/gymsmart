@@ -44,11 +44,11 @@ import kotlin.time.Clock
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WeightScreen(
-    navController: NavHostController
+    navController: NavHostController,
+    authService: AuthService
 ) {
     val scope = rememberCoroutineScope()
 
-    val authService = remember { AuthService() }
     val profileService = remember { ProfileService(authService.client) }
     val weightService = remember { WeightService(authService.client) }
 

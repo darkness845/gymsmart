@@ -74,10 +74,10 @@ class BirthDateVisualTransformation : VisualTransformation {
 @Composable
 fun ProfileScreen(
     navController: NavController,
-    healthDataProvider: HealthDataProvider
+    healthDataProvider: HealthDataProvider,
+    authService: AuthService,
+    profileService: ProfileService
 ) {
-    val authService    = remember { AuthService() }
-    val profileService = remember { ProfileService(authService.client) }
     val scope          = rememberCoroutineScope()
 
     // Usuario

@@ -27,13 +27,43 @@ ataque" de [08-backlog-mejoras.md](08-backlog-mejoras.md):
 | 1 | Pérdida de datos y funciones muertas (RED-1, NUT-1, NUT-2, AUTH-1, DB-1) | ✅ Completo |
 | 2 | Fiabilidad del conteo de kcal (NUT-3, NUT-4, WEAR-1, WEAR-2) | ✅ Completo |
 | 3 | GPS como funcionalidad real (GPS-1, GPS-2, GPS-3, GPS-4) | ✅ Completo |
-| 4 | Resiliencia transversal (cliente HTTP único, timeouts, 401 centralizado) | 🔄 **En curso** |
-| 5 | Coste y seguridad (gate premium real, redimensionar imagen IA, caché OFF) | ⏳ Sin empezar |
+| 4 | Resiliencia transversal (cliente HTTP único, timeouts, 401 centralizado) | ✅ Completo |
+| 5 | Coste y seguridad (gate premium real, redimensionar imagen IA, caché OFF) | ⏳ **Siguiente** |
 | — | WEAR-3 (sync del wearable en segundo plano) — arquitectura más grande, no encaja en un bloque | ⏳ Sin empezar |
 
 ## Lo último que se hizo
 
-Cerrado el bloque 3 (GPS) entero, incluyendo **GPS-1** (el cambio más invasivo de todo el backlog):
+Cerrado el bloque 4 (resiliencia transversal) entero: HTTP-1, RED-2, RED-3.
+
+- **HTTP-1 (cliente único)**: había 5 instancias de `AuthService()`/`HttpClient` (una por pantalla:
+  `NavGraph`, `WeightScreen`, `DashboardScreen`, `ProfileScreen`, `SubscriptionScreen`). Ahora `NavGraph`
+  crea el único `AuthService()` de toda la app y lo pasa como parámetro a las 4 pantallas que antes
+  creaban el suyo. `ProfileScreen` además reutiliza el `profileService` ya compartido de `NavGraph` en
+  vez de crear uno nuevo. Las pantallas que construyen un servicio de dominio propio (`WeightService`,
+  `SubscriptionService`) lo siguen haciendo, pero a partir de `authService.client` compartido.
+- **RED-2 (timeouts + motor de red determinista)**: se quitó `ktor-client-android` del classpath de
+  Android (quedaba junto a `ktor-client-okhttp`, y cuál cargaba Ktor no era determinista). Se instaló
+  `HttpTimeout` en el `HttpClient` único: `requestTimeoutMillis = 45_000`, `connectTimeoutMillis =
+  15_000`, `socketTimeoutMillis = 45_000` — generosos a propósito por los cold starts de Render.
+  **Ojo**: el análisis corporal por IA ahora también tiene este límite; si en uso real se corta antes de
+  que OpenAI responda, es un ajuste de una línea (timeout específico para esa llamada).
+- **RED-3 (401 centralizado)**: `AuthService` tiene un `HttpResponseValidator` que detecta cualquier 401
+  fuera de las rutas `/auth` (que gestionan su propio 401 como parte del flujo normal) y expone
+  `sessionExpired: StateFlow<Boolean>`. `NavGraph` lo observa y, si se activa, limpia la pila de
+  navegación y manda a `LoginScreen` con un aviso ("Tu sesión caducó, inicia sesión de nuevo."). Antes,
+  una sesión caducada a mitad de uso dejaba cada pantalla con datos vacíos sin explicación.
+- **Sigue abierto a propósito** (menor impacto ahora que el 401 ya es centralizado): el almacenamiento de
+  cookies sigue guardando solo `nombre=valor`, sin expiración/dominio/path/`secure` — es un cambio más
+  grande (afecta a los 5 `CookiesStorage` por plataforma) que no se hizo en este bloque.
+- Verificado con `:composeApp:compileKotlinJvm`, `compileKotlinJs`, `compileKotlinWasmJs` y
+  `:server:compileKotlin` (todos `BUILD SUCCESSFUL`); también se repitió
+  `:composeApp:compileKotlinIosSimulatorArm64` y sigue fallando solo por el error ya documentado de
+  `MainViewController.kt` (no por este cambio). **Sin verificar con build real de Android** — el cambio
+  de motor de red (quitar `ktor-client-android`) es justo el tipo de cosa que conviene comprobar antes de
+  confiar en los tiempos de carga reales en un dispositivo.
+- Todo esto, junto con el cierre del bloque 3 (GPS, ver detalle más abajo), **ya está commiteado**.
+
+### Resumen de lo hecho en el bloque 3 (GPS), ya commiteado antes de esto
 
 - `GpsTrackingService.kt` (nuevo, Android): foreground service con tipo `location` y una notificación
   simple ("Grabando ruta GPS"). Su único trabajo es mantener el proceso con prioridad elevada — no
@@ -61,15 +91,14 @@ Cerrado el bloque 3 (GPS) entero, incluyendo **GPS-1** (el cambio más invasivo 
 
 Decidir entre (no hay un orden obligatorio, son independientes):
 
-1. **Bloque 4 — resiliencia transversal**: cliente HTTP único (hoy hay ~5 instancias de `AuthService`/
-   `HttpClient` repartidas por pantallas — fue la causa raíz de la regresión R1 de la Fase 4, así que
-   tiene buen impacto para evitar que se repita), timeouts (hoy no hay ninguno configurado, lo que
-   interactúa mal con los cold starts de Render), manejo centralizado de 401.
-2. **Bloque 5 — coste y seguridad**: gate premium real en el servidor (`isPremium()` existe pero no se
-   llama desde ningún sitio), redimensionar la imagen antes de mandarla a la IA (ahorro de memoria/
-   coste, cero pérdida de calidad), caché de búsquedas de Open Food Facts.
-3. **WEAR-3** (sync del wearable en segundo plano): similar en invasividad a GPS-1 (`WorkManager`),
+1. **Bloque 5 — coste y seguridad**: gate premium real en el servidor (`isPremium()` existe pero no se
+   llama desde ningún sitio — SEC-1), redimensionar la imagen antes de mandarla a la IA (ahorro de
+   memoria/coste, cero pérdida de calidad — IA-1), caché de búsquedas de Open Food Facts (OFF-1).
+2. **WEAR-3** (sync del wearable en segundo plano): similar en invasividad a GPS-1 (`WorkManager`),
    mismo problema de no poder verificar Android aquí.
+3. El resto de hallazgos 🟠/🟡 por severidad (ver `08-backlog-mejoras.md`), incluyendo GPS-5/GPS-6
+   (filtros de velocidad/precisión/duración), IA-2/IA-3 (reproducibilidad y parseo frágil del análisis),
+   VAL-1/VAL-2 (validación de inputs), PERM-1 (callbacks de permisos perdidos en recomposición).
 
 Ninguno de estos requiere decisiones de producto tan grandes como GPS-1 — se puede proceder sin
 bloquear en una respuesta del usuario, salvo que él indique otra prioridad.
@@ -87,6 +116,13 @@ real. Se mantiene al día conforme se añaden más cambios Android-only:
 - **`GpsTrackingService.kt` + `BackgroundTrackingController.android.kt`** (el más importante de
   probar: foreground service nuevo, permisos nuevos, notificación) — confirmar que una ruta grabada
   con la pantalla apagada sigue avanzando, y que la notificación aparece y desaparece correctamente.
+- **Cambio de motor de red en Android** (se quitó `ktor-client-android`, queda solo `ktor-client-okhttp`)
+  — confirmar que login, carga de pantallas y, sobre todo, un cold start de Render (primera petición
+  tras inactividad del servidor) siguen funcionando con normalidad y que el timeout de 45s es suficiente
+  en la práctica.
+- **401 centralizado**: forzar una sesión caducada (borrar la cookie en el servidor o esperar a que
+  expire) y confirmar que la app manda sola al login con el aviso, en vez de quedarse con pantallas
+  vacías.
 
 ## Decisiones que ya tomó el usuario (no re-preguntar)
 

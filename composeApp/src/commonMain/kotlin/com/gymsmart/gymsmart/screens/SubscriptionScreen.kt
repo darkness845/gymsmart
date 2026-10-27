@@ -66,9 +66,8 @@ class ExpiryVisualTransformation : VisualTransformation {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SubscriptionScreen(navController: NavController) {
+fun SubscriptionScreen(navController: NavController, authService: AuthService) {
 
-    val authService = remember { AuthService() }
     val subService  = remember { SubscriptionService(authService.client) }
     val scope       = rememberCoroutineScope()
 

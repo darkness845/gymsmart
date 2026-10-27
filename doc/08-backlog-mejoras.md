@@ -185,16 +185,28 @@ no hay cuota diaria, ni rate limit, ni caché, ni registro de consumo.
 
 ### Resiliencia
 
-- **RED-2 — No hay ni un solo `HttpTimeout` configurado** en todo el cliente, ni `expectSuccess`, ni
-  retry. Peor: en Android hay **dos motores de Ktor en el classpath a la vez** (`ktor-client-android` y
-  `ktor-client-okhttp`) y los clientes se crean sin motor explícito, así que el elegido no es
-  determinista. Sus defaults difieren mucho (≈100 s vs 10 s de lectura), de modo que **que la app
-  sobreviva a un cold start de Render depende de qué motor cargue**. En Desktop el motor Java puede
-  esperar indefinidamente.
-- **RED-3 — No hay manejo centralizado de 401.** Cuando la sesión caduca, la app no lleva al login:
-  todas las pantallas aparecen vacías o con valores por defecto, sin explicación. Agravante: el
-  almacenamiento de cookies guarda solo `nombre=valor`, **descartando expiración, dominio, path y flag
-  `secure`**, así que la cookie se sigue enviando indefinidamente.
+- ✅ **RED-2 — Arreglado (parcial).** No había ningún `HttpTimeout` configurado, y en Android había dos
+  motores de Ktor a la vez en el classpath (`ktor-client-android` y `ktor-client-okhttp`), así que el
+  elegido no era determinista. Se quitó `ktor-client-android` del classpath (queda solo OkHttp, el más
+  fiable de los dos) y se instaló `HttpTimeout` en el único `HttpClient` de la app (ver HTTP-1):
+  `requestTimeoutMillis = 45_000`, `connectTimeoutMillis = 15_000`, `socketTimeoutMillis = 45_000` —
+  generosos a propósito por los cold starts de Render. **Nota a vigilar**: el análisis corporal por IA
+  (IA-1 sigue sin redimensionar la imagen) ahora también tiene este límite de 45s; si en el uso real
+  llega a cortarse por timeout antes de que OpenAI responda, es un ajuste de una línea (timeout más alto
+  solo para esa llamada). Verificado con `:composeApp:compileKotlinJvm`, `compileKotlinJs`,
+  `compileKotlinWasmJs` (los tres `BUILD SUCCESSFUL`); sin verificar con build real de Android (sin SDK
+  en este entorno) — el cambio de motor es exactamente el tipo de cosa que conviene probar antes de
+  confiar en los tiempos de carga reales. | `composeApp/build.gradle.kts`, `AuthService.kt`
+- ✅ **RED-3 — Arreglado (parcial).** No había manejo centralizado de 401: cuando la sesión caducaba a
+  mitad de uso, cada pantalla se quedaba con datos vacíos o valores por defecto, sin explicación. Ahora
+  el `HttpClient` único tiene un `HttpResponseValidator` que detecta cualquier 401 fuera de las rutas de
+  `/auth` (esas ya gestionan su propio 401 como parte del flujo normal — no hay sesión todavía, no es que
+  haya caducado) y pone a `true` `AuthService.sessionExpired`; `NavGraph` lo observa y manda al login con
+  un aviso ("Tu sesión caducó, inicia sesión de nuevo."), limpiando la pila de navegación. **Sigue
+  pendiente** la segunda mitad de este hallazgo: el almacenamiento de cookies guarda solo
+  `nombre=valor`, descartando expiración, dominio, path y flag `secure` — no se tocó en este cambio por
+  ser una refactorización más grande (afecta a los 5 `CookiesStorage` por plataforma) y de impacto menor
+  ahora que el 401 ya se maneja de forma centralizada. | `AuthService.kt`, `NavGraph.kt`, `LoginScreen.kt`
 - **RED-4 — Pantalla en blanco al arrancar.** `NavGraph.kt:71` hace `if (startDestination == null)
   return`: mientras se comprueba la sesión no se dibuja nada —ni splash ni indicador—, lo que con un cold
   start se lee como "la app está colgada".
@@ -244,12 +256,16 @@ no hay cuota diaria, ni rate limit, ni caché, ni registro de consumo.
   `WeightScreen.kt:455` de `activityLevel == "wearable"`, y `OnboardingScreen.kt:163` del toggle
   explícito. Hoy es inofensivo porque el servidor lo deriva él mismo e ignora el campo, pero es un campo
   que viaja con tres significados.
-- **HTTP-1 — Proliferación de clientes HTTP que nunca se cierran.** 4 configuraciones distintas y 5
-  instanciaciones de `AuthService()` (una por pantalla), cada una con su pool de conexiones y dispatcher,
-  y `close()` no aparece en ningún sitio. Es **la causa raíz directa de R1**: con varios clientes es
-  fácil coger el que no lleva cookies. Y cualquier arreglo de timeouts/retry/401 hay que aplicarlo hoy en
-  4 sitios, lo que garantiza que se vuelva a desincronizar. Es el argumento más fuerte para el cliente
-  único que ya estaba en [05-deuda-tecnica.md](05-deuda-tecnica.md).
+- ✅ **HTTP-1 — Arreglado.** Había 5 instanciaciones de `AuthService()` (una por pantalla: `NavGraph`,
+  `WeightScreen`, `DashboardScreen`, `ProfileScreen`, `SubscriptionScreen`), cada una con su propio
+  `HttpClient`/pool de conexiones, y `close()` no aparecía en ningún sitio — era la causa raíz directa de
+  R1 (fácil coger el cliente que no lleva cookies) y garantizaba que cualquier arreglo de
+  timeouts/401 se desincronizara entre pantallas. Ahora `NavGraph` crea el único `AuthService()` de toda
+  la app y lo pasa como parámetro a las 4 pantallas que antes creaban el suyo; `ProfileScreen` además
+  reutiliza el `profileService` ya compartido en vez de crear uno nuevo. Las pantallas que construían su
+  propio servicio de dominio (`WeightService`, `SubscriptionService`, etc.) siguen haciéndolo, pero ya a
+  partir de `authService.client` compartido, no de un cliente nuevo. | `NavGraph.kt`,
+  `DashboardScreen.kt`, `ProfileScreen.kt`, `SubscriptionScreen.kt`, `WeightScreen.kt`, `LoginScreen.kt`
 - **UI-1 — El desplegable de actividad puede quedar incoherente**: la opción "Pulsera" solo se añade si
   Health Connect devolvió pasos, así que un perfil guardado con `activityLevel = "wearable"` y permiso
   revocado deja la selección vacía (`ProfileScreen.kt:384`).
@@ -331,8 +347,11 @@ no hay cuota diaria, ni rate limit, ni caché, ni registro de consumo.
    invasivo de todo el backlog (`Service` de Android nuevo) y el que más necesita probarse en un
    dispositivo/emulador real antes de confiar en él — no se pudo acordar el enfoque exacto con el
    usuario de antemano, así que se tomó la decisión más simple y estándar (ver detalle en el hallazgo).
-4. ⏳ **Resiliencia transversal** — pendiente: HTTP-1 (cliente único) como base, y encima RED-2
-   (timeouts), RED-3 (401 centralizado).
+4. ✅ **Resiliencia transversal** — completo en lo planeado: HTTP-1 (cliente único), RED-2 (timeouts +
+   motor de red determinista en Android), RED-3 (401 centralizado → redirige al login). Queda abierto,
+   a propósito y de menor impacto ahora: la parte de RED-3 sobre metadatos de cookie (expiración/
+   dominio/path/secure) y RED-4/RED-5 (pantalla de carga ya existe desde RED-1, capacidad offline es
+   cambio de arquitectura mayor, no de este bloque).
 5. ⏳ **Coste y seguridad** — pendiente: SEC-1 (gate premium real), IA-1 (redimensionar imagen antes de
    enviarla a OpenAI), OFF-1 (caché de búsquedas).
 6. El resto por severidad.
