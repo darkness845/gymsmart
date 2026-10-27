@@ -422,3 +422,38 @@ de encontrar fallos y mejoras). Se repartió en cuatro frentes en paralelo: GPS 
   estructurados, sino backlog residual por severidad: WEAR-3 (sync del wearable en segundo plano,
   arquitectura mayor, mismo problema de verificación en Android que GPS-1) y el resto de hallazgos
   🟠/🟡 de `08-backlog-mejoras.md` (GPS-5/6, IA-2/3, VAL-1/2, PERM-1, etc.).
+- Usuario respondió "wear" — se siguió con WEAR-3.
+
+### 2026-10-27 (continuación 3) — WEAR-3 arreglado con un enfoque más simple que el planteado originalmente
+
+- El hallazgo original (de la investigación de Fase 4) proponía mover la lectura de Health Connect a un
+  `WorkManager` periódico con caché local, por ser "un cambio de arquitectura, no un fix puntual". Antes
+  de implementarlo tal cual, se reconsideró: ese enfoque es Android-only, añade una dependencia nueva
+  (`androidx.work`), un `Worker` nuevo, y tiene el mismo problema de no poder verificarse en este entorno
+  que tuvo GPS-1 — acumulando riesgo no verificado justo encima de otro cambio (GPS-1) que ya tiene esa
+  misma etiqueta pendiente.
+- Releyendo el síntoma real descrito ("si abres la app por la mañana, el presupuesto se queda congelado
+  todo el día"): el problema no es que falte sincronización con la app cerrada, es que el número se queda
+  obsoleto **mientras la pantalla sigue abierta**, porque la lectura es de una sola vez
+  (`LaunchedEffect(Unit)` / `LaunchedEffect(selectedDate)`). Un refresco periódico dentro de la propia
+  pantalla resuelve exactamente ese síntoma, con un cambio que vive entero en `commonMain`.
+- Implementado: nueva constante `WEARABLE_POLL_INTERVAL_MS` (5 minutos) en `HealthDataProvider.kt`.
+  `NutritionScreen.kt`: se separó la lectura de calorías activas del `LaunchedEffect(selectedDate)` que
+  carga perfil/comidas (no tenía sentido re-pedir comidas al servidor cada 5 minutos) a su propio
+  `LaunchedEffect(hasWearable)` con un bucle `while(true) { leer; delay(...) }`, que arranca en cuanto el
+  perfil confirma que el usuario tiene pulsera. `DashboardScreen.kt`: se convirtió su lectura única de
+  pasos/calorías en el mismo patrón de bucle, manteniendo el `delay(500)` inicial ya existente (no se
+  tocó, es un hallazgo distinto y menor). El bucle se cancela solo al salir de la pantalla — ciclo de
+  vida estándar de `LaunchedEffect`, sin código nuevo de gestión de lifecycle.
+- `ProfileScreen.kt` también lee pasos/calorías, pero ahí es un dato informativo al editar el perfil, no
+  un presupuesto que se mira todo el día — se dejó deliberadamente como lectura única.
+- **Diferencia clave con el resto de cambios "wearable" de esta fase (WEAR-1/WEAR-2, que sí son Android
+  puro)**: este no toca ni una línea de código Android. Se verificó al 100%, sin ninguna salvedad, con
+  `:composeApp:compileKotlinJvm`, `compileKotlinJs`, `compileKotlinWasmJs` y `:server:compileKotlin`
+  (los cuatro `BUILD SUCCESSFUL`).
+- Documentado explícitamente en `08-backlog-mejoras.md` que este es un cambio de alcance deliberadamente
+  menor que el `WorkManager` originalmente esbozado, y qué caso sigue sin cubrir (app completamente
+  cerrada o en segundo plano sin esa pantalla abierta) — para que quede claro que fue una decisión
+  consciente, no un "me olvidé de la parte difícil".
+- Con esto, todos los bloques planeados de la Fase 5 **y** WEAR-3 quedan cerrados. Lo que queda es
+  backlog residual por severidad (GPS-5/6, IA-2/3, VAL-1/2, PERM-1, y el resto de 🟡).

@@ -46,6 +46,7 @@ import com.gymsmart.gymsmart.model.estimatedKcalPer100
 import com.gymsmart.gymsmart.services.HealthDataProvider
 import com.gymsmart.gymsmart.services.NutritionService
 import com.gymsmart.gymsmart.services.ProfileService
+import com.gymsmart.gymsmart.services.WEARABLE_POLL_INTERVAL_MS
 import com.gymsmart.gymsmart.ui.theme.GymSmartColors
 import io.ktor.client.*
 import io.ktor.client.plugins.contentnegotiation.*
@@ -144,10 +145,22 @@ fun NutritionScreen(
                 goalsLoaded     = true
             }
             .onFailure { goalsLoaded = false }
-        if (hasWearable) runCatching { healthDataProvider.getTodayActiveCalories() }.onSuccess { activeCalories = it }
         nutritionService.getUserMeals(selectedDate.toString())?.forEach { entryWithTarget ->
             val mealType = MealType.entries.find { it.name == entryWithTarget.mealType }
             if (mealType != null) meals[mealType]?.add(entryWithTarget.entry)
+        }
+    }
+
+    // WEAR-3 (doc/08-backlog-mejoras.md): antes esto era una lectura única dentro del LaunchedEffect de
+    // arriba. Si el usuario abría la pantalla a primera hora, el "+N kcal" de la pulsera se quedaba
+    // congelado en ~0 el resto del día aunque hiciera mucha actividad real. Ahora se refresca sola
+    // mientras la pantalla está abierta, cada WEARABLE_POLL_INTERVAL_MS — se reinicia si cambia
+    // `hasWearable` (perfil recién cargado) para no esperar un ciclo completo a la primera lectura.
+    LaunchedEffect(hasWearable) {
+        if (!hasWearable) return@LaunchedEffect
+        while (true) {
+            runCatching { healthDataProvider.getTodayActiveCalories() }.onSuccess { activeCalories = it }
+            kotlinx.coroutines.delay(WEARABLE_POLL_INTERVAL_MS)
         }
     }
 

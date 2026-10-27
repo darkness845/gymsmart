@@ -109,11 +109,14 @@ cabe en un solo archivo.**
   `ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL`, que Health Connect calcula ya deduplicado y sin
   necesidad de paginar. **⚠️ Sin verificar con build real** (sin Android SDK en este entorno) — probar en
   un dispositivo/emulador Android antes de confiar al 100%.
-- 🟠 **Pendiente (WEAR-3) — lectura puntual, no sincronización**: cada pantalla sigue leyendo una sola vez
-  al entrar. Si abres la app por la mañana, el presupuesto de kcal se queda congelado en el valor de esa
-  hora todo el día. Es la causa más probable de la imprecisión restante en modo pulsera, y es un cambio
-  de arquitectura (mover a `WorkManager` periódico con caché local), no un fix puntual — pendiente de
-  decidir si se hace ahora o se deja para más adelante.
+- ✅ **Arreglado (WEAR-3)**: cada pantalla leía una sola vez al entrar, así que si se abría la app por la
+  mañana el presupuesto de kcal se quedaba congelado en el valor de esa hora todo el día. Ahora
+  `NutritionScreen` y `DashboardScreen` refrescan los datos de la pulsera cada 5 minutos mientras la
+  pantalla está visible, en vez de leer una sola vez. Se eligió este enfoque (más simple que el
+  `WorkManager` en segundo plano que se había planteado inicialmente) porque resuelve el síntoma real
+  —el número obsoleto mientras se mira la pantalla— sin tocar código Android ni añadir algo imposible de
+  verificar en este entorno; ver el detalle de la decisión en
+  [08-backlog-mejoras.md](08-backlog-mejoras.md).
 
 ## Entrenamiento (Training)
 

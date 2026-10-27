@@ -29,9 +29,39 @@ ataque" de [08-backlog-mejoras.md](08-backlog-mejoras.md):
 | 3 | GPS como funcionalidad real (GPS-1, GPS-2, GPS-3, GPS-4) | ✅ Completo |
 | 4 | Resiliencia transversal (cliente HTTP único, timeouts, 401 centralizado) | ✅ Completo |
 | 5 | Coste y seguridad (gate premium real, redimensionar imagen IA, caché OFF) | ✅ Completo |
-| — | WEAR-3 (sync del wearable en segundo plano) — arquitectura más grande, no encaja en un bloque | ⏳ **Siguiente** (o resto de hallazgos 🟠/🟡) |
+| — | WEAR-3 (refresco periódico de datos de la pulsera) | ✅ Completo |
 
 ## Lo último que se hizo
+
+**WEAR-3 (refresco de datos de la pulsera) arreglado**, con un enfoque deliberadamente más simple que
+el que se había esbozado en el hallazgo original:
+
+- El análisis original proponía mover la lectura de Health Connect a un `WorkManager` periódico con
+  caché local — arquitectura más grande, Android-only, con el mismo problema de no poder verificarse en
+  este entorno que tuvo GPS-1. Revisando el síntoma real descrito ("si abres la app por la mañana, el
+  presupuesto se queda congelado todo el día" — es decir, obsoleto **mientras la pantalla está abierta**,
+  no solo con la app cerrada), un refresco periódico dentro de la propia pantalla resuelve exactamente
+  eso con mucho menos riesgo.
+- Se implementó así: nueva constante `WEARABLE_POLL_INTERVAL_MS` (5 minutos) en `HealthDataProvider.kt`
+  (común). `NutritionScreen.kt` separó la lectura de calorías activas en su propio `LaunchedEffect(
+  hasWearable)` con un bucle `while(true) { leer; delay(...) }` en vez de una lectura única dentro del
+  efecto que también carga perfil/comidas. `DashboardScreen.kt` convirtió su lectura única de
+  pasos/calorías en el mismo patrón de bucle. El bucle se cancela solo al salir de la pantalla (ciclo de
+  vida normal de `LaunchedEffect`), sin código nuevo de gestión de lifecycle.
+- **Esto vive entero en `commonMain` — no se tocó ni una línea de código Android.** A diferencia de
+  GPS-1/WEAR-1/WEAR-2, no hay ninguna limitación de "sin verificar con build real" aquí: se compiló y
+  verificó al 100% con `:composeApp:compileKotlinJvm`, `compileKotlinJs`, `compileKotlinWasmJs` y
+  `:server:compileKotlin` (los cuatro `BUILD SUCCESSFUL`).
+- **Lo que esto no resuelve** (y donde sí compensaría el `WorkManager` si en el uso real hiciera falta):
+  el número no se actualiza si la app está completamente cerrada o en segundo plano sin esa pantalla
+  abierta. Se consideró un caso mucho menos común que el síntoma real descrito, así que no se implementó
+  — queda anotado por si el usuario nota que no es suficiente.
+- `ProfileScreen.kt` también lee pasos/calorías, pero ahí es solo un dato informativo al editar el
+  perfil (no alimenta ningún presupuesto que se vea todo el día) — se dejó como lectura única a
+  propósito, para no añadir complejidad donde no cambia nada visible.
+- Pendiente de que el usuario confirme el commit.
+
+### Resumen de lo hecho en el bloque 5 (coste y seguridad), ya commiteado antes de esto
 
 Cerrado el bloque 5 (coste y seguridad) entero: SEC-1, IA-1, OFF-1. Todos son cambios de servidor,
 verificados con `:server:compileKotlin` (sin limitación de Android SDK en ninguno de los tres).
@@ -107,22 +137,26 @@ verificados con `:server:compileKotlin` (sin limitación de Android SDK en ningu
   Android **no se han podido compilar en este entorno** (sin Android SDK) — es, de lejos, el cambio
   que más necesita probarse en un dispositivo/emulador real antes de confiar en él.
 - Con esto, **el bloque 3 (GPS) queda completo**. Ya commiteado (commit `ff98ae7`), igual que el
-  bloque 4 (commit `1199fd6`).
+  bloque 4 (commit `1199fd6`) y el bloque 5 (commit `45879a9`).
 
 ## Lo siguiente que hay que hacer
 
-Decidir entre (no hay un orden obligatorio, son independientes):
+Con los 5 bloques de la Fase 5 y WEAR-3 cerrados, **no queda nada estructurado en bloques** — lo que
+sigue es backlog residual por severidad (ver `08-backlog-mejoras.md`), sin orden obligatorio:
 
-1. **WEAR-3** (sync del wearable en segundo plano): similar en invasividad a GPS-1 (`WorkManager`),
-   mismo problema de no poder verificar Android aquí.
-2. El resto de hallazgos 🟠/🟡 por severidad (ver `08-backlog-mejoras.md`), incluyendo GPS-5/GPS-6
-   (filtros de velocidad/precisión/duración), IA-2/IA-3 (reproducibilidad y parseo frágil del análisis),
-   VAL-1/VAL-2 (validación de inputs), PERM-1 (callbacks de permisos perdidos en recomposición).
+- GPS-5/GPS-6 (filtros de velocidad/precisión sin comprobar `hasSpeed()`/`hasAccuracy()`; duración que
+  incluye el tiempo parado).
+- IA-2/IA-3 (cifras del análisis no reproducibles sin `temperature`/`response_format`; parseo frágil de
+  la respuesta del modelo).
+- VAL-1/VAL-2 (validación de inputs en `ProfileScreen`/`WeightScreen` — la validación correcta ya existe
+  en `OnboardingScreen`, solo falta extraerla y reutilizarla).
+- PERM-1 (callbacks de permisos de cámara/GPS que pueden perderse en una recomposición de
+  `MainActivity.kt` — Android-only, sin poder verificar aquí).
+- El resto de 🟡 Bajos: seguridad/configuración menor, datos de alimentos, análisis IA sin persistir,
+  código muerto/inconsistencias menores, UI-1/UI-2.
 
 Ninguno de estos requiere decisiones de producto tan grandes como GPS-1 — se puede proceder sin
-bloquear en una respuesta del usuario, salvo que él indique otra prioridad. Con el bloque 5 cerrado,
-**todos los bloques planeados de la Fase 5 están completos** — lo que queda es backlog residual por
-severidad, no bloques estructurados.
+bloquear en una respuesta del usuario, salvo que él indique otra prioridad.
 
 ## Pendiente de verificación por el usuario (código Android no compilable aquí)
 

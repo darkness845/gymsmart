@@ -173,10 +173,29 @@ el uso real lo justifica. Verificado con `:server:compileKotlin`. | `BodyAnalysi
   deduplica solapes entre fuentes y no pagina. **⚠️ Sin verificar con build real** (este entorno no tiene
   Android SDK) — recomendado compilar/probar en un dispositivo o emulador Android antes de confiar al
   100%.
-- **WEAR-3 — Lectura puntual en vez de sincronización.** Cada pantalla lee una sola vez al entrar
-  (`LaunchedEffect(Unit)`, con un `delay(500)` arbitrario en Dashboard). Si abres la app por la mañana,
-  el presupuesto de kcal se queda congelado en el valor de esa hora todo el día. Es la causa más probable
-  de la imprecisión percibida en modo pulsera (ver [06-funcionalidades.md](06-funcionalidades.md)).
+- ✅ **WEAR-3 — Arreglado, con un enfoque más simple que el planteado originalmente.** Cada pantalla leía
+  una sola vez al entrar (`LaunchedEffect(Unit)`/`LaunchedEffect(selectedDate)`, con un `delay(500)`
+  arbitrario en Dashboard). Si se abría la app por la mañana, el presupuesto de kcal se quedaba
+  congelado en el valor de esa hora todo el día — causa más probable de la imprecisión percibida en modo
+  pulsera (ver [06-funcionalidades.md](06-funcionalidades.md)).
+  **Decisión de diseño**: el análisis original de esta misma entrada proponía mover la lectura a
+  `WorkManager` periódico con caché local — arquitectura más grande, Android-only, y con el mismo
+  problema de no poder verificarse en este entorno que `GPS-1`. Revisando el síntoma real descrito (el
+  número se queda obsoleto *mientras el usuario está mirando la pantalla*, no solo con la app cerrada),
+  un refresco periódico **dentro de la pantalla ya abierta** resuelve exactamente ese síntoma con mucho
+  menos riesgo: no toca código Android, no añade dependencias, y es 100% verificable en este entorno
+  (vive entero en `commonMain`). Se implementó así: `NutritionScreen.kt` y `DashboardScreen.kt` ahora
+  relanzan la lectura de pasos/calorías activas cada `WEARABLE_POLL_INTERVAL_MS` (5 minutos, nueva
+  constante en `HealthDataProvider.kt`) mientras la pantalla está visible, en vez de leer una sola vez;
+  el bucle se cancela solo al salir de la pantalla (ciclo de vida normal de `LaunchedEffect`). Leer
+  Health Connect es una consulta local sin coste de red/cuota, así que un intervalo corto no tiene
+  contraindicación. **Lo que esto NO resuelve** (y si en el uso real resulta insuficiente, ahí sí
+  compensaría el `WorkManager`): el número sigue sin actualizarse si la app está completamente cerrada o
+  en segundo plano sin esa pantalla abierta — pero ese es un caso mucho menos común que "tengo la
+  pantalla abierta y el número no se mueve", que era el síntoma descrito originalmente. Verificado con
+  `:composeApp:compileKotlinJvm`, `compileKotlinJs`, `compileKotlinWasmJs` (los tres `BUILD SUCCESSFUL`,
+  sin ninguna limitación de Android SDK porque no se tocó código Android). | `HealthDataProvider.kt`,
+  `NutritionScreen.kt`, `DashboardScreen.kt`
 - **TZ-1 — El historial de peso usa la zona horaria del servidor.** `ProfileService.kt:111` usa
   `java.time.LocalDate.now()`, que en Render es UTC. Pesarse a la 00:30 en España queda registrado con la
   fecha del día anterior, y la lógica de "un registro por día" se comporta raro en ese margen. Nutrición
@@ -372,5 +391,6 @@ el uso real lo justifica. Verificado con `:server:compileKotlin`. | `BodyAnalysi
    IA-1 (imagen redimensionada a 1024px antes de mandarla a OpenAI — reduce el payload hacia OpenAI, no
    el payload cliente→servidor, ver nota en el hallazgo), OFF-1 (caché de 24h en memoria para búsquedas
    y códigos de barras de Open Food Facts).
-6. El resto por severidad: WEAR-3 (sync del wearable en segundo plano, similar en invasividad a GPS-1),
-   y el resto de 🟠/🟡 (GPS-5/6, IA-2/3, VAL-1/2, PERM-1, etc.).
+6. ✅ **WEAR-3** — arreglado con un enfoque más simple que el planteado originalmente (refresco
+   periódico en pantalla en vez de `WorkManager` en segundo plano — ver el hallazgo para el porqué).
+7. El resto por severidad: GPS-5/6, IA-2/3, VAL-1/2, PERM-1, etc.

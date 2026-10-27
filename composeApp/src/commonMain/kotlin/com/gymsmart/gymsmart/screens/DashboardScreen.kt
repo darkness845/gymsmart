@@ -26,6 +26,7 @@ import androidx.navigation.NavController
 import com.gymsmart.gymsmart.navigation.Screen
 import com.gymsmart.gymsmart.services.AuthService
 import com.gymsmart.gymsmart.services.HealthDataProvider
+import com.gymsmart.gymsmart.services.WEARABLE_POLL_INTERVAL_MS
 import com.gymsmart.gymsmart.ui.theme.GymSmartColors
 import kotlinx.coroutines.launch
 
@@ -42,14 +43,20 @@ fun DashboardScreen(
     var todayCalories by remember { mutableStateOf<Double?>(null) }
     var menuExpanded  by remember { mutableStateOf(false) }
 
+    // WEAR-3 (doc/08-backlog-mejoras.md): antes esto leía una sola vez al entrar y se quedaba
+    // congelado el resto del día si el usuario no volvía a abrir el Dashboard. Ahora se refresca sola
+    // cada WEARABLE_POLL_INTERVAL_MS mientras la pantalla está visible.
     LaunchedEffect(Unit) {
         kotlinx.coroutines.delay(500)
-        runCatching { healthDataProvider.getTodaySteps() }
-            .onSuccess { todaySteps = it }
-            .onFailure { println("Pasos: ${it.message}") }
-        runCatching { healthDataProvider.getTodayActiveCalories() }
-            .onSuccess { todayCalories = it }
-            .onFailure { println("Calorías: ${it.message}") }
+        while (true) {
+            runCatching { healthDataProvider.getTodaySteps() }
+                .onSuccess { todaySteps = it }
+                .onFailure { println("Pasos: ${it.message}") }
+            runCatching { healthDataProvider.getTodayActiveCalories() }
+                .onSuccess { todayCalories = it }
+                .onFailure { println("Calorías: ${it.message}") }
+            kotlinx.coroutines.delay(WEARABLE_POLL_INTERVAL_MS)
+        }
     }
 
     Scaffold(
