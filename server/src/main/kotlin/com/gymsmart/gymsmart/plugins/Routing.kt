@@ -33,7 +33,7 @@ fun Application.configureRouting(
         authRoutes(userService, emailService)
         nutritionRoutes(nutritionService)
         profileRoutes(profileService, userService)
-        bodyAnalysisRoute()
+        bodyAnalysisRoute(profileService)
         subscriptionRoutes(profileService, stripeService, userService, emailService)
     }
 }

@@ -111,11 +111,16 @@ desde la app, sin recuperación posible. Ver "✅ Arreglado" arriba.
 una cuota superada hacían que las lecturas devolvieran "no hay datos" y las escrituras fallidas se
 reportaran como correctas. Ver "✅ Arreglado" arriba.
 
-### SEC-1 — El gate premium no existe en el servidor
-`ProfileService.isPremium()` **existe pero no se llama desde ningún sitio** (verificado con grep: solo
-aparece su propia definición). El único control es de cliente (`WeightScreen.kt:173`). Tras el fix de
-sesión, cualquier usuario registrado y logueado —gratis— puede llamar a `/ai/body-analysis` sin límite:
-no hay cuota diaria, ni rate limit, ni caché, ni registro de consumo.
+### ✅ SEC-1 — El gate premium no existe en el servidor — Arreglado
+`ProfileService.isPremium()` existía pero no se llamaba desde ningún sitio (verificado con grep: solo
+aparecía su propia definición). El único control era de cliente (`WeightScreen.kt:173`), que no protege
+nada real — una petición directa a la API lo salta sin problema. Ahora `bodyAnalysisRoute` comprueba
+`profileService.isPremium(session.userId)` antes de llamar a OpenAI y responde `403 Forbidden` si no lo
+es. **Sigue sin haber** cuota diaria, rate limit ni registro de consumo para usuarios premium — eso
+limitaría el gasto incluso de un usuario legítimo que abusara del botón; no se hizo porque no estaba en
+el alcance pedido ("gate premium real") y añade una tabla/lógica nueva — candidato a backlog futuro si
+el uso real lo justifica. Verificado con `:server:compileKotlin`. | `BodyAnalysisRoute.kt`,
+`plugins/Routing.kt`
 
 *Impacto*: tus créditos de OpenAI. Ver también [03-seguridad.md](03-seguridad.md).
 
@@ -129,24 +134,35 @@ no hay cuota diaria, ni rate limit, ni caché, ni registro de consumo.
   lotes de 200 statements por llamada a `/v2/pipeline`. Nota: sigue sin haber transacción real (Turso vía
   HTTP no la expone de forma sencilla aquí) — si falla a mitad de un lote grande, puede quedar una ruta
   con puntos incompletos; impacto bajo porque ahora son pocas llamadas en vez de cientos.
-- **IA-1 — La imagen se manda a resolución completa, sin ninguna ganancia.** No existe redimensionado ni
-  compresión en ningún punto (verificado por grep). Una foto de 12 MP son ~4 MB → ~5,3 MB en base64, y en
-  la JVM un `String` es UTF-16, con al menos tres copias vivas por petición: **30-45 MB de heap por
-  análisis** en una instancia de Render de 512 MB. Lo decisivo: gpt-4o reescala internamente la imagen a
-  ≤768 px de lado corto antes de tokenizarla, así que esa resolución extra **se descarta**. Redimensionar
-  a ~1024 px recorta el payload ~95% sin perder nada de calidad. Es el mejor ratio impacto/esfuerzo del
-  inventario.
+- ✅ **IA-1 — Arreglado.** La imagen se mandaba a OpenAI a resolución completa sin ninguna ganancia: una
+  foto de 12 MP son ~4 MB → ~5,3 MB en base64, y gpt-4o reescala internamente a ≤768px de lado corto antes
+  de tokenizarla, así que esa resolución extra se descartaba. Ahora `OpenAIService.resizeIfNeeded()`
+  decodifica la imagen (`javax.imageio`, sin dependencias nuevas) y la reescala a un máximo de 1024px de
+  lado largo con `Image.SCALE_SMOOTH` antes de mandarla a OpenAI; si la decodificación falla (formato raro,
+  imagen corrupta) se manda la original en vez de romper el análisis por un paso que es puramente de
+  optimización. **Importante — alcance real de este fix**: reduce el payload que llega a OpenAI y el heap
+  de esa llamada, pero **no** reduce el payload cliente→servidor (el cliente sigue mandando la imagen a
+  resolución completa en el `POST /ai/body-analysis`; reducir eso necesitaría tocar el `ImagePicker` de
+  cada plataforma, fuera de alcance de este cambio — solo Android tiene implementación hoy, ver IOS-1).
+  Verificado con `:server:compileKotlin`. | `OpenAIService.kt`
 - **IMG-1 — Decodificación de bitmaps sin `inSampleSize`** (`ImageBitmapUtils.android.kt:12-14`): una foto
   de 12 MP se decodifica completa en ARGB_8888 (~48 MB) para mostrarla en 300 dp → riesgo real de OOM en
   móviles modestos. Además `decodeByteArray` devuelve `null` con un archivo corrupto y se llama
   `.asImageBitmap()` sin comprobarlo → NPE.
-- **OFF-1 — Riesgo de rate limit de Open Food Facts.** Cada búsqueda puede disparar 2 peticiones
-  (`FoodService.kt:70` + fallback línea 74, que probablemente son idénticas porque el filtro
-  `countries_tags_en=spain` sobre el subdominio `world` no es la forma documentada de filtrar). Sin caché
-  de ninguna clase, y todas las peticiones salen de **la única IP de Render**, compartida por todos los
-  usuarios. OFF limita `search.pl` de forma agresiva por IP. Si bloquea la IP, la búsqueda de alimentos
-  muere para todos a la vez, y el `catch` lo presenta como "sin resultados". El `User-Agent` sí cumple la
-  política ✅.
+- ✅ **OFF-1 — Arreglado (parcial).** No había ninguna caché, y todas las peticiones salían de la única
+  IP de Render, compartida por todos los usuarios; OFF limita `search.pl` de forma agresiva por IP, así
+  que si la bloquea, la búsqueda de alimentos muere para todos a la vez. Ahora `FoodService` tiene una
+  caché en memoria con TTL de 24h (`TtlCache`, sin dependencias nuevas) para `searchFood()` y
+  `lookupBarcode()`: la misma búsqueda o el mismo código de barras, repetidos por cualquier usuario
+  dentro de ese plazo, no generan una petición nueva a OFF. Un resultado vacío o un fallo **nunca se
+  cachea** (podría ser un fallo transitorio de OFF, no "este alimento no existe" — cachearlo congelaría
+  ese falso negativo 24h). Límite de 500 entradas por caché para no crecer sin control; al llenarse,
+  limpia caducadas primero y si no basta se vacía entera (no es LRU real, innecesario a esta escala).
+  **Sigue sin arreglar** la segunda mitad del hallazgo: cada búsqueda sin caché previa puede seguir
+  disparando 2 peticiones (español + fallback global), porque son casos distintos (no se investigó si
+  son idénticas de verdad); y `search.pl` sigue siendo el endpoint legacy que OFF está retirando — ambos
+  quedan en 🟡 Bajos, de menor impacto ahora que existe la caché. Verificado con
+  `:server:compileKotlin`. | `FoodService.kt`
 
 ### Exactitud de los datos
 
@@ -352,6 +368,9 @@ no hay cuota diaria, ni rate limit, ni caché, ni registro de consumo.
    a propósito y de menor impacto ahora: la parte de RED-3 sobre metadatos de cookie (expiración/
    dominio/path/secure) y RED-4/RED-5 (pantalla de carga ya existe desde RED-1, capacidad offline es
    cambio de arquitectura mayor, no de este bloque).
-5. ⏳ **Coste y seguridad** — pendiente: SEC-1 (gate premium real), IA-1 (redimensionar imagen antes de
-   enviarla a OpenAI), OFF-1 (caché de búsquedas).
-6. El resto por severidad.
+5. ✅ **Coste y seguridad** — completo en lo planeado: SEC-1 (gate premium real, 403 si no es premium),
+   IA-1 (imagen redimensionada a 1024px antes de mandarla a OpenAI — reduce el payload hacia OpenAI, no
+   el payload cliente→servidor, ver nota en el hallazgo), OFF-1 (caché de 24h en memoria para búsquedas
+   y códigos de barras de Open Food Facts).
+6. El resto por severidad: WEAR-3 (sync del wearable en segundo plano, similar en invasividad a GPS-1),
+   y el resto de 🟠/🟡 (GPS-5/6, IA-2/3, VAL-1/2, PERM-1, etc.).

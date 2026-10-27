@@ -386,3 +386,39 @@ de encontrar fallos y mejoras). Se repartió en cuatro frentes en paralelo: GPS 
 - Con esto se cierra el bloque 4 de la Fase 5. Siguiente: bloque 5 (SEC-1 gate premium, IA-1 redimensionar
   imagen, OFF-1 caché) o WEAR-3 (sync del wearable en segundo plano) — ninguno requiere una decisión de
   producto grande como GPS-1.
+- Usuario respondió "con el que te venga mejor" — se eligió el bloque 5 por ser todo de servidor
+  (verificable al 100% en este entorno, sin la limitación de Android SDK que sí afecta a WEAR-3).
+
+### 2026-10-27 (continuación 2) — Fase 5 bloque 5 (coste y seguridad) completo — Fase 5 cierra todos sus bloques planeados
+
+- **SEC-1 (gate premium real)**: `ProfileService.isPremium()` existía pero no se llamaba desde ningún
+  sitio — cualquier usuario logueado podía gastar créditos de OpenAI sin límite, el único control era de
+  cliente (saltable con una petición directa). Ahora `bodyAnalysisRoute(profileService)` comprueba
+  `isPremium(session.userId)` y responde `403 Forbidden` si no lo es, antes de llamar a OpenAI.
+  `profileService` ya se construía en `Application.kt` y se pasaba a `configureRouting` — solo hubo que
+  enchufarlo a esta ruta.
+- **IA-1 (redimensionar imagen antes de mandarla a OpenAI)**: se añadió `OpenAIService.resizeIfNeeded()`,
+  que decodifica la imagen con `javax.imageio` (parte del JDK, sin dependencias nuevas; el `Dockerfile`
+  usa `eclipse-temurin:21-jre`, que incluye `java.desktop` — funciona headless sin problema para
+  codificar/decodificar, no necesita display) y la reescala a máximo 1024px de lado largo con
+  `Image.SCALE_SMOOTH` si lo excede (gpt-4o reescala igualmente a ≤768px internamente, así que la
+  resolución extra se descartaba sin ganancia). Si la decodificación falla, se manda la imagen original
+  en vez de romper el análisis por un paso que es puramente de optimización. **Precisión importante
+  sobre el alcance**: esto reduce el payload hacia OpenAI (y el heap de esa llamada en el servidor), pero
+  no el payload cliente→servidor — el cliente sigue subiendo la imagen a resolución completa al
+  endpoint; arreglar eso tocaría el `ImagePicker` de cada plataforma (con el añadido de que solo Android
+  lo tiene implementado hoy), fuera de alcance de este cambio puntual.
+- **OFF-1 (caché de Open Food Facts)**: se añadió una clase `TtlCache` interna a `FoodService.kt` (sin
+  dependencias nuevas, `ConcurrentHashMap` + comprobación de expiración en el `get`) y se cachean
+  `searchFood()` y `lookupBarcode()` con TTL de 24h y tope de 500 entradas. Decisión deliberada: un
+  resultado vacío o un fallo de red **nunca se cachea**, porque podría ser un fallo transitorio de OFF,
+  no "este alimento no existe" — cachear eso congelaría un falso negativo durante todo el TTL. No es LRU
+  real (se limpian caducadas al llenarse, y si no basta se vacía entera) — decisión consciente de no
+  complicarlo a esta escala (app de uso personal).
+- Los tres cambios son de servidor puro — compilaron a la primera, sin necesitar iterar como en el
+  bloque 4. Verificado con `:server:compileKotlin` y, para confirmar que no se rompió nada del cliente,
+  `:composeApp:compileKotlinJvm` (ambos `BUILD SUCCESSFUL`).
+- Con esto **se cierran los 5 bloques planeados de la Fase 5**. Lo que queda ya no son bloques
+  estructurados, sino backlog residual por severidad: WEAR-3 (sync del wearable en segundo plano,
+  arquitectura mayor, mismo problema de verificación en Android que GPS-1) y el resto de hallazgos
+  🟠/🟡 de `08-backlog-mejoras.md` (GPS-5/6, IA-2/3, VAL-1/2, PERM-1, etc.).

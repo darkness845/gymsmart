@@ -3,6 +3,7 @@ package com.gymsmart.gymsmart.routes
 import com.gymsmart.gymsmart.model.BodyAnalysisRequest
 import com.gymsmart.gymsmart.model.UserSession
 import com.gymsmart.gymsmart.services.OpenAIService
+import com.gymsmart.gymsmart.services.ProfileService
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.request.*
@@ -13,14 +14,21 @@ import org.slf4j.LoggerFactory
 
 private val logger = LoggerFactory.getLogger("BodyAnalysisRoute")
 
-fun Route.bodyAnalysisRoute() {
+fun Route.bodyAnalysisRoute(profileService: ProfileService) {
 
     val openAIService = OpenAIService()
 
     post("/ai/body-analysis") {
 
-        call.sessions.get<UserSession>()
+        val session = call.sessions.get<UserSession>()
             ?: return@post call.respond(HttpStatusCode.Unauthorized, "No hay sesión")
+
+        // SEC-1 (doc/08-backlog-mejoras.md): antes cualquier usuario logueado podía llamar a esta ruta
+        // sin límite, consumiendo créditos de OpenAI gratis. El único control era de cliente
+        // (WeightScreen.kt), que no protege nada: una petición directa a la API lo salta sin problema.
+        if (!profileService.isPremium(session.userId)) {
+            return@post call.respond(HttpStatusCode.Forbidden, mapOf("error" to "Se requiere suscripción premium"))
+        }
 
         try {
 

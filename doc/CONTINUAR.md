@@ -28,12 +28,34 @@ ataque" de [08-backlog-mejoras.md](08-backlog-mejoras.md):
 | 2 | Fiabilidad del conteo de kcal (NUT-3, NUT-4, WEAR-1, WEAR-2) | ✅ Completo |
 | 3 | GPS como funcionalidad real (GPS-1, GPS-2, GPS-3, GPS-4) | ✅ Completo |
 | 4 | Resiliencia transversal (cliente HTTP único, timeouts, 401 centralizado) | ✅ Completo |
-| 5 | Coste y seguridad (gate premium real, redimensionar imagen IA, caché OFF) | ⏳ **Siguiente** |
-| — | WEAR-3 (sync del wearable en segundo plano) — arquitectura más grande, no encaja en un bloque | ⏳ Sin empezar |
+| 5 | Coste y seguridad (gate premium real, redimensionar imagen IA, caché OFF) | ✅ Completo |
+| — | WEAR-3 (sync del wearable en segundo plano) — arquitectura más grande, no encaja en un bloque | ⏳ **Siguiente** (o resto de hallazgos 🟠/🟡) |
 
 ## Lo último que se hizo
 
-Cerrado el bloque 4 (resiliencia transversal) entero: HTTP-1, RED-2, RED-3.
+Cerrado el bloque 5 (coste y seguridad) entero: SEC-1, IA-1, OFF-1. Todos son cambios de servidor,
+verificados con `:server:compileKotlin` (sin limitación de Android SDK en ninguno de los tres).
+
+- **SEC-1 (gate premium real)**: `bodyAnalysisRoute` ahora comprueba `profileService.isPremium(session.
+  userId)` y responde `403 Forbidden` si no lo es, antes de llamar a OpenAI. Antes `isPremium()` existía
+  pero no se llamaba desde ningún sitio — cualquier usuario logueado podía gastar créditos de OpenAI sin
+  límite con una petición directa a la API (el control de cliente no protege nada real). **Sigue sin
+  haber** cuota diaria/rate limit para usuarios premium — fuera del alcance pedido, candidato a futuro.
+- **IA-1 (redimensionar imagen antes de OpenAI)**: `OpenAIService.resizeIfNeeded()` decodifica la imagen
+  (`javax.imageio`, sin dependencias nuevas) y la reescala a máximo 1024px de lado largo antes de
+  mandarla a OpenAI (que de todas formas reescala a ≤768px internamente, así que la resolución extra se
+  descartaba sin ganancia). Si falla la decodificación, se manda la original en vez de romper el
+  análisis. **Importante**: reduce el payload hacia OpenAI, no el payload cliente→servidor — el cliente
+  sigue mandando la imagen completa al endpoint (arreglarlo necesitaría tocar el `ImagePicker` de cada
+  plataforma, con el añadido de que solo Android lo tiene implementado hoy, ver IOS-1).
+- **OFF-1 (caché de Open Food Facts)**: `FoodService` tiene ahora una caché en memoria con TTL de 24h
+  (clase `TtlCache` interna, sin dependencias nuevas) para `searchFood()` y `lookupBarcode()`. Un
+  resultado vacío o un fallo nunca se cachea (podría ser un fallo transitorio de OFF, no "no existe").
+  Reduce el riesgo de que OFF bloquee la única IP de Render por exceso de peticiones repetidas.
+- Al implementar SEC-1/IA-1/OFF-1 no hubo errores de compilación — los tres pasaron a la primera.
+- Esto cierra el bloque 5. **Pendiente de que el usuario confirme el commit.**
+
+### Resumen de lo hecho en el bloque 4 (resiliencia transversal), ya commiteado antes de esto
 
 - **HTTP-1 (cliente único)**: había 5 instancias de `AuthService()`/`HttpClient` (una por pantalla:
   `NavGraph`, `WeightScreen`, `DashboardScreen`, `ProfileScreen`, `SubscriptionScreen`). Ahora `NavGraph`
@@ -84,24 +106,23 @@ Cerrado el bloque 4 (resiliencia transversal) entero: HTTP-1, RED-2, RED-3.
   `:composeApp:compileKotlinWasmJs` (los tres `BUILD SUCCESSFUL`). El `Service` y su `actual` de
   Android **no se han podido compilar en este entorno** (sin Android SDK) — es, de lejos, el cambio
   que más necesita probarse en un dispositivo/emulador real antes de confiar en él.
-- Con esto, **el bloque 3 (GPS) queda completo**.
-- Todo esto **sin commitear todavía** — pendiente de que el usuario lo confirme.
+- Con esto, **el bloque 3 (GPS) queda completo**. Ya commiteado (commit `ff98ae7`), igual que el
+  bloque 4 (commit `1199fd6`).
 
 ## Lo siguiente que hay que hacer
 
 Decidir entre (no hay un orden obligatorio, son independientes):
 
-1. **Bloque 5 — coste y seguridad**: gate premium real en el servidor (`isPremium()` existe pero no se
-   llama desde ningún sitio — SEC-1), redimensionar la imagen antes de mandarla a la IA (ahorro de
-   memoria/coste, cero pérdida de calidad — IA-1), caché de búsquedas de Open Food Facts (OFF-1).
-2. **WEAR-3** (sync del wearable en segundo plano): similar en invasividad a GPS-1 (`WorkManager`),
+1. **WEAR-3** (sync del wearable en segundo plano): similar en invasividad a GPS-1 (`WorkManager`),
    mismo problema de no poder verificar Android aquí.
-3. El resto de hallazgos 🟠/🟡 por severidad (ver `08-backlog-mejoras.md`), incluyendo GPS-5/GPS-6
+2. El resto de hallazgos 🟠/🟡 por severidad (ver `08-backlog-mejoras.md`), incluyendo GPS-5/GPS-6
    (filtros de velocidad/precisión/duración), IA-2/IA-3 (reproducibilidad y parseo frágil del análisis),
    VAL-1/VAL-2 (validación de inputs), PERM-1 (callbacks de permisos perdidos en recomposición).
 
 Ninguno de estos requiere decisiones de producto tan grandes como GPS-1 — se puede proceder sin
-bloquear en una respuesta del usuario, salvo que él indique otra prioridad.
+bloquear en una respuesta del usuario, salvo que él indique otra prioridad. Con el bloque 5 cerrado,
+**todos los bloques planeados de la Fase 5 están completos** — lo que queda es backlog residual por
+severidad, no bloques estructurados.
 
 ## Pendiente de verificación por el usuario (código Android no compilable aquí)
 

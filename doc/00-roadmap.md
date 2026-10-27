@@ -18,7 +18,7 @@ aparece algo urgente, se arregla aunque todavía no se haya cerrado del todo la 
 | Fase 2 — Seguridad | 🔄 7 de 10 resueltos, 1 diferido a propósito | Solo queda #9 (logging del cliente, para Fase 3) y #6 (Stripe/PCI, diferido hasta activar pagos reales). **Falta desplegar todo a Render.** |
 | Fase 3 — Limpieza de código | 🔄 En curso | `backend/`/`frontend/` eliminados; `AndroidGpsTracker.kt`, `PermissionHelper.kt`, `WeightService.addWeight` eliminados; modelos de nutrición movidos a `model/`; duplicación de `GpsService` unificada; comentarios residuales de `AppConfig.kt` limpiados. Pendiente: logging del cliente, estrategia de DI mínima. |
 | Fase 4 — Validación de fiabilidad (kcal/objetivos/GPS/wearable) | ✅ Completada | Investigación exhaustiva de GPS, wearable, IA, datos de alimentos, resiliencia y pantallas. ~60 hallazgos inventariados y priorizados en `08-backlog-mejoras.md`; 3 arreglados en el acto (incluida una regresión propia). |
-| Fase 5 — Mejora de funcionalidades existentes | 🔄 En curso — bloques 1, 2, 3 y 4 cerrados | Ver estado detallado en `08-backlog-mejoras.md` → "Orden de ataque". Pendiente: bloque 5 (gate premium, redimensionar imagen IA, caché OFF), sync del wearable en segundo plano (WEAR-3). |
+| Fase 5 — Mejora de funcionalidades existentes | 🔄 En curso — bloques 1 a 5 cerrados | Ver estado detallado en `08-backlog-mejoras.md` → "Orden de ataque". Pendiente: sync del wearable en segundo plano (WEAR-3), resto de hallazgos 🟠/🟡. |
 | Fase 6 — Nuevas funcionalidades (incluye soporte iOS/Web real) | ⏳ Bloqueada hasta cerrar 1-5 | Causa raíz de que iOS no compile ya diagnosticada en `01-arquitectura.md §5`. |
 
 ---

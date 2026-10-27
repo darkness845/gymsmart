@@ -144,12 +144,13 @@ una regresión (ya arreglada).**
 
 - ✅ Arreglado en esta fase: la llamada usaba un `HttpClient` sin cookies, así que al exigir sesión en el
   endpoint devolvía 401 y fallaba en silencio (R1 en [08-backlog-mejoras.md](08-backlog-mejoras.md)).
-- 🔴 **El gate premium no existe en el servidor**: `isPremium()` está implementado pero no se llama desde
-  ningún sitio; el único control es de cliente. Cualquier usuario registrado puede consumir créditos de
-  OpenAI sin límite (SEC-1).
-- 🟠 **La imagen se envía a resolución completa** (~5,3 MB en base64, 30-45 MB de heap por petición en una
-  instancia de 512 MB) **sin ninguna ganancia**: gpt-4o reescala internamente a ≤768 px antes de
-  tokenizar, así que esa resolución se descarta. Redimensionar a ~1024 px recorta el payload ~95% (IA-1).
+- ✅ **Arreglado (SEC-1): el gate premium ahora existe en el servidor.** `bodyAnalysisRoute` comprueba
+  `isPremium()` y responde 403 si no lo es — antes cualquier usuario registrado podía consumir créditos
+  de OpenAI sin límite, con el único control (de cliente) saltable con una petición directa a la API.
+- ✅ **Arreglado (IA-1): la imagen ya no se envía a OpenAI a resolución completa.** Se redimensiona a
+  máximo 1024px de lado largo en el servidor antes de mandarla (gpt-4o reescala internamente a ≤768px,
+  así que la resolución extra se descartaba sin ninguna ganancia). Nota: esto reduce el payload hacia
+  OpenAI, no el payload cliente→servidor — el cliente sigue mandando la imagen completa al endpoint.
 - 🟠 **Las cifras no son reproducibles**: sin `temperature` fijada (por defecto 1.0) ni
   `response_format: json_object`. La misma foto da porcentajes distintos en dos análisis. Y el prompt
   fuerza al modelo a no admitir incertidumbre y a no dejar campos vacíos, así que **siempre devuelve un

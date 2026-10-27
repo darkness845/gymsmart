@@ -11,6 +11,39 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import org.slf4j.LoggerFactory
+import java.util.concurrent.ConcurrentHashMap
+
+/**
+ * Caché en memoria con TTL para respuestas de Open Food Facts (OFF-1 en doc/08-backlog-mejoras.md).
+ * Todas las peticiones salen de la única IP de Render, compartida por todos los usuarios; OFF limita
+ * `search.pl` de forma agresiva por IP, así que una búsqueda repetida (el mismo alimento, buscado por
+ * distintos usuarios o el mismo usuario varias veces) no debería generar una petición nueva cada vez.
+ * Los datos de un producto apenas cambian día a día, así que un TTL largo no sacrifica nada real.
+ * No es LRU de verdad (innecesario a esta escala: app de uso personal) — simplemente, si se supera el
+ * límite de entradas, se limpian primero las caducadas y si no basta se vacía del todo.
+ */
+private class TtlCache<K, V>(private val ttlMillis: Long, private val maxEntries: Int) {
+    private data class Entry<V>(val value: V, val expiresAt: Long)
+    private val map = ConcurrentHashMap<K, Entry<V>>()
+
+    fun get(key: K): V? {
+        val entry = map[key] ?: return null
+        if (System.currentTimeMillis() > entry.expiresAt) {
+            map.remove(key)
+            return null
+        }
+        return entry.value
+    }
+
+    fun put(key: K, value: V) {
+        if (map.size >= maxEntries) {
+            val now = System.currentTimeMillis()
+            map.entries.removeAll { it.value.expiresAt < now }
+            if (map.size >= maxEntries) map.clear()
+        }
+        map[key] = Entry(value, System.currentTimeMillis() + ttlMillis)
+    }
+}
 
 // ── Modelos Open Food Facts ────────────────────────────────────────────────────
 
@@ -63,20 +96,37 @@ class FoodService {
         }
     }
 
+    private val searchCache = TtlCache<String, FoodSearchResponse>(
+        ttlMillis = 24 * 60 * 60 * 1000L,
+        maxEntries = 500
+    )
+    private val barcodeCache = TtlCache<String, Product?>(
+        ttlMillis = 24 * 60 * 60 * 1000L,
+        maxEntries = 500
+    )
+
     // ── Búsqueda por texto ──────────────────────────────────────
     suspend fun searchFood(query: String): FoodSearchResponse {
-        return try {
+        val key = query.trim().lowercase()
+        searchCache.get(key)?.let { return it }
+
+        val result = try {
             // Primero intenta en el índice español
             val esResponse = fetchSearch(query, "world", "countries_tags_en" to "spain")
-            if (esResponse.products.isNotEmpty()) return esResponse
+            if (esResponse.products.isNotEmpty()) esResponse
 
             // Fallback: índice global sin filtro de país
-            fetchSearch(query, "world")
+            else fetchSearch(query, "world")
 
         } catch (e: Exception) {
             logger.warn("Error en searchFood (Open Food Facts): {}", e.message)
             FoodSearchResponse()
         }
+
+        // No cachear un resultado vacío: puede ser un fallo transitorio de OFF, no "este alimento no
+        // existe" — cachearlo congelaría ese falso negativo durante todo el TTL.
+        if (result.products.isNotEmpty()) searchCache.put(key, result)
+        return result
     }
 
     private suspend fun fetchSearch(
@@ -98,18 +148,26 @@ class FoodService {
 
     // ── Búsqueda por código de barras EAN-13 ─────────────────────────────────
     suspend fun lookupBarcode(code: String): Product? {
-        return try {
+        barcodeCache.get(code)?.let { return it }
+
+        val product = try {
             val response = client.get(
                 "https://world.openfoodfacts.org/api/v2/product/$code"
             ) {
                 parameter("fields", "product_name,brands,nutriments,image_url")
             }
-            if (response.status.value != 200) return null
-            val body = response.body<BarcodeResponse>()
-            if (body.status == 1) body.product else null
+            if (response.status.value != 200) null
+            else {
+                val body = response.body<BarcodeResponse>()
+                if (body.status == 1) body.product else null
+            }
         } catch (e: Exception) {
             logger.warn("Error en barcode lookup (Open Food Facts): {}", e.message)
             null
         }
+
+        // Mismo criterio que searchFood: un fallo de red no es "código inexistente", no se cachea.
+        if (product != null) barcodeCache.put(code, product)
+        return product
     }
 }
