@@ -25,6 +25,7 @@ cambiar si algún día la app sale a producción real (ver [04-produccion-playst
 | [06-funcionalidades.md](06-funcionalidades.md) | Estado real de cada funcionalidad (nutrición/kcal, objetivos, GPS, wearable) y plan de mejora de cada una. |
 | [07-registro-sesiones.md](07-registro-sesiones.md) | Bitácora corta por sesión: qué se hizo, qué se decidió, qué queda pendiente. |
 | [08-backlog-mejoras.md](08-backlog-mejoras.md) | **Cola de trabajo**: todos los bugs y mejoras encontrados en la Fase 4, priorizados por impacto real, con ubicación y estado. |
+| [09-plan-de-pruebas.md](09-plan-de-pruebas.md) | Checklist de pruebas manuales (Desktop + Android) antes de pasar a Fase 6, con el criterio de qué debería pasar tras cada arreglo. |
 
 ## Reglas para usar esta documentación
 

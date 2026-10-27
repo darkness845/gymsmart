@@ -14,6 +14,11 @@ Esto es intencional, no un olvido: no insistir en que pruebe cada bloque, solo m
 "Pendiente de verificación por el usuario" (más abajo) actualizada y completa para cuando llegue ese
 momento.
 
+**Ese momento ya llegó (2026-10-27)**: se creó [09-plan-de-pruebas.md](09-plan-de-pruebas.md), el
+checklist completo para esta ronda de pruebas (Desktop + Android, en local vía Tailscale, sin Render
+todavía). El usuario está probando ahora mismo — si vuelve con resultados, revisar primero ese documento
+para ver qué ítem corresponde a lo que reporte.
+
 ---
 
 ## Dónde estamos
