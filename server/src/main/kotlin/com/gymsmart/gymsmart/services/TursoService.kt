@@ -26,26 +26,33 @@ class TursoService {
         install(ContentNegotiation) { json() }
     }
 
-    // Ejecuta una query y devuelve el JsonObject completo.
-    // Antes, un fallo de Turso (token caducado, cuota superada, constraint violado) se devolvía
-    // igual que un resultado vacío: las lecturas parecían "sin datos" y las escrituras fallidas se
-    // reportaban como correctas. Aquí se comprueba el status HTTP y el campo "error" de cada
-    // statement, y se lanza TursoException en vez de dejarlo pasar en silencio.
-    suspend fun execute(sql: String, args: List<String> = emptyList()): JsonObject {
+    // Ejecuta una sola query. Antes, un fallo de Turso (token caducado, cuota superada, constraint
+    // violado) se devolvía igual que un resultado vacío: las lecturas parecían "sin datos" y las
+    // escrituras fallidas se reportaban como correctas. executeBatch() comprueba el status HTTP y el
+    // campo "error" de cada statement, y lanza TursoException en vez de dejarlo pasar en silencio.
+    suspend fun execute(sql: String, args: List<String> = emptyList()): JsonObject =
+        executeBatch(listOf(sql to args))
+
+    // Ejecuta varias queries en una sola llamada HTTP a /v2/pipeline, en vez de una llamada por
+    // statement. Antes, guardar una ruta GPS de 900 puntos hacía 900+ peticiones secuenciales
+    // (45 s-varios minutos, con riesgo alto de timeout) — ver GPS-4 en doc/08-backlog-mejoras.md.
+    suspend fun executeBatch(statements: List<Pair<String, List<String>>>): JsonObject {
         val response = client.post("$dbUrl/v2/pipeline") {
             header("Authorization", "Bearer $authToken")
             contentType(ContentType.Application.Json)
             setBody(buildJsonObject {
                 putJsonArray("requests") {
-                    addJsonObject {
-                        put("type", "execute")
-                        putJsonObject("stmt") {
-                            put("sql", sql)
-                            putJsonArray("args") {
-                                args.forEach { arg ->
-                                    addJsonObject {
-                                        put("type", "text")
-                                        put("value", arg)
+                    statements.forEach { (sql, args) ->
+                        addJsonObject {
+                            put("type", "execute")
+                            putJsonObject("stmt") {
+                                put("sql", sql)
+                                putJsonArray("args") {
+                                    args.forEach { arg ->
+                                        addJsonObject {
+                                            put("type", "text")
+                                            put("value", arg)
+                                        }
                                     }
                                 }
                             }
@@ -58,17 +65,18 @@ class TursoService {
 
         if (!response.status.isSuccess()) {
             val raw = response.bodyAsText()
-            logger.error("Turso respondió {} para una query", response.status)
+            logger.error("Turso respondió {} para un batch de {} statement(s)", response.status, statements.size)
             throw TursoException("Turso respondió ${response.status}: $raw")
         }
 
         val body: JsonObject = response.body()
-        val firstResult = body["results"]?.jsonArray?.firstOrNull()?.jsonObject
-        if (firstResult?.get("type")?.jsonPrimitive?.contentOrNull == "error") {
-            val errMsg = firstResult["error"]?.jsonObject?.get("message")?.jsonPrimitive?.contentOrNull
-                ?: "error desconocido"
-            logger.error("Turso devolvió error en la query: {}", errMsg)
-            throw TursoException("Turso: $errMsg")
+        body["results"]?.jsonArray?.forEachIndexed { index, result ->
+            if (result.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "error") {
+                val errMsg = result.jsonObject["error"]?.jsonObject?.get("message")?.jsonPrimitive?.contentOrNull
+                    ?: "error desconocido"
+                logger.error("Turso devolvió error en el statement #{} de {}: {}", index, statements.size, errMsg)
+                throw TursoException("Turso (statement #$index de ${statements.size}): $errMsg")
+            }
         }
 
         return body

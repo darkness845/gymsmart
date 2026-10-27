@@ -74,15 +74,24 @@ fallos graves. Hoy el GPS no es fiable para una ruta real.**
 - ✅ Lo que está bien: `LocationService` (Android) usa `FusedLocationProviderClient` por eventos (no
   polling), con filtro de distancia; el servidor persiste rutas y puntos comprobando propiedad por
   `user_id`; osmdroid tiene el `userAgentValue` configurado, así que los tiles de OSM no se bloquean.
-- 🔴 **No hay foreground service**: el seguimiento se detiene al bloquear el móvil. Hay que correr con la
-  pantalla encendida (ver GPS-1 en [08-backlog-mejoras.md](08-backlog-mejoras.md)).
-- 🔴 **Un hueco de señal >100 m mata la grabación** para el resto de la sesión, en cascada (GPS-2).
-- 🔴 **La ruta en curso solo vive en memoria**: si Android mata el proceso, se pierde entera (GPS-3).
-- 🟠 Guardar una ruta hace N+1 peticiones HTTP secuenciales a Turso: entre 45 s y varios minutos para una
-  ruta normal, con riesgo de timeout (GPS-4).
-- 🟠 Se usan `loc.speed`/`accuracy` sin comprobar `hasSpeed()`/`hasAccuracy()`, lo que descarta puntos
-  válidos y acepta posiciones sin precisión como si fueran perfectas (GPS-5).
-- 🟠 La duración incluye el tiempo parado, así que cualquier ritmo derivado sale mal (GPS-6).
+- ✅ **Arreglado (GPS-2)**: un hueco de señal >100 m ya no mata la grabación en cascada — se actualiza el
+  punto de referencia aunque no se sume esa distancia al total.
+- ✅ **Arreglado (GPS-3)**: la ruta en curso se guarda periódicamente en almacenamiento local
+  (`RouteRecoveryStore`); si Android mata el proceso, se ofrece recuperarla al reabrir la pantalla. Sin
+  verificar con build real en Android (sin SDK en este entorno).
+- ✅ **Arreglado (GPS-4)**: guardar una ruta ya no hace una petición HTTP por punto — se manda en lotes
+  de 200 statements por llamada a Turso.
+- ✅ **Arreglado (GPS-1)**: el seguimiento ya no se detiene al bloquear el móvil. `GpsTrackingService`
+  nuevo mantiene un foreground service con notificación mientras se grava. Es el cambio más invasivo de
+  toda la Fase 5 (`Service` de Android nuevo) y el que más necesita probarse en un dispositivo real
+  antes de confiar en él — sin verificar con build real en este entorno (sin Android SDK). La
+  notificación es mínima a propósito (sin botón de "Parar", sin stats en vivo); mejorarla queda anotada
+  como mejora futura (GPS-1b en [08-backlog-mejoras.md](08-backlog-mejoras.md)), confirmado por el
+  usuario.
+- 🟠 **Pendiente (GPS-5)**: se usan `loc.speed`/`accuracy` sin comprobar `hasSpeed()`/`hasAccuracy()`, lo
+  que descarta puntos válidos y acepta posiciones sin precisión como si fueran perfectas.
+- 🟠 **Pendiente (GPS-6)**: la duración incluye el tiempo parado, así que cualquier ritmo derivado sale
+  mal.
 - No funciona en Desktop (esperado, no hay GPS) ni en iOS/Web (no implementado, ver
   [01-arquitectura.md §5](01-arquitectura.md)).
 - Pendiente de medir en campo (requiere dispositivo real): precisión efectiva y consumo de batería.

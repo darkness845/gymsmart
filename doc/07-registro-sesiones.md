@@ -55,9 +55,70 @@ conteo de kcal):
 - Queda **WEAR-3** (sincronización en segundo plano en vez de lectura puntual por pantalla) como mejora
   de arquitectura más grande, pendiente de decidir si se hace ahora.
 - Con esto, los bloques 1 y 2 del orden de ataque de `08-backlog-mejoras.md` quedan completos.
-- **Siguiente sesión**: decidir entre WEAR-3, GPS (bloque 3, el más invasivo — foreground service,
-  permisos nuevos, no verificable aquí sin Android SDK), o los bloques 4-5 (cliente HTTP único, gate
-  premium). Commit de esta tanda pendiente de confirmación del usuario.
+- Usuario confirmó commit de este bloque (commit `3275443`).
+
+### 2026-10-27 — Sistema de continuidad entre sesiones + bloque 3 (GPS) casi completo
+
+- **Usuario pidió un sistema de continuidad**: al llenarse el contexto de una sesión, cambiará a otra
+  sesión de Claude, y necesita que esa sesión nueva pueda seguir exactamente donde se dejó sin perder
+  el ritmo. Se creó:
+  - `CLAUDE.md` en la raíz del repo (Claude Code lo lee automáticamente al empezar) — instrucciones
+    cortas que apuntan a `doc/CONTINUAR.md` como primera lectura obligatoria.
+  - `doc/CONTINUAR.md` — documento de estado (no histórico): fase/bloque actual, lo último hecho, lo
+    siguiente, pendientes de verificación, decisiones ya tomadas por el usuario. Se actualiza cada vez
+    que se termina algo, no solo al cerrar sesión.
+- **Bloque 3 (GPS) — GPS-2, GPS-3 y GPS-4 arreglados**:
+  - GPS-4: `TursoService.executeBatch()` nuevo (varios statements en una sola llamada a
+    `/v2/pipeline`); `GpsService.saveRoute` guarda la ruta + puntos en lotes de 200 en vez de N+1
+    peticiones. Verificado con `:server:compileKotlin`.
+  - GPS-2: en `GpsScreen.kt`, un hueco de señal >100m ya no deja el punto de referencia congelado
+    (se actualiza sin sumar esa distancia al total), así que no descarta en cascada el resto de la
+    grabación. Verificado con `:composeApp:compileKotlinJvm`.
+  - GPS-3: `RouteRecoveryStore` nuevo (expect/actual — real en Android con `SharedPreferences`, no-op
+    en jvm/ios/js/wasmJs). `GpsScreen.kt` persiste la ruta en curso cada 10 puntos y al parar; al abrir
+    la pantalla, si hay una ruta sin guardar se ofrece recuperarla o descartarla. Verificado con
+    `:composeApp:compileKotlinJvm`, `compileKotlinJs` y `compileKotlinWasmJs` (los tres
+    `BUILD SUCCESSFUL`). El `actual` de Android no se pudo compilar aquí (sin SDK).
+  - **Descubrimiento colateral**: `:composeApp:compileKotlinIosSimulatorArm64` sí funciona en este
+    entorno sin Xcode. Al probarlo (para verificar el `actual` de iOS de `RouteRecoveryStore`) salió
+    exactamente el error ya documentado del wiring de `App()` — confirma el diagnóstico de
+    `01-arquitectura.md §5` y abre la puerta a poder verificar más trabajo de iOS en el futuro de lo
+    que se pensaba.
+- **Queda GPS-1** (foreground service) como único pendiente del bloque 3 — es el cambio más invasivo
+  (Service de Android, permisos nuevos), no verificable aquí, y se decidió dejarlo para acordar el
+  enfoque exacto con el usuario antes de escribirlo.
+- **Nada de esta tanda se ha commiteado todavía.**
+- Usuario, al leer el resumen, preguntó cómo funciona exactamente el sistema de continuidad y qué
+  contiene `CONTINUAR.md` — se le explicó (lectura automática vía `CLAUDE.md`, contenido = estado
+  rápido con enlaces al historial completo, no duplica `07-registro-sesiones.md`) y pidió seguir con
+  GPS-1.
+- **GPS-1 implementado sin respuesta a las preguntas de diseño planteadas** (notificación con/sin botón
+  de parar, stats en vivo o no): se tomó la decisión más simple y estándar para no bloquear el trabajo:
+  - `GpsTrackingService.kt` (nuevo): foreground service tipo `location`, notificación fija "Grabando
+    ruta GPS", sin botón de acción, sin stats en vivo. Su único trabajo es mantener el proceso con
+    prioridad elevada; la recolección de ubicación sigue en `LocationService`/`GpsScreen` como antes.
+  - `BackgroundTrackingController.kt` (nuevo, común + 5 `actual`): arranca/para el servicio desde
+    `GpsScreen.kt` (código común). Patrón igual al de `rememberImagePicker` (usa `LocalContext.current`
+    dentro del `actual` de Android).
+  - Manifest: permisos `FOREGROUND_SERVICE_LOCATION` y `POST_NOTIFICATIONS` (esta última sin flujo de
+    petición en runtime todavía), declaración de `<service>`. Dependencia nueva
+    `androidx.core:core-ktx`.
+  - `GpsScreen.kt`: arranca el servicio al empezar a grabar, lo para al parar, y con un
+    `DisposableEffect` como red de seguridad si la pantalla se destruye mientras grababa.
+  - Verificado con `:composeApp:compileKotlinJvm`, `compileKotlinJs`, `compileKotlinWasmJs` (los tres
+    `BUILD SUCCESSFUL`). Se intentó también `:composeApp:compileKotlinIosSimulatorArm64` — compila el
+    `actual` de iOS sin problema, y falla solo por el bug ya conocido de `MainViewController.kt` (sin
+    relación con este cambio). **Descubrimiento**: ese target de iOS compila en este entorno sin
+    Xcode, lo que da más margen de verificación del esperado para trabajo futuro de iOS.
+  - **El `Service`/`actual` de Android no se ha podido compilar** (sin SDK) — es el cambio que más
+    necesita probarse en un dispositivo/emulador real de todo lo hecho hasta ahora.
+- Con esto, **el bloque 3 (GPS) queda completo** (GPS-1, GPS-2, GPS-3, GPS-4).
+- `08-backlog-mejoras.md`, `06-funcionalidades.md`, `00-roadmap.md` y `CONTINUAR.md` actualizados con
+  el cierre del bloque 3 y las decisiones de diseño tomadas sin confirmar.
+- **Nada de esta tanda se ha commiteado todavía.**
+- **Siguiente sesión**: confirmar commit de todo el bloque 3; decidir entre bloque 4 (cliente HTTP
+  único, timeouts, 401), bloque 5 (gate premium, redimensionar imagen IA, caché OFF) o WEAR-3 — ninguno
+  requiere una decisión de producto tan grande como GPS-1, se puede avanzar sin bloquear.
 
 ---
 

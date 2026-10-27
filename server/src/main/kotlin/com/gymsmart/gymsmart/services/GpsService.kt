@@ -7,6 +7,10 @@ import java.util.UUID
 
 class GpsService(private val turso: TursoService) {
 
+    companion object {
+        private const val MAX_STATEMENTS_PER_BATCH = 200
+    }
+
     suspend fun initTables() {
         turso.execute("""
             CREATE TABLE IF NOT EXISTS gps_routes (
@@ -36,42 +40,36 @@ class GpsService(private val turso: TursoService) {
         """)
     }
 
+    // Antes esto hacía una petición HTTP por punto (N+1): una ruta de 900 puntos tardaba entre 45 s y
+    // varios minutos, con riesgo alto de timeout. Ahora se manda todo en lotes de como mucho
+    // MAX_STATEMENTS_PER_BATCH statements por llamada a /v2/pipeline, que acepta varios statements de
+    // una vez (ver GPS-4 en doc/08-backlog-mejoras.md). Se trocea (no se manda todo en una sola
+    // llamada) para no arriesgar los límites de tamaño de request de Turso en rutas muy largas.
     suspend fun saveRoute(userId: String, req: SaveRouteRequest): String {
         val routeId = UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
 
-        turso.execute(
-            """INSERT INTO gps_routes
+        val routeInsert = """INSERT INTO gps_routes
                (id, user_id, name, distance_meters, duration_seconds, started_at, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            listOf(
-                routeId,
-                userId,
-                req.name,
-                req.distanceMeters.toString(),
-                req.durationSeconds.toString(),
-                req.startedAt.toString(),
-                now.toString()
-            )
+               VALUES (?, ?, ?, ?, ?, ?, ?)""" to listOf(
+            routeId, userId, req.name, req.distanceMeters.toString(),
+            req.durationSeconds.toString(), req.startedAt.toString(), now.toString()
         )
 
-        req.points.forEach { point ->
-            turso.execute(
-                """INSERT INTO gps_points
-                   (id, route_id, lat, lon, speed_ms, altitude_m, accuracy_m, timestamp)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                listOf(
-                    UUID.randomUUID().toString(),
-                    routeId,
-                    point.lat.toString(),
-                    point.lon.toString(),
-                    point.speedMs.toString(),
-                    point.altitudeM.toString(),
-                    point.accuracyM.toString(),
-                    point.timestamp.toString()
-                )
+        val pointInserts = req.points.map { point ->
+            """INSERT INTO gps_points
+               (id, route_id, lat, lon, speed_ms, altitude_m, accuracy_m, timestamp)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""" to listOf(
+                UUID.randomUUID().toString(), routeId, point.lat.toString(), point.lon.toString(),
+                point.speedMs.toString(), point.altitudeM.toString(), point.accuracyM.toString(),
+                point.timestamp.toString()
             )
         }
+
+        // El INSERT de gps_routes va siempre primero (gps_points tiene FOREIGN KEY sobre él).
+        (listOf(routeInsert) + pointInserts)
+            .chunked(MAX_STATEMENTS_PER_BATCH)
+            .forEach { chunk -> turso.executeBatch(chunk) }
 
         return routeId
     }

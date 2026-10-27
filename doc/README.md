@@ -15,7 +15,8 @@ cambiar si algún día la app sale a producción real (ver [04-produccion-playst
 
 | Doc | Contenido |
 |---|---|
-| [00-roadmap.md](00-roadmap.md) | **Plan de fases del proyecto.** Léelo primero en cada sesión nueva. Estado actual de cada fase. |
+| [CONTINUAR.md](CONTINUAR.md) | **Léelo PRIMERO en cada sesión nueva.** Estado actual, qué se acaba de terminar, qué sigue. Se actualiza constantemente, no solo al cerrar sesión. |
+| [00-roadmap.md](00-roadmap.md) | Plan de fases del proyecto y su estado. |
 | [01-arquitectura.md](01-arquitectura.md) | Mapa de módulos, patrones usados, flujos de datos clave (auth, nutrición, GPS, wearable). |
 | [02-convenciones.md](02-convenciones.md) | Reglas de código, naming, estructura de paquetes, cómo añadir una pantalla/endpoint nuevo sin romper el patrón. |
 | [03-seguridad.md](03-seguridad.md) | Hallazgos de seguridad (auth, SQL, secretos, CORS, logging) y su estado (abierto/arreglado). |

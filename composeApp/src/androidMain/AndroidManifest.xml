@@ -5,6 +5,8 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.health.READ_STEPS"/>
     <uses-permission android:name="android.permission.health.READ_ACTIVE_CALORIES_BURNED"/>
@@ -36,6 +38,14 @@
                 <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE"/>
             </intent-filter>
         </activity>
+
+        <!-- Foreground service que mantiene viva la grabación de rutas GPS cuando la app pasa a
+             segundo plano (pantalla apagada). Sin esto, Android corta o estrangula las
+             actualizaciones de ubicación (ver GPS-1 en doc/08-backlog-mejoras.md). -->
+        <service
+                android:name=".services.GpsTrackingService"
+                android:foregroundServiceType="location"
+                android:exported="false"/>
 
     </application>
 

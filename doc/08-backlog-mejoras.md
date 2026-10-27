@@ -25,6 +25,10 @@ Leyenda: 🔴 crítico · 🟠 medio · 🟡 bajo · ✅ arreglado
 | AUTH-1 | **Una cuenta registrada sin verificar quedaba bloqueada para siempre**: el login solo mostraba un texto ante `EMAIL_NOT_VERIFIED`, sin forma de introducir el código ni de reenviarlo. Ahora `LoginScreen` muestra el mismo paso de verificación (código + reenviar) que ya existía en `RegisterScreen`. | `LoginScreen.kt` |
 | RED-1 | **Un fallo de red podía sobrescribir el perfil real del usuario**: `me()`/`hasProfile()` convertían cualquier excepción en una respuesta negativa, indistinguible de "no tienes sesión"/"no tienes perfil" — eso mandaba a Login o a rehacer el Onboarding (que sobrescribe el perfil real al guardar). Ahora `AuthResponse` tiene un campo `networkError`, `hasProfile()` devuelve `Boolean?` (`null` = no se pudo saber, nunca se trata como "no tiene perfil"), y el arranque de la app muestra una pantalla de carga/reintento en vez de adivinar el destino. **De regalo, arregla también RED-4** (pantalla en blanco indefinida al arrancar). | `UserSession.kt` (modelo), `AuthService.kt`, `ProfileService.kt`, `NavGraph.kt`, `LoginScreen.kt` |
 | WEAR-1/2 | **El recuento del wearable podía contar de más y de menos a la vez**: se sumaban registros crudos (`readRecords`) sin deduplicar entre fuentes y sin paginar (truncaba en los primeros 1000 registros). Ahora usa `aggregate()` con `COUNT_TOTAL`/`ACTIVE_CALORIES_TOTAL`, que resuelve ambos de golpe. ⚠️ Sin verificar con build real (sin Android SDK en este entorno). | `HealthConnectProvider.kt` |
+| GPS-4 | **Guardar una ruta hacía N+1 peticiones HTTP secuenciales a Turso** (45s-varios minutos para una ruta normal). `TursoService` ahora tiene `executeBatch()`, que manda varios statements en una sola llamada a `/v2/pipeline`; `saveRoute` lo usa en lotes de 200. Verificado con `:server:compileKotlin`. | `TursoService.kt`, `GpsService.kt` |
+| GPS-2 | **Un hueco de señal >100m mataba la grabación en cascada**: el punto de referencia se quedaba congelado al descartar un salto grande, así que todos los puntos siguientes también quedaban lejos de él. Ahora el punto de referencia se actualiza aunque no se sume esa distancia al total. Verificado con `:composeApp:compileKotlinJvm`. | `GpsScreen.kt` |
+| GPS-3 | **La ruta en curso solo vivía en memoria** y se perdía entera si Android mataba el proceso. Ahora se guarda periódicamente (cada 10 puntos, y al parar) en almacenamiento local (`RouteRecoveryStore`, nuevo, con `expect/actual` — real en Android vía `SharedPreferences`, no-op en el resto de plataformas porque el GPS no funciona ahí todavía); al reabrir la pantalla, si hay una ruta sin guardar se ofrece recuperarla o descartarla. Verificado con `:composeApp:compileKotlinJvm`, `compileKotlinJs` y `compileKotlinWasmJs` (todos `BUILD SUCCESSFUL`). ⚠️ El `actual` de Android (`RouteRecoveryStore.android.kt`) no se ha podido compilar en este entorno (sin Android SDK) — recomendado probar en un dispositivo/emulador real. | `RouteRecoveryStore.kt` (nuevo, común + 5 actuals), `GpsScreen.kt` |
+| GPS-1 | **El seguimiento se detenía al bloquear el móvil** (sin foreground service). Ahora `GpsTrackingService` (nuevo) se arranca como foreground service con tipo `location` mientras se graba, con una notificación simple ("Grabando ruta GPS") — eso basta para que Android siga entregando ubicaciones en segundo plano, sin que el servicio tenga que recolectarlas él mismo. Controlado desde `GpsScreen.kt` vía `BackgroundTrackingController` (nuevo, `expect/actual`, no-op fuera de Android). Permisos nuevos en el manifest: `FOREGROUND_SERVICE_LOCATION`, `POST_NOTIFICATIONS` (esta última sin flujo de permiso en runtime todavía — si no se concede, el servicio funciona igual pero la notificación puede no mostrarse en Android 13+). Verificado con `:composeApp:compileKotlinJvm`, `compileKotlinJs`, `compileKotlinWasmJs`. ⚠️ El `Service` y su `actual` de Android no se han podido compilar en este entorno (sin Android SDK) — es el cambio más invasivo de todo el backlog, recomendado encarecidamente probarlo en un dispositivo o emulador real antes de confiar en él. **Decidido por el usuario (2026-10-27): la notificación enriquecida (botón de "Parar", distancia/tiempo en vivo, pedir `POST_NOTIFICATIONS` en runtime) queda como mejora futura, no se hace ahora** — ver GPS-1b en 🟡 Bajos. | `GpsTrackingService.kt` (nuevo), `BackgroundTrackingController.kt` (nuevo, común + 5 actuals), `AndroidManifest.xml`, `GpsScreen.kt` |
 
 Los tres primeros (R1-R3) se detectaron porque tres investigaciones independientes señalaron el mismo
 síntoma. **Lección registrada en [02-convenciones.md](02-convenciones.md)**: al añadir una comprobación
@@ -41,37 +45,30 @@ cambio al 100%.
 
 ## 🔴 Críticos abiertos
 
-### GPS-1 — El seguimiento se detiene al bloquear el móvil
-No existe ningún `Service` de Android en el proyecto (verificado: 0 coincidencias de `Service()` /
-`startForeground`). El tracking vive en un `callbackFlow` dentro del Composable
-(`GpsScreen.kt:45-64` + `LocationService.kt`). Con `targetSdk = 36`, cuando la app pasa a segundo plano
-Android corta o estrangula las actualizaciones de ubicación.
+### ✅ GPS-1 — El seguimiento se detenía al bloquear el móvil — Arreglado (⚠️ sin verificar con build real)
+No existía ningún `Service` de Android en el proyecto. El tracking vivía en un `callbackFlow` dentro
+del Composable, y con `targetSdk = 36`, en cuanto la app pasaba a segundo plano Android cortaba o
+estrangulaba las actualizaciones de ubicación. Ver "✅ Arreglado" al principio del documento para el
+detalle de la solución (`GpsTrackingService` + `BackgroundTrackingController`). La notificación mínima
+(sin botón de "Parar", sin stats en vivo) fue una decisión tomada sin poder confirmarla con el usuario a
+tiempo; el 2026-10-27 el usuario confirmó que mejorarla queda como mejora futura, no bloquea nada — ver
+GPS-1b en 🟡 Bajos.
 
-El manifest declara `FOREGROUND_SERVICE` pero **no hay servicio que lo use**, ni
-`FOREGROUND_SERVICE_LOCATION` (obligatorio desde Android 14), ni `POST_NOTIFICATIONS` (Android 13+).
+Este es el cambio más invasivo de todo el backlog de Fase 5 y el único que toca un `Service` de
+Android nuevo — recomendado encarecidamente probarlo en un dispositivo o emulador real antes de
+confiar en él.
 
-*Impacto*: hay que correr con la pantalla encendida y la app en primer plano, lo que además dispara el
-consumo de batería (precisión alta + 1 punto/segundo). Para un tracker de rutas es un fallo de diseño,
-no un detalle.
+### ✅ GPS-2 — Un hueco de señal mataba la grabación para el resto de la sesión — Arreglado
+`GpsScreen.kt:57` descartaba un punto a más de 100 m del último aceptado **sin actualizar el punto de
+referencia**, que quedaba congelado y hacía que todos los puntos siguientes también se descartaran en
+cascada. Ver "✅ Arreglado" al principio del documento.
 
-*Arreglo*: foreground service con `android:foregroundServiceType="location"`, los dos permisos que
-faltan, y mover la recolección del Flow al servicio.
+*Se combina con GPS-1*: el segundo plano provoca huecos, y los huecos mataban la grabación.
 
-### GPS-2 — Un hueco de señal mata la grabación para el resto de la sesión
-`GpsScreen.kt:57`: si un punto está a más de 100 m del último aceptado, se descarta **sin actualizar el
-último punto aceptado**. Ese punto de referencia queda congelado: todos los puntos siguientes también
-estarán a >100 m y se descartarán en cascada. La UI sigue mostrando "grabando" sin registrar nada.
-
-*Se combina con GPS-1*: el segundo plano provoca huecos, y los huecos matan la grabación.
-
-*Arreglo*: al detectar un salto >100 m, avanzar el punto de referencia sin sumar esa distancia (tratarlo
-como reinicio de tramo), en vez de descartar el punto.
-
-### GPS-3 — La ruta en curso solo vive en memoria
-`activeRoute` es un `remember` sin persistencia (`GpsScreen.kt:36`). Si Android mata el proceso —muy
-probable en una ruta larga con la pantalla apagada— se pierde la ruta completa. No hay guardado parcial
-ni recuperación. Nota: `rememberSaveable` no sirve aquí (miles de puntos exceden el límite del `Bundle`);
-hace falta persistencia local real.
+### ✅ GPS-3 — La ruta en curso solo vivía en memoria — Arreglado
+`activeRoute` era un `remember` sin persistencia. Si Android mataba el proceso —muy probable en una
+ruta larga con la pantalla apagada— se perdía la ruta completa. Ver "✅ Arreglado" al principio del
+documento (`RouteRecoveryStore`).
 
 ### ✅ RED-1 — Un fallo de red puede sobrescribir el perfil del usuario (pérdida de datos) — Arreglado
 Cadena completa del problema (histórica, ya cerrada):
@@ -128,12 +125,10 @@ no hay cuota diaria, ni rate limit, ni caché, ni registro de consumo.
 
 ### Rendimiento y coste
 
-- **GPS-4 — Guardar una ruta hace N+1 peticiones HTTP secuenciales a Turso.**
-  `GpsService.kt:58-74` ejecuta un `turso.execute` por punto, y cada uno es un POST independiente. Una
-  carrera de 30 min son ~500-900 puntos; una ruta en bici puede pasar de 3000 → **entre 45 s y varios
-  minutos** para guardar, con riesgo alto de timeout. La API `/v2/pipeline` que ya se usa acepta varias
-  sentencias por llamada; el código solo mete una. Además no hay transacción: si falla a mitad, queda una
-  ruta con puntos incompletos.
+- ✅ **GPS-4 — Arreglado.** Guardar una ruta hacía una petición HTTP por punto (N+1). Ahora se manda en
+  lotes de 200 statements por llamada a `/v2/pipeline`. Nota: sigue sin haber transacción real (Turso vía
+  HTTP no la expone de forma sencilla aquí) — si falla a mitad de un lote grande, puede quedar una ruta
+  con puntos incompletos; impacto bajo porque ahora son pocas llamadas en vez de cientos.
 - **IA-1 — La imagen se manda a resolución completa, sin ninguna ganancia.** No existe redimensionado ni
   compresión en ningún punto (verificado por grep). Una foto de 12 MP son ~4 MB → ~5,3 MB en base64, y en
   la JVM un `String` es UTF-16, con al menos tres copias vivas por petición: **30-45 MB de heap por
@@ -293,6 +288,13 @@ no hay cuota diaria, ni rate limit, ni caché, ni registro de consumo.
   cerrar el diálogo de guardado tocando fuera conserva los puntos, así que el siguiente "Iniciar ruta"
   fusiona dos rutas distintas · `formatDouble` pierde el signo con valores entre -1 y 0 · no se impide
   guardar una ruta de 0 puntos.
+- **GPS-1b — Mejorar la notificación del foreground service** (decidido por el usuario el 2026-10-27:
+  mejora futura, no se hace ahora): añadir botón de "Parar" en la notificación (requiere propagar el
+  evento desde `GpsTrackingService` de vuelta al estado de Compose, p. ej. con un `PendingIntent` a un
+  `BroadcastReceiver` o a la propia `Activity`), mostrar distancia/tiempo en vivo en el texto de la
+  notificación, y pedir `POST_NOTIFICATIONS` explícitamente en runtime (Android 13+) en vez de depender
+  del permiso ya concedido o no. Cambio localizado en `GpsTrackingService.kt` y `MainActivity.kt` cuando
+  se decida hacerlo.
 - **Auth**: reenviar el código de verificación acumula tokens válidos sin invalidar los anteriores ·
   `ProfileScreen.kt:146-148` compara cambios como strings ("75.0" vs "75"), así que marca cambios
   inexistentes · `OnboardingScreen.kt:156-158` usa `toDouble()`/`toInt()` sin red, seguro hoy solo por el
@@ -325,10 +327,10 @@ no hay cuota diaria, ni rate limit, ni caché, ni registro de consumo.
 2. ✅ **Fiabilidad del conteo de kcal (datos)** — NUT-3, NUT-4 y WEAR-1/WEAR-2 arreglados. Queda
    **WEAR-3** (sincronización en segundo plano en vez de lectura puntual) como mejora de arquitectura
    más grande, no un fix puntual — pendiente de decidir si se hace ahora o se deja para más adelante.
-3. ⏳ **GPS como funcionalidad real** — pendiente: GPS-1 (foreground service), GPS-2 (huecos), GPS-3
-   (persistencia), GPS-4 (guardado por lotes). Son los cambios más invasivos (permisos nuevos, `Service`
-   de Android, no verificables en este entorno sin Android SDK) — conviene decidir con el usuario antes
-   de tocarlos.
+3. ✅ **GPS como funcionalidad real** — completo: GPS-1, GPS-2, GPS-3, GPS-4. GPS-1 es el cambio más
+   invasivo de todo el backlog (`Service` de Android nuevo) y el que más necesita probarse en un
+   dispositivo/emulador real antes de confiar en él — no se pudo acordar el enfoque exacto con el
+   usuario de antemano, así que se tomó la decisión más simple y estándar (ver detalle en el hallazgo).
 4. ⏳ **Resiliencia transversal** — pendiente: HTTP-1 (cliente único) como base, y encima RED-2
    (timeouts), RED-3 (401 centralizado).
 5. ⏳ **Coste y seguridad** — pendiente: SEC-1 (gate premium real), IA-1 (redimensionar imagen antes de

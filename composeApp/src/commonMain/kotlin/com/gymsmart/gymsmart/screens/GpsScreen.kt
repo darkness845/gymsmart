@@ -18,6 +18,9 @@ import com.gymsmart.gymsmart.model.RoutePointDto
 import com.gymsmart.gymsmart.model.SaveRouteRequest
 import com.gymsmart.gymsmart.services.GpsService
 import com.gymsmart.gymsmart.services.LocationProvider
+import com.gymsmart.gymsmart.services.RecoverableRoute
+import com.gymsmart.gymsmart.services.RouteRecoveryStore
+import com.gymsmart.gymsmart.services.rememberBackgroundTrackingController
 import com.gymsmart.gymsmart.ui.theme.GymSmartColors
 import kotlinx.coroutines.launch
 import kotlin.math.*
@@ -32,6 +35,15 @@ fun GpsScreen(
     gpsService: GpsService
 ) {
     val scope = rememberCoroutineScope()
+    val recoveryStore = remember { RouteRecoveryStore() }
+    val backgroundTracking = rememberBackgroundTrackingController()
+
+    // Red de seguridad: si esta pantalla se destruye mientras se grababa (el usuario navega fuera),
+    // no debe quedar un foreground service huérfano con su notificación. Parar un servicio que ya
+    // está parado no hace nada, así que es seguro llamarlo siempre.
+    DisposableEffect(Unit) {
+        onDispose { backgroundTracking.stop() }
+    }
 
     var activeRoute by remember { mutableStateOf(ActiveRoute()) }
     var startedAt by remember { mutableStateOf(0L) }
@@ -42,8 +54,19 @@ fun GpsScreen(
     var isSaving by remember { mutableStateOf(false) }
     var saveSuccess by remember { mutableStateOf(false) }
 
+    // Si Android mató el proceso a mitad de una grabación anterior, ofrece recuperarla en vez de
+    // perderla sin más (ver GPS-3 en doc/08-backlog-mejoras.md).
+    var recoveredRoute by remember { mutableStateOf<RecoverableRoute?>(null) }
+    LaunchedEffect(Unit) {
+        recoveryStore.load()?.let { if (it.points.isNotEmpty()) recoveredRoute = it }
+    }
+
     LaunchedEffect(activeRoute.isRecording) {
         if (activeRoute.isRecording) {
+            // Arranca el foreground service ANTES de pedir las actualizaciones de ubicación: sin
+            // esto, Android corta o estrangula el GPS en cuanto la pantalla se apaga o la app pasa
+            // a segundo plano (ver GPS-1 en doc/08-backlog-mejoras.md).
+            backgroundTracking.start()
             locationProvider.getLocationUpdates().collect { punto: RoutePoint ->
                 if (punto.accuracyM > 25f) return@collect
                 if (activeRoute.points.isEmpty()) {
@@ -54,12 +77,30 @@ fun GpsScreen(
                 val distanciaDesdeUltimo = haversine(ultimoPunto, punto)
                 val velocidadKmH = punto.speedMs * 3.6f
                 if (velocidadKmH < 0.8f) return@collect
-                if (distanciaDesdeUltimo < 5.0 || distanciaDesdeUltimo > 100.0) return@collect
+                if (distanciaDesdeUltimo < 5.0) return@collect
+                if (distanciaDesdeUltimo > 100.0) {
+                    // Hueco de señal (túnel, app en segundo plano...): ese salto no es distancia
+                    // real recorrida, así que no se suma al total, PERO se actualiza el punto de
+                    // referencia. Si no se hiciera esto, el punto de referencia se queda congelado
+                    // y todos los puntos siguientes también quedan a >100m de él, descartándose en
+                    // cascada para el resto de la grabación (ver GPS-2 en doc/08-backlog-mejoras.md).
+                    activeRoute = activeRoute.copy(points = activeRoute.points + punto)
+                    return@collect
+                }
                 activeRoute = activeRoute.copy(
                     points = activeRoute.points + punto,
                     distanceMeters = activeRoute.distanceMeters + distanciaDesdeUltimo
                 )
+                // Guardado periódico (no en cada punto, para no escribir a disco cada segundo) por
+                // si el proceso muere a mitad de la grabación.
+                if (activeRoute.points.size % 10 == 0) {
+                    recoveryStore.save(
+                        RecoverableRoute(activeRoute.points, activeRoute.distanceMeters, startedAt)
+                    )
+                }
             }
+        } else {
+            backgroundTracking.stop()
         }
     }
 
@@ -155,6 +196,7 @@ fun GpsScreen(
                             val result = gpsService.saveRoute(req)
                             isSaving = false
                             if (result.isSuccess) {
+                                recoveryStore.clear()
                                 saveSuccess = true
                                 kotlinx.coroutines.delay(1200)
                                 showSaveDialog = false
@@ -191,6 +233,7 @@ fun GpsScreen(
             dismissButton = {
                 TextButton(
                     onClick = {
+                        recoveryStore.clear()
                         showSaveDialog = false
                         routeName = ""
                         activeRoute = ActiveRoute()
@@ -198,6 +241,49 @@ fun GpsScreen(
                     },
                     enabled = !isSaving
                 ) {
+                    Text("Descartar", color = GymSmartColors.TextSecondary)
+                }
+            }
+        )
+    }
+
+    // --- Diálogo de recuperación de una ruta sin guardar ---
+    recoveredRoute?.let { recovered ->
+        AlertDialog(
+            onDismissRequest = {},
+            containerColor = GymSmartColors.SurfaceElevated,
+            shape = MaterialTheme.shapes.large,
+            title = { Text("Ruta sin guardar", fontWeight = FontWeight.Bold, color = GymSmartColors.TextPrimary) },
+            text = {
+                Text(
+                    "Encontramos una ruta de ${formatDouble(recovered.distanceMeters / 1000, 2)} km que no llegó a guardarse. ¿Quieres seguir grabándola o descartarla?",
+                    color = GymSmartColors.TextSecondary
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        activeRoute = ActiveRoute(
+                            points = recovered.points,
+                            distanceMeters = recovered.distanceMeters,
+                            isRecording = true
+                        )
+                        startedAt = recovered.startedAt
+                        recoveredRoute = null
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = GymSmartColors.Primary,
+                        contentColor = GymSmartColors.OnPrimary
+                    )
+                ) {
+                    Text("Seguir grabando", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    recoveryStore.clear()
+                    recoveredRoute = null
+                }) {
                     Text("Descartar", color = GymSmartColors.TextSecondary)
                 }
             }
@@ -343,7 +429,12 @@ fun GpsScreen(
                         }
                     } else {
                         activeRoute = activeRoute.copy(isRecording = false)
-                        if (activeRoute.points.isNotEmpty()) showSaveDialog = true
+                        if (activeRoute.points.isNotEmpty()) {
+                            // Guardado final por si el guardado periódico (cada 10 puntos) se quedó
+                            // corto respecto a los últimos puntos registrados antes de parar.
+                            recoveryStore.save(RecoverableRoute(activeRoute.points, activeRoute.distanceMeters, startedAt))
+                            showSaveDialog = true
+                        }
                     }
                 },
                 colors = ButtonDefaults.buttonColors(
