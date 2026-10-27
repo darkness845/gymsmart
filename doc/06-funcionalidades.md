@@ -93,21 +93,18 @@ fallos graves. Hoy el GPS no es fiable para una ruta real.**
 Respuesta directa a "¿se puede hacer mejor la recolecta tal como la hice?": sí, y el arreglo principal
 cabe en un solo archivo.**
 
-- `HealthConnectProvider` lee `StepsRecord`/`ActiveCaloriesBurnedRecord` del día en curso con
-  `readRecords` y los suma a mano. Verificado que **no se usa `aggregate()`, ni `pageToken`, ni
-  `dataOriginFilter` en ningún sitio del proyecto**.
-- 🟠 **Puede contar de más** (WEAR-1): Health Connect agrega datos de varias apps a la vez (app de la
-  pulsera, Google Fit, sensor del móvil). Sumando registros crudos, lo que escriben dos fuentes se cuenta
-  dos veces. `aggregate()` con `COUNT_TOTAL` aplica la deduplicación que `readRecords` no hace.
-- 🟠 **Puede contar de menos** (WEAR-2): `readRecords` pagina y el código ignora el `pageToken`, así que
-  se queda con la primera página (1000 registros). Con apps que escriben un registro por minuto, los
-  datos se truncan en silencio.
-- 🟠 **Lectura puntual, no sincronización** (WEAR-3): cada pantalla lee una sola vez al entrar. Si abres
-  la app por la mañana, el presupuesto de kcal se queda congelado en el valor de esa hora todo el día —
-  es la causa más probable de la imprecisión que se percibe en modo pulsera.
-- **Mejora propuesta para Fase 5**: migrar a `aggregate()` (resuelve WEAR-1 y WEAR-2 de golpe) y mover la
-  recolección a un mecanismo en segundo plano (`WorkManager` periódico) con caché local, de forma que la
-  UI y el cálculo de objetivos usen siempre un dato fresco.
+- ✅ **Arreglado (WEAR-1/WEAR-2)**: `HealthConnectProvider` sumaba registros crudos (`readRecords`) sin
+  deduplicar entre fuentes (podía contar de más: app de la pulsera + Google Fit + sensor del móvil
+  escribiendo los mismos pasos) y sin paginar (podía contar de menos: se truncaba en los primeros 1000
+  registros del día). Ahora usa `aggregate()` con `StepsRecord.COUNT_TOTAL` y
+  `ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL`, que Health Connect calcula ya deduplicado y sin
+  necesidad de paginar. **⚠️ Sin verificar con build real** (sin Android SDK en este entorno) — probar en
+  un dispositivo/emulador Android antes de confiar al 100%.
+- 🟠 **Pendiente (WEAR-3) — lectura puntual, no sincronización**: cada pantalla sigue leyendo una sola vez
+  al entrar. Si abres la app por la mañana, el presupuesto de kcal se queda congelado en el valor de esa
+  hora todo el día. Es la causa más probable de la imprecisión restante en modo pulsera, y es un cambio
+  de arquitectura (mover a `WorkManager` periódico con caché local), no un fix puntual — pendiente de
+  decidir si se hace ahora o se deja para más adelante.
 
 ## Entrenamiento (Training)
 

@@ -24,6 +24,7 @@ Leyenda: 🔴 crítico · 🟠 medio · 🟡 bajo · ✅ arreglado
 | NUT-4 | **Productos sin datos nutricionales se podían añadir como comidas de 0 kcal**: la búsqueda de alimentos no filtraba resultados sin kcal/macros útiles, y no distinguía "sin resultados" de "falló la búsqueda". Ahora se filtran los productos sin datos útiles y se muestra un mensaje de "sin resultados" distinto del error de red. | `NutritionScreen.kt` |
 | AUTH-1 | **Una cuenta registrada sin verificar quedaba bloqueada para siempre**: el login solo mostraba un texto ante `EMAIL_NOT_VERIFIED`, sin forma de introducir el código ni de reenviarlo. Ahora `LoginScreen` muestra el mismo paso de verificación (código + reenviar) que ya existía en `RegisterScreen`. | `LoginScreen.kt` |
 | RED-1 | **Un fallo de red podía sobrescribir el perfil real del usuario**: `me()`/`hasProfile()` convertían cualquier excepción en una respuesta negativa, indistinguible de "no tienes sesión"/"no tienes perfil" — eso mandaba a Login o a rehacer el Onboarding (que sobrescribe el perfil real al guardar). Ahora `AuthResponse` tiene un campo `networkError`, `hasProfile()` devuelve `Boolean?` (`null` = no se pudo saber, nunca se trata como "no tiene perfil"), y el arranque de la app muestra una pantalla de carga/reintento en vez de adivinar el destino. **De regalo, arregla también RED-4** (pantalla en blanco indefinida al arrancar). | `UserSession.kt` (modelo), `AuthService.kt`, `ProfileService.kt`, `NavGraph.kt`, `LoginScreen.kt` |
+| WEAR-1/2 | **El recuento del wearable podía contar de más y de menos a la vez**: se sumaban registros crudos (`readRecords`) sin deduplicar entre fuentes y sin paginar (truncaba en los primeros 1000 registros). Ahora usa `aggregate()` con `COUNT_TOTAL`/`ACTIVE_CALORIES_TOTAL`, que resuelve ambos de golpe. ⚠️ Sin verificar con build real (sin Android SDK en este entorno). | `HealthConnectProvider.kt` |
 
 Los tres primeros (R1-R3) se detectaron porque tres investigaciones independientes señalaron el mismo
 síntoma. **Lección registrada en [02-convenciones.md](02-convenciones.md)**: al añadir una comprobación
@@ -31,9 +32,10 @@ de sesión a un endpoint, hay que verificar con qué cliente HTTP lo llama el cl
 estado de negocio de que una excepción haya ocurrido.
 
 Todo lo anterior está verificado con `./gradlew :server:compileKotlin` y
-`:composeApp:compileKotlinJvm` (ambos `BUILD SUCCESSFUL`) tras cada cambio. No se ha podido compilar el
-target Android en este entorno (sin Android SDK instalado) — los cambios que tocan código Android puro
-(ninguno de los de esta tanda) seguirían pendientes de esa verificación.
+`:composeApp:compileKotlinJvm` (ambos `BUILD SUCCESSFUL`) tras cada cambio, salvo `HealthConnectProvider.kt`
+(WEAR-1/2), que es código Android puro y no se ha podido compilar en este entorno (sin Android SDK
+instalado). Recomendado compilar/probar en un dispositivo o emulador Android antes de confiar en ese
+cambio al 100%.
 
 ---
 
@@ -153,15 +155,13 @@ no hay cuota diaria, ni rate limit, ni caché, ni registro de consumo.
 
 ### Exactitud de los datos
 
-- **WEAR-1 — El recuento del wearable puede contar de más.** Se leen registros crudos con `readRecords` y
-  se suman a mano. Health Connect agrega datos de varias apps a la vez (app de la pulsera, Google Fit,
-  sensor del móvil): sumando registros crudos, **lo que escriben dos fuentes se cuenta dos veces**.
-  `aggregate()` con `COUNT_TOTAL` aplica la deduplicación que `readRecords` no hace.
-- **WEAR-2 — …y también puede contar de menos.** `readRecords` devuelve resultados paginados y el código
-  **ignora el `pageToken`**: se queda con la primera página (1000 registros por defecto). Hay apps que
-  escriben un registro por minuto (1440/día), y con varias fuentes se multiplica → truncado silencioso.
-  Verificado: no se usa `aggregate`, ni `pageToken`, ni `dataOriginFilter` en ningún sitio.
-  **`aggregate()` resuelve WEAR-1 y WEAR-2 a la vez**, y es un cambio en un solo archivo.
+- ✅ **WEAR-1/WEAR-2 — Arreglado.** El recuento del wearable podía contar de más (varias fuentes
+  escribiendo los mismos pasos, sin deduplicar) y de menos a la vez (`readRecords` pagina y se ignoraba
+  el `pageToken`, truncando en la primera página de 1000 registros). `HealthConnectProvider` ahora usa
+  `aggregate()` con `StepsRecord.COUNT_TOTAL` y `ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL`, que
+  deduplica solapes entre fuentes y no pagina. **⚠️ Sin verificar con build real** (este entorno no tiene
+  Android SDK) — recomendado compilar/probar en un dispositivo o emulador Android antes de confiar al
+  100%.
 - **WEAR-3 — Lectura puntual en vez de sincronización.** Cada pantalla lee una sola vez al entrar
   (`LaunchedEffect(Unit)`, con un `delay(500)` arbitrario en Dashboard). Si abres la app por la mañana,
   el presupuesto de kcal se queda congelado en el valor de esa hora todo el día. Es la causa más probable
@@ -322,8 +322,9 @@ no hay cuota diaria, ni rate limit, ni caché, ni registro de consumo.
 ## Orden de ataque para la Fase 5 — estado
 
 1. ✅ **Pérdida de datos y funciones muertas** — completo: RED-1, NUT-2, AUTH-1, NUT-1, DB-1.
-2. 🔄 **Fiabilidad del conteo de kcal** — NUT-3 y NUT-4 arreglados. **Pendiente: WEAR-1/2/3**
-   (recuento del wearable — migrar a `aggregate()` y sincronización en segundo plano).
+2. ✅ **Fiabilidad del conteo de kcal (datos)** — NUT-3, NUT-4 y WEAR-1/WEAR-2 arreglados. Queda
+   **WEAR-3** (sincronización en segundo plano en vez de lectura puntual) como mejora de arquitectura
+   más grande, no un fix puntual — pendiente de decidir si se hace ahora o se deja para más adelante.
 3. ⏳ **GPS como funcionalidad real** — pendiente: GPS-1 (foreground service), GPS-2 (huecos), GPS-3
    (persistencia), GPS-4 (guardado por lotes). Son los cambios más invasivos (permisos nuevos, `Service`
    de Android, no verificables en este entorno sin Android SDK) — conviene decidir con el usuario antes

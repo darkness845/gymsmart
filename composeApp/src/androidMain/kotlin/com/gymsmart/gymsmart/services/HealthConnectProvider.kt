@@ -2,13 +2,12 @@ package com.gymsmart.gymsmart.services
 
 import android.content.Context
 import androidx.health.connect.client.HealthConnectClient
-import androidx.health.connect.client.permission.HealthPermission
+import androidx.health.connect.client.records.ActiveCaloriesBurnedRecord
 import androidx.health.connect.client.records.StepsRecord
-import androidx.health.connect.client.request.ReadRecordsRequest
+import androidx.health.connect.client.request.AggregateRequest
 import androidx.health.connect.client.time.TimeRangeFilter
 import java.time.Instant
 import java.time.ZoneId
-import androidx.health.connect.client.records.ActiveCaloriesBurnedRecord
 
 class HealthConnectProvider(
     private val context: Context
@@ -22,43 +21,37 @@ class HealthConnectProvider(
         null
     }
 
-    override suspend fun getTodaySteps(): Long {
-        val client = client ?: return 0L
-        val startOfDay = Instant.now()
+    private fun startOfToday(): Instant =
+        Instant.now()
             .atZone(ZoneId.systemDefault())
             .toLocalDate()
             .atStartOfDay(ZoneId.systemDefault())
             .toInstant()
 
-        val response = client.readRecords(
-            ReadRecordsRequest(
-                recordType = StepsRecord::class,
-                timeRangeFilter = TimeRangeFilter.between(startOfDay, Instant.now())
+    // Antes se sumaban los registros crudos de readRecords(), lo que podía contar de más (varias
+    // apps/fuentes escribiendo los mismos pasos, sin deduplicar) y de menos a la vez (readRecords
+    // pagina y se ignoraba el pageToken, truncando en la primera página). aggregate() resuelve
+    // ambos: deduplica solapes entre fuentes y devuelve un único total ya calculado por Health
+    // Connect, sin paginación que gestionar (ver WEAR-1/WEAR-2 en doc/08-backlog-mejoras.md).
+    override suspend fun getTodaySteps(): Long {
+        val client = client ?: return 0L
+        val response = client.aggregate(
+            AggregateRequest(
+                metrics = setOf(StepsRecord.COUNT_TOTAL),
+                timeRangeFilter = TimeRangeFilter.between(startOfToday(), Instant.now())
             )
         )
-
-        // Log para ver todas las fuentes
-        response.records.forEach { record ->
-            println("📱 Fuente: ${record.metadata.dataOrigin.packageName} — Pasos: ${record.count}")
-        }
-
-        return response.records.sumOf { it.count }
+        return response[StepsRecord.COUNT_TOTAL] ?: 0L
     }
 
     override suspend fun getTodayActiveCalories(): Double {
         val client = client ?: return 0.0
-        val startOfDay = Instant.now()
-            .atZone(ZoneId.systemDefault())
-            .toLocalDate()
-            .atStartOfDay(ZoneId.systemDefault())
-            .toInstant()
-
-        val response = client.readRecords(
-            ReadRecordsRequest(
-                recordType = ActiveCaloriesBurnedRecord::class,
-                timeRangeFilter = TimeRangeFilter.between(startOfDay, Instant.now())
+        val response = client.aggregate(
+            AggregateRequest(
+                metrics = setOf(ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL),
+                timeRangeFilter = TimeRangeFilter.between(startOfToday(), Instant.now())
             )
         )
-        return response.records.sumOf { it.energy.inKilocalories }
+        return response[ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL]?.inKilocalories ?: 0.0
     }
 }

@@ -41,9 +41,23 @@ conteo de kcal):
 - **Bloques 3-5 sin empezar**: GPS (foreground service — cambios más invasivos, requieren permisos
   nuevos y un `Service` de Android no verificable en este entorno), cliente HTTP único, gate premium
   real, redimensionado de imagen para IA.
-- **Siguiente sesión**: decidir si se sigue con WEAR-1/2/3 (cambio acotado, un archivo) antes de entrar
-  en GPS (más invasivo, mejor con confirmación explícita dado que no se puede verificar compilación
-  Android aquí). Commit de esta tanda pendiente de confirmación del usuario.
+- Usuario confirmó commit de este bloque (commit `893e71c`). Aclaró que trabaja en IntelliJ ejecutando
+  Gradle por terminal — mismo flujo que se usa aquí para verificar los cambios.
+
+### 2026-10-26 (continuación 6) — Fase 5: cierra el bloque 2 (wearable)
+
+- **WEAR-1/WEAR-2 arreglados**: `HealthConnectProvider` migrado de `readRecords` (sumaba registros
+  crudos, sin deduplicar entre fuentes y sin paginar) a `aggregate()` con `StepsRecord.COUNT_TOTAL` y
+  `ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL`, que resuelve ambos problemas a la vez (Health
+  Connect ya deduplica y no pagina en una agregación). **Sin verificar con build real** — este entorno no
+  tiene Android SDK instalado, así que no se pudo ejecutar `:composeApp:compileDebugKotlinAndroid`.
+  Recomendado compilar/probar en un dispositivo o emulador Android.
+- Queda **WEAR-3** (sincronización en segundo plano en vez de lectura puntual por pantalla) como mejora
+  de arquitectura más grande, pendiente de decidir si se hace ahora.
+- Con esto, los bloques 1 y 2 del orden de ataque de `08-backlog-mejoras.md` quedan completos.
+- **Siguiente sesión**: decidir entre WEAR-3, GPS (bloque 3, el más invasivo — foreground service,
+  permisos nuevos, no verificable aquí sin Android SDK), o los bloques 4-5 (cliente HTTP único, gate
+  premium). Commit de esta tanda pendiente de confirmación del usuario.
 
 ---
 
