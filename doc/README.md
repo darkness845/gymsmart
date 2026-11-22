@@ -26,6 +26,8 @@ cambiar si algún día la app sale a producción real (ver [04-produccion-playst
 | [07-registro-sesiones.md](07-registro-sesiones.md) | Bitácora corta por sesión: qué se hizo, qué se decidió, qué queda pendiente. |
 | [08-backlog-mejoras.md](08-backlog-mejoras.md) | **Cola de trabajo**: todos los bugs y mejoras encontrados en la Fase 4, priorizados por impacto real, con ubicación y estado. |
 | [09-plan-de-pruebas.md](09-plan-de-pruebas.md) | Checklist de pruebas manuales (Desktop + Android) antes de pasar a Fase 6, con el criterio de qué debería pasar tras cada arreglo. |
+| [10-fundamento-cientifico.md](10-fundamento-cientifico.md) | **Fuente de verdad de todos los números de nutrición**: cada constante con su fuente y nivel de confianza (✅ sólido / 🟡 razonable / ⚠️ convención). No añadir números al cálculo sin documentarlos aquí. |
+| [11-auditoria-kcal.md](11-auditoria-kcal.md) | **Auditoría independiente del cálculo de kcal por objetivo** (2026-11-22, cuatro agentes): hallazgos AUD-1 a AUD-24 con gravedad, lo que se declaró falso, lo que no hay que tocar, y el plan de arreglo acordado. |
 
 ## Reglas para usar esta documentación
 

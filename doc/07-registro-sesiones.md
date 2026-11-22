@@ -4,6 +4,325 @@ Bitácora corta por sesión de trabajo sobre el endurecimiento del proyecto. Ent
 
 ---
 
+## 2026-11-22 — Auditoría independiente del cálculo de kcal por objetivo (solo diagnóstico)
+
+El usuario pidió una **auditoría objetiva e independiente** de la funcionalidad de kcal en el sentido de
+los objetivos (perder/subir/mantener/recomp), con instrucciones explícitas: no asumir que su
+implementación es correcta, no darle la razón por defecto, no confundir que el código funcione con que la
+solución sea correcta, contrastar contra documentación oficial y estándares, y buscar errores
+conceptuales, problemas de arquitectura y casos límite. Pidió **cuatro agentes independientes** con
+reparto fijo (investigador / auditor técnico / red team / evaluador) y un informe final con gravedad
+clasificada. **Explícitamente: no modificar archivos, solo auditoría y diagnóstico.**
+
+**Cómo se hizo**: los tres primeros agentes en paralelo; el evaluador como fork de la sesión, para que
+tuviera los tres informes completos y pudiera verificar por su cuenta en lugar de resumir. Además se
+verificaron a mano, desde la sesión principal, los cinco hallazgos más graves.
+
+**Resultado: [11-auditoria-kcal.md](11-auditoria-kcal.md)** (nuevo), con AUD-1 a AUD-24. Resumen en
+`08-backlog-mejoras.md`, dos entradas nuevas en `03-seguridad.md` (15 y 16), y correcciones a §7.3 y §14
+de `10-fundamento-cientifico.md`.
+
+**Veredicto**: el modelo energético es **correcto**. Las tres decisiones que más apps fallan están bien
+(ritmo en % de peso corporal, déficit derivado de una *velocidad* y no de un *plazo*, y
+`BMR + ActiveCaloriesBurnedRecord` sin doble conteo), el uso de 7700 kcal/kg es el único defendible, y
+las constantes del código coinciden **todas** con las tablas del fundamento científico — no hay ninguna
+inventada. Se descartó explícitamente la crítica "debería usar el modelo dinámico de Hall": gana
+precisión en la *trayectoria*, que es funcionalidad que esta app no tiene ni pretende.
+
+**El fallo está en dónde se imponen los invariantes, no en el modelo.** Tres líneas explican ~70 % de los
+hallazgos: `targetKcal = baseTdee + dailyDelta + carryOverKcal` (el arrastre fuera del recorte),
+`baseTdee = measuredTdee ?: formulaTdee` (sustitución en vez de composición), y la decisión de §7.3 de
+cambiar un *suelo de ingesta* por un *tope de déficit* sin re-derivar las consecuencias. **AUD-1, AUD-2,
+AUD-5 y AUD-6 son un solo error de razonamiento.**
+
+Lo más destacable de cada rol:
+
+| Agente | Lo que aportó que los demás no vieron |
+|---|---|
+| Investigador | 44 requisitos verificables contra fuentes primarias abiertas (FAO/WHO/UNU 2004, Health Connect, NIH Body Weight Planner, guías de Apple/Play). El dato que debería gobernar toda la comunicación: **el error estándar publicado del BMR estimado es de 110-170 kcal/día**, del mismo orden que el déficit que se busca. Y que **los multiplicadores 1,2-1,9 no tienen fuente primaria localizable**, con 1,2 por debajo del mínimo sedentario de FAO (1,40). |
+| Auditor técnico | Ejecutó `:shared:jvmTest` (31 tests en verde) y demostró que **todos los hallazgos conviven con la suite verde**. Encontró la migración ausente de `has_wearable` y el desajuste de formato de `resolvedAge`. |
+| Red team | **Las ocho refutaciones son su parte más valiosa**: demostró que el subregistro *uniforme* se autocancela (mérito real del diseño), que no hay doble conteo BMR↔activas, y que el % usa el peso actual. También el hallazgo más afilado y exclusivo: `weight_history` solo se escribe si el peso cambia, así que **`recomp` se queda sin autoajuste habiéndose pesado a diario**. |
+| Evaluador | Recalibró gravedades con el criterio de "app personal de un solo usuario", **declaró falsos o exagerados cinco hallazgos** de los otros dos, y encontró lo que ninguno vio: **el ritmo por defecto (−0,75 %) ya está recortado en `sedentary` y en `light`**, es decir inalcanzable en el 40 % de los niveles ofrecidos. |
+
+**Hallazgo con más impacto clínico (AUD-1)**: no hay suelo calórico absoluto — el objetivo colapsa a la
+identidad exacta `0,90 × BMR` en sedentarios — y el único límite que existe es **evadible**, porque
+`carryOverKcal` se suma fuera del recorte y además **no está condicionado a `activityLevel`** (a
+diferencia de `avgActiveKcal`). Verificado: objetivo de 1096 kcal con `rateLimited = false`, es decir sin
+ningún aviso. **Ningún test lo cubría porque el barrido de ~2.000 combinaciones nunca pasa
+`carryOverKcal` ni `measuredTdee`** — los dos únicos parámetros capaces de romper los invariantes de §14.
+
+**Hallazgo más incómodo (AUD-2/AUD-5)**: la app promete *"nunca por debajo de tu metabolismo basal"* en
+dos pantallas cuando ese suelo fue retirado, y el objetivo está al 90 % del BMR justo cuando ese aviso
+aparece. Y el defecto del `RateSlider` (su tercio superior no cambia el objetivo mientras promete +54 %
+de pérdida) **es de la misma naturaleza exacta que el que motivó toda la reescritura del 2026-11-01**: el
+error pasó de −55 % a −39/−54 %, se redujo pero se mudó un eslabón.
+
+**Decisiones del usuario al cerrar la sesión**: suelo por **disponibilidad energética** (≥30 kcal/kg
+MM/día con masa magra estimada, aplicado al final sobre el número mostrado), `carryOverKcal` **acotado
+dentro del recorte y gateado por modo pulsera**, y **documentar antes de implementar**. Las tres están en
+`CONTINUAR.md` para no re-preguntarlas.
+
+**Pendiente y bloqueado**: la verificación de 30 segundos de AUD-16 (¿guarda perfil la app en
+producción?), que decide si es un defecto latente o si el guardado de perfil y el registro de peso llevan
+rotos desde `dc1b216`. No se puede comprobar sin acceso a la BBDD desplegada.
+
+---
+
+## 2026-11-22 — Rediseño de la maqueta de la pestaña "Entreno" (registro de series)
+
+El usuario trajo su propia maqueta HTML (`~/Downloads/GYMTRACK.html`, un registrador de series de
+gimnasio) para meterla como pestaña nueva del menú principal, pero pidió rediseñarla antes: que se pueda
+apuntar cualquier peso **sin abrir el teclado del sistema**, que lo entienda cualquiera y que tenga un
+aire más profesional. No se tocó código Kotlin en esta sesión.
+
+**Entregado**: `~/Downloads/GYMTRACK-v2.html` — maqueta interactiva de un solo archivo, con los colores,
+tipografía, radios y espaciados de `GymSmartColors`/`GymSmartTheme`. Verificada con jsdom simulando el
+flujo completo de un usuario (cargar discos, teclado propio, guardar, editar, borrar, deshacer, modo
+mancuerna, terminar entreno): sin excepciones, y el reparto de discos probado contra 12 casos
+(incluidos pesos no montables y el tope de 500 kg).
+
+**Fallos encontrados en la maqueta original** (los importantes, por los que se rediseñó):
+
+| # | Fallo | Por qué importa |
+|---|---|---|
+| 1 | Los discos sumaban su valor **una sola vez** | Un disco de 20 se pone a cada lado: el peso real es +40. La maqueta apuntaba la mitad de lo levantado. |
+| 2 | El peso de la barra (20 kg) estaba fijo y oculto | No se podía usar barra de 15, barra Z ni máquina sin barra. |
+| 3 | No se podía quitar un disco ni deshacer | Si te pasabas, solo quedaba bajar de 1,25 en 1,25. |
+| 4 | De 102,5 a 20 kg = 66 pulsaciones | El ± tenía paso único y sin pulsación mantenida. |
+| 5 | Cambiar de ejercicio reseteaba a 20 kg / 10 reps | Se perdía el peso que estabas usando; nadie empieza todos los ejercicios en 20 kg. |
+| 6 | No se veía qué hiciste la última vez | Es el dato que decides *antes* de cargar la barra. |
+| 7 | No se podía editar ni borrar **una** serie | Solo "reiniciar series", y además sin confirmación ni deshacer. |
+| 8 | En modo máquina, pulsar "0,5 kg" tiraba el peso de 100 a 0,5 | Pérdida de datos a un toque, sin aviso. |
+| 9 | Botones de 24 px y textos de 7-9 px | Inusable con las manos sudadas; muy por debajo del mínimo táctil de ~48 px. |
+| 10 | Tres sitios discutiendo lo mismo ("SERIE 1", "GUARDAR SERIE 1", "0 series registradas") | Ruido. |
+| 11 | Sin descanso entre series, sin volumen, sin RIR, sin terminar entreno | Falta lo que de verdad se usa en el gimnasio. |
+| 12 | Iconos con caracteres raros (♧ ▣ ▤ ◉ ☷) y nada se persistía | Se ven distintos en cada dispositivo y se perdía todo al recargar. |
+
+**Soluciones del rediseño**: modo "barra y discos" con el total calculado (barra + discos por lado ×2) y
+discos quitables uno a uno; modo "peso directo" para máquina/polea/mancuerna, con los pesos que ya has
+usado como atajos y un conmutador "por mancuerna ×2"; **teclado numérico propio** en hoja inferior como
+vía universal (en modo barra reparte el total en discos, y si no es montable avisa de cuánto falta en vez
+de mentir); paso ±2,5/5/10 con pulsación mantenida acelerada; cada ejercicio arranca en su último peso;
+"repetir serie anterior"; editar/borrar serie con deshacer; temporizador de descanso al guardar;
+cronómetro de sesión, volumen y serie top; progreso por ejercicio en el carrusel.
+
+**Segunda iteración tras el feedback del usuario (la que vale): `~/Downloads/GYMTRACK-v3.html`.**
+Rechazó la v2 con dos objeciones que son, en realidad, el concepto del producto:
+
+- *"me guio por lo que meto en los lados… en press banca tiro 80 kg en total pero yo siempre recuerdo
+  que meto una de 30 a los lados"* → el número grande pasa a ser **el peso por lado**, y el total se
+  muestra calculado debajo (`barra + 2 × lado`). Se acabó la acumulación de discos uno a uno: se apunta
+  directamente lo que pones a cada lado.
+- *"alomejor el concepto se podria definir antes… decidir de antes si yo hago este ejercicio en maquina
+  o en libre o en mancuernas"* → el **tipo de ejercicio** (barra libre / mancuernas / máquina / polea /
+  peso corporal) se elige al crear el ejercicio y es lo que determina qué número pide la app, qué unidad
+  enseña y el paso del ±. En máquina y polea no se habla de lados en ningún momento.
+
+Efecto: fuera la rejilla de 7 discos, el selector de barra, el selector de paso, el conmutador de modo
+y el RIR de la pantalla principal. La tarjeta de peso pasa de ~20 botones a 7. El teclado propio sigue
+siendo la vía universal y, en barra y mancuernas, ofrece un enlace pequeño "escribir el total" que hace
+la conversión inversa (100 totales → 40 por lado). Verificado otra vez con jsdom: los cinco tipos, el
+teclado en ambos sentidos, cambiar el tipo de un ejercicio ya creado y el alta de ejercicio nuevo.
+
+**Tercera ronda de feedback**, dos correcciones más sobre la v3:
+
+- *"aumentas y desaumentas de 5 en 5 por la cara, hay pesos entre medias eh"* → el salto del `-`/`+`
+  pasa a ser **configuración del ejercicio** (0,5 / 1 / 1,25 / 2,5 / 5 / 10, expresado en la unidad de su
+  tipo: "2,5 kg/lado", "1 kg"...), elegible en la misma hoja que el tipo. Valores de partida bajados:
+  2,5 por lado en barra, 1 en mancuernas y **2,5 en máquina y polea** (antes 5, que era el fallo).
+- *"y el rir?"* → **vuelve**. Lo había quitado yo de la v3 para reducir botones, sin que él lo pidiera.
+  Vuelve como un chip al lado de "Repeticiones" (un botón en pantalla, no seis), que abre una hoja con
+  las opciones explicadas; recuerda el último valor del ejercicio, se guarda en cada serie, se muestra
+  en la fila de la serie y se recupera al editarla.
+
+- *"que el rir salga como antes"* (con captura de la fila de la v2) → el RIR vuelve a ser la **fila de
+  botones en pantalla** (`— 0 1 2 3 4+`) bajo las repeticiones rápidas, no el chip con hoja que había
+  propuesto: apuntarlo es cosa de cada serie y escondérselo detrás de dos toques no valía. Cada botón
+  lleva su explicación como `title`.
+
+**Cuarta ronda** (tres cambios que afectan al modelo de datos, importantes para la implementación):
+
+- **El peso se pone solo, serie a serie, contra la sesión anterior.** Fuera los chips de "tus pesos".
+  El ejercicio guarda las series de la última sesión (`prev`), y al ir a registrar la serie N la app
+  propone `prev[N-1]` (peso y reps). Al guardar, pasa sola a proponer `prev[N]`. Si aquel día no llegaste
+  a esa serie, se queda lo que acabas de meter. La primera vez de un ejercicio: **0**, no se inventa nada.
+  Al terminar el entreno, lo de hoy pasa a ser el `prev` de mañana.
+- **Las rayitas del carrusel son las series que hizo, no un objetivo.** Se eliminó `TARGET = 4` y el
+  "0/4": ahora se pinta una rayita por serie guardada (4 por fila, tope de 8) y el contador va vacío
+  hasta que hay algo. No suponer nunca cuántas series va a hacer.
+- **El salto del −/+ sale a la pantalla principal**, en una sola línea de chips (0,5 / 1 / 1,25 / 2,5 /
+  5 / 10) donde estaban los atajos, con la frase que explica para qué sirve. Ya no está en la hoja del
+  ejercicio.
+
+Lección para la implementación: no quitar cosas del usuario por iniciativa propia al simplificar; lo que
+sobraba eran los botones redundantes, no las funciones. Y el RIR, en pantalla, no escondido.
+
+**Quinta ronda: la pantalla de antes.** El usuario pidió la pantalla previa, la que da sentido al
+cronómetro de la cabecera: **definir sus días de entrenamiento**. Prototipada dentro del mismo archivo,
+que pasa a tener tres vistas:
+
+1. **Mis entrenamientos** — lista de días (uno de ejemplo ya hecho: "Pecho · Hombro · Tríceps" con sus 6
+   ejercicios). Cada tarjeta enseña los ejercicios con el icono de su tipo y tiene "Entrenar" y "Editar".
+   Un día con una sesión abierta se marca en verde y el botón pasa a "Seguir entrenando".
+2. **Definir el día** — nombre (campo de texto + nombres sugeridos) y lista de ejercicios: añadir
+   (con la misma hoja de tipo que ya existía, más un campo para escribir uno que no esté en la lista),
+   reordenar con ↑↓, quitar con deshacer, y tocar uno para cambiarle el tipo/barra. Guardar o eliminar.
+3. **Apuntar** — la de siempre, sin cambios de concepto. Ahora trabaja sobre los ejercicios del día que
+   abriste, el cronómetro arranca al pulsar "Entrenar" y "Terminar entrenamiento" vuelca las series de
+   hoy a `prev` (de donde sale el peso autorrellenado la próxima vez) y vuelve a la lista de días.
+
+Modelo de datos resultante, que es lo que hay que llevar a Kotlin: `DAYS = [{name, ex:[Ejercicio]}]`,
+donde cada ejercicio guarda `{name, kind, bar, step, prev:[{v,r}], sets:[]}`. La pantalla de apuntar no
+tiene datos propios: opera sobre `DAYS[dayIdx].ex`.
+
+**Implementado en la app (misma sesión).** El usuario dio el visto bueno y pidió meterlo tal cual.
+Ficheros nuevos:
+
+- `composeApp/.../model/WorkoutModels.kt` — modelo y toda la aritmética (`totalKg`, `valueFromTotal`,
+  `setLabel`, `volume`, `formatKg`) más el catálogo de tipos `WorkoutKind`.
+- `composeApp/.../screens/WorkoutScreen.kt` — lista de días + editor + hojas (añadir ejercicio, tipo).
+- `composeApp/.../screens/WorkoutLogScreen.kt` — apuntar series, con el teclado numérico propio.
+- `composeApp/.../services/WorkoutService.kt` — GET/PUT del plan.
+- `composeApp/src/commonTest/.../WorkoutModelsTest.kt` — 13 tests de la aritmética (pasan).
+- `server/.../model/WorkoutModels.kt`, `services/WorkoutService.kt`, `routes/WorkoutRoute.kt`.
+
+Tocado: `NavGraph.kt` (ruta `workout`), `DashboardScreen.kt` (tarjeta "Entreno" la primera del menú;
+las otras cuatro se reordenan en tres filas), `Application.kt` y `plugins/Routing.kt` (alta del servicio).
+
+Decisiones tomadas sin preguntar, por no bloquear (se pueden revertir):
+
+- **Persistencia en el servidor**, como el resto de la app, en `workout_plans`: una fila por usuario con
+  el plan entero en JSON. No se normaliza en tablas porque siempre se lee y se escribe completo y el
+  servidor no consulta nada por dentro; si algún día hace falta estadística por ejercicio en el
+  servidor, habrá que normalizarlo. **Requiere reiniciar el servidor** para que corra el `CREATE TABLE`.
+- **La sesión en curso también se guarda** (campo `session` del mismo documento), para que cerrar la app
+  a mitad de entrenamiento no borre las series apuntadas. Al volver a entrar, la pantalla se abre
+  directamente en el entrenamiento a medias.
+- Las tres vistas son **estado interno de un composable**, no rutas de navegación: comparten el plan en
+  memoria y el ida y vuelta es constante.
+- Si falla la red al guardar, se avisa con una franja ámbar y **no se pierde nada**: el estado sigue en
+  memoria y el siguiente guardado manda el plan entero otra vez.
+
+**Ajuste tras la primera prueba del usuario en Desktop**: el estado vacío era un `Surface` que se
+ceñía a su contenido y quedaba colgando arriba a la izquierda, y en una ventana ancha todo se estiraba
+de lado a lado. Dos arreglos: estado vacío propio (tarjeta centrada, con icono, qué es un "día" con un
+ejemplo y un único botón "Crear mi primer día"), y `Modifier.workoutPage()` — ancho máximo de 620 dp
+centrado — aplicado a la cabecera, la lista, el editor, la pantalla de apuntar y su barra inferior.
+En móvil no cambia nada; en Desktop deja de verse estirado. **Recordatorio: esto se ve también en
+Desktop, no solo en Android.**
+
+Verificado: `:composeApp:compileKotlinJvm`, `:compileKotlinJs`, `:compileKotlinWasmJs` y
+`:server:compileKotlin` en verde, y `:composeApp:jvmTest` 13/13. **Sin probar en Android ni en vivo**
+(este entorno no tiene SDK de Android y no se ha levantado el servidor): falta que el usuario lo
+compile y lo use.
+
+---
+
+## 2026-11-01 — Ronda de pruebas en Android + giro a la precisión del cálculo nutricional
+
+Sesión larga, en dos mitades: primero pruebas en dispositivo real, después un cambio de prioridad del
+usuario hacia la exactitud de los cálculos de nutrición.
+
+**Pruebas (Desktop y Android vía Tailscale)**
+
+- Montado el acceso desde el móvil: Tailscale + depuración inalámbrica por ADB (`adb tcpip 5555` +
+  `adb connect`), para poder probar sin cable. `AppConfig.kt` lo dejó el usuario con tres URLs
+  comentadas (Render / Tailscale / local).
+- Secciones 2 a 5 del plan de pruebas cubiertas. Saltadas a petición del usuario las pruebas que
+  dependen de OpenAI (sin créditos en la cuenta) y la sección 6 (GPS), que aparcó deliberadamente.
+- Arreglos salidos de las pruebas, **sin commitear**: coma decimal aceptada en peso/altura
+  (`parseDecimal`, cierra INC-2 de la revisión técnica), aviso rojo de "objetivos no cargados" que
+  parpadeaba en cada entrada a Nutrición (`goalsLoaded` → `goalsFailed`, semántica corregida), log a
+  `WARN` de los rechazos de Brevo, y botón de refresco manual de los datos de la pulsera en Nutrición y
+  Dashboard.
+
+**Investigación de la pulsera: cerrada como limitación externa**
+
+Medido en dispositivo (Xiaomi Smart Band 10 / Mi Fitness / Redmi Note 11 Pro 5G): pulsera 56 kcal,
+Mi Fitness 54, Health Connect 37, GymSmart 37. La banda sincroniza bien con su app; el cuello de botella
+es **Mi Fitness → Health Connect**, por lotes y con retraso, y el desfase va **siempre en el mismo
+sentido** (por debajo). Descartados uno a uno: batería/autoinicio de MIUI (ya correctos), permisos de
+Health Connect (correctos), ajustes de sincronización dentro de Mi Fitness (no existen). La FAQ de
+Xiaomi reconoce el desfase. **No es arreglable desde el código.**
+
+Efecto colateral valioso: esto **resuelve WEAR-5** del anexo A de `revision-tecnica-claude.md`, que
+estaba marcado como "pendiente de medir en dispositivo" y del que dependía el resto del anexo.
+**Mi Fitness sí escribe calorías activas** (activas y cadencia, nada de totales), así que el diseño
+semántico de la app es correcto y no hay que leer `TotalCaloriesBurnedRecord` ni restarle el BMR.
+
+**El fallo de producto que motivó el giro**
+
+El usuario puso objetivo de *ganar* peso, siguió las kcal de la app y **perdió peso**. Diagnosticado:
+en modo pulsera el presupuesto es `BMR + ajuste + calorías activas acumuladas hasta ese instante`, así
+que solo está completo a medianoche — y la lectura en vivo va sistemáticamente por debajo. Quien come
+mirando ese número se queda corto todos los días. Con cifras reales: objetivo mostrado ~2.200 contra una
+necesidad real de ~2.689, es decir 400-500 kcal/día de déficit **cuando se pretendía superávit**.
+
+**Auditoría del cálculo: 9 fallos**
+
+Entre ellos, los tres graves: el déficit encubierto de arriba; etiquetas de kg/semana falsas en
+`ProfileScreen` (−500 kcal/día prometía 1 kg/sem y da 0,45); y el propio concepto de ritmo en kg fijos,
+que es inválido porque "1 kg/semana" es 1,4%/sem a 70 kg (inseguro) y 0,83% a 120 kg. Más: el suelo
+calórico recorta el ritmo en silencio, Onboarding y Perfil ofrecen ritmos distintos, la fórmula está
+duplicada en tres sitios, las calorías de hoy contaminan días pasados (= BUG-N7), los macros no cuadran
+en casos extremos, y los mínimos de 1.500/1.200 kcal no tienen respaldo científico localizable.
+
+**Documento nuevo: `10-fundamento-cientifico.md`**
+
+A petición expresa del usuario ("quiero que te bases en la ciencia... que si eliges algo se cumpla"), se
+investigó la evidencia **antes** de tocar código y se escribió la fuente de verdad de todos los números
+de nutrición: cada constante con su fuente y su nivel de confianza (✅ sólido / 🟡 razonable / ⚠️
+convención), más una sección explícita de lo que **no** está bien establecido.
+
+Hallazgos que cambiaron el diseño previsto:
+- **El ritmo debe ir en % del peso corporal** (Helms 2014: 0,5-1%/sem; Garthe 2011: a 0,7%/sem se ganó
+  2,1% de masa magra, a 1,4%/sem nada).
+- **La ganancia tiene techo** en 0,25-0,5% PC/sem (Iraki et al. 2019); más superávit solo añade grasa.
+- **El 7700 kcal/kg no vale igual para ganar**: el músculo almacena ~1.000-1.800 kcal/kg y cuesta
+  ~4.150-4.570 construirlo, frente a ~7.700 de la grasa.
+- **La adaptación metabólica es impredecible individualmente** (rango −337 a +352 kcal/día, un tercio
+  sin reducción) → solo se puede medir, no predecir.
+- **Los multiplicadores de actividad son el eslabón más débil** (±350 kcal/día entre escalones
+  contiguos), lo que hace el autoajuste **más** necesario sin pulsera que con ella.
+- **El método Navy de % de grasa se descarta** (infraestima ~6 puntos vs DXA); se propone seguir
+  cintura como medida cruda.
+- Mifflin-St Jeor **confirmada** como la elección correcta sin composición corporal.
+
+**Implementación: los 4 bloques, completos en esta misma sesión**
+
+El usuario aprobó las dos decisiones de producto ("añádelas si va") y luego pidió los cuatro bloques
+("hazlos todos"). Resultado, todo sin commitear:
+
+- **Cintura**: campo opcional en el diálogo de peso + `CompositionCard`, que cruza la tendencia de peso
+  con la de cintura para decir si lo ganado es músculo o grasa. Umbrales de 1 cm y 0,5 kg, por debajo
+  de los cuales se considera estable, porque es el orden de magnitud del ruido de medición.
+- **`shared/.../nutrition/NutritionMath.kt`**: la pieza que lo sostiene todo. Como servidor y cliente
+  dependen ambos de `shared`, la fórmula es ahora **una sola implementación real**, no una copia
+  sincronizada a mano. El Onboarding necesita calcular en local (la vista previa existe antes de que
+  haya perfil), así que dejarla solo en el servidor no era opción.
+- **Ritmo en % de peso corporal** con rangos validados en servidor, etiquetas derivadas del número,
+  suelo en el BMR y aviso cuando ese suelo recorta el ritmo. **Recomposición** añadida como objetivo.
+- **Modo pulsera**: media de 14 días vía `aggregateGroupByPeriod` + arrastre del día anterior. La
+  lectura en curso pasa a informativa. Arreglado de paso BUG-N7.
+- **Autoajuste**: `GET /profile/adaptive`, con regresión por mínimos cuadrados sobre los pesajes,
+  puertas de entrada de datos mínimos, rechazo de valores absurdos y **límite de una vez por semana**
+  (sin él la mezcla 0,3/0,7 se aplicaría en cada carga de pantalla y anularía el suavizado, que es
+  precisamente lo que aporta).
+- **18 pruebas** en `shared/src/commonTest` que verifican lo que la app le promete al usuario: que cada
+  preset anuncia los kg/semana que de verdad produce, que el ritmo escala con el peso, que el recorte
+  del suelo se reporta, que los macros cuadran en 16 combinaciones de peso y kcal, y que el autoajuste
+  ni salta ni se traga datos imposibles.
+
+**Cuatro migraciones automáticas de base de datos**, todas idempotentes y dentro de `runCatching`: la
+columna de cintura, las dos del autoajuste, la **conversión de unidades de `goal_rate`** (kcal/día → %
+semanal, discriminando por `ABS(goal_rate) > 10`) y el encaje de `goal_rate` en el rango seguro. Esta
+última hizo falta porque un perfil convertido queda en un valor arbitrario (-400 kcal a 70 kg son
+-0,36 %/sem) que no cae en ningún rango válido, y el usuario no habría podido guardar su perfil.
+
+Sin verificar con build real: `HealthConnectProvider.getEnergySummary()`, que es `androidMain`.
+
+---
+
 ## 2026-10-26 (continuación 5) — Fase 5: bloque 1 completo + parte del bloque 2
 
 Usuario pidió commitear lo de Fase 4 y empezar la Fase 5 por el orden de ataque propuesto. Se atacó el

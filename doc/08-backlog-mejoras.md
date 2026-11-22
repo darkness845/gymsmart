@@ -380,6 +380,48 @@ el uso real lo justifica. Verificado con `:server:compileKotlin`. | `BodyAnalysi
 
 ---
 
+## 🔬 Auditoría del cálculo de kcal por objetivo (2026-11-22) — AUD-1 a AUD-24
+
+Auditoría independiente pedida por el usuario, con cuatro agentes (investigación externa contra fuentes
+primarias, auditoría de código con tests ejecutados, red team adversarial, y un evaluador que verificó
+los hallazgos graves por su cuenta). **Solo diagnóstico: no se tocó código.**
+
+**El inventario completo vive en [11-auditoria-kcal.md](11-auditoria-kcal.md)** — 24 hallazgos con
+gravedad, números reproducibles, lo que se declaró FALSO o exagerado, lo que no hay que tocar, el
+cumplimiento de los 44 requisitos de referencia, y el plan de arreglo acordado. Resumen para esta cola:
+
+| ID | Gravedad | Qué |
+|---|---|---|
+| AUD-1 | 🔴 CRÍTICO | No hay suelo calórico absoluto (el objetivo colapsa a 0,90 × BMR en sedentarios), `carryOverKcal` se suma **fuera** del tope del 25 % y **no está condicionado a `activityLevel`**. Ningún test lo cubre: el barrido nunca pasa `carryOverKcal` ni `measuredTdee`. |
+| AUD-2 | 🔴 ALTO | `NutritionScreen.kt:389` y `OnboardingScreen.kt:438` prometen *"nunca por debajo de tu metabolismo basal"*; ese suelo fue retirado en §7.3 y el objetivo está al 90 % del BMR justo cuando ese aviso aparece. |
+| AUD-3 | 🔴 ALTO | `measuredTdee ?: formulaTdee` sustituye en lugar de componerse: con `adaptive_tdee` presente, `activityLevel` deja de influir, la pulsera se descarta, y no hay ningún camino de invalidación. |
+| AUD-4 | 🔴 ALTO | El `previousTdee` del autoajuste no recibe `avgActiveKcal` → en modo pulsera se ancla a `BMR × 1,2`. `AdaptiveCard` muestra "+100 kcal/día" mientras el objetivo baja 139. |
+| AUD-5 | 🔴 ALTO | `RateSlider` no recibe el TDEE, así que su tercio superior no cambia el objetivo mientras promete +54 % de pérdida. El ritmo por defecto (−0,75 %) ya está recortado en `sedentary` **y** en `light`. |
+| AUD-6 | 🟠 MEDIO | No hay tope de superávit: hasta +32 % frente al +10-20 % que fija §10.3. `rateLimited` nunca puede ser `true` en `gain_muscle`. |
+| AUD-7 | 🟠 MEDIO | `recomp` produce salida **idéntica** a `lose_fat`; difiere solo en `maxRateFor`. Nada de §8/§9.3 (cintura, entrenamiento, sugerencia por perfil) está implementado. |
+| AUD-8 | 🟠 MEDIO | El IMC se calcula, se pinta y **nunca se usa como guardia**. No hay condición de parada ni transición a `maintain`. |
+| AUD-9 | 🟠 MEDIO | Mínimos del autoajuste más laxos que los de §5.3 (10 días / 4 pesajes), y el guard `[800, 6000]` trunca asimétricamente el ruido → sesgo de +289 kcal/d. |
+| AUD-10 | 🟠 MEDIO | El registro **parcial** (no el uniforme, que se autocancela) endurece el déficit: 31-44 % real informado como 25 %. `getDailyIntake` no exige mínimo de kcal por día. |
+| AUD-11 | 🟠 MEDIO | Sin snapshot ni `calcVersion`: los días pasados se juzgan con el perfil de hoy, y cambiar una constante reescribe el historial entero. |
+| AUD-12 | 🟠 MEDIO | `weight_history` solo se escribe si el peso **cambia** → muestra sesgada que infla la pendiente, y `recomp` se queda sin autoajuste habiéndose pesado a diario. |
+| AUD-13 | 🟠 MEDIO | Media de la pulsera sin mínimo de días (un solo día puede ser la media). `WEARABLE_AVERAGE_DAYS` no se referencia desde ningún archivo. |
+| AUD-14 | 🟠 MEDIO | Fallo silencioso de la pulsera: sin datos el gasto cae a `BMR × 1,2` (−300 kcal/d) sin aviso. `wearableEnergy` se asigna y nunca se lee. |
+| AUD-15 | 🟠 MEDIO | `avgActiveKcal`/`carryOverKcal` sin rango ni `isFinite`: `NaN` → 500, `Infinity` → `Int.MAX_VALUE`, negativos → objetivo negativo. Ver hallazgo 15 de [03-seguridad.md](03-seguridad.md). |
+| AUD-16 | 🟠 MEDIO | **Falta `ALTER TABLE ... ADD COLUMN has_wearable`** (condicional: si la BBDD desplegada es anterior a `dc1b216`, `POST /profile/save` y el registro de peso están rotos). ⏳ **Pendiente de la verificación de 30 s del usuario.** |
+| AUD-17..24 | 🟡 BAJO | Macros degenerados sin señal · la migración SQL *sube* el ritmo · `resolvedAge` muerto por formato de fecha · `rateLimited` sin banda muerta · textos de "tiempo real" y caja "BMR" que muestra el TDEE · `defaultRateFor(gain)` fuera de la rejilla del slider · formateo que pierde el signo · escrituras no atómicas. |
+
+**Veredicto de fondo**: el modelo energético es correcto (ritmo en %, déficit por velocidad y no por
+plazo, `BMR + ActiveCalories` sin doble conteo), y las constantes del código coinciden **todas** con
+`10-fundamento-cientifico.md`. El fallo está en **dónde se imponen los invariantes**: AUD-1, AUD-2, AUD-5
+y AUD-6 son **un solo error de razonamiento** — §7.3 cambió un *suelo de ingesta* por un *tope de
+déficit* sin re-derivar las consecuencias.
+
+**Decisiones del usuario (2026-11-22)**: el suelo será por **disponibilidad energética** (≥30 kcal/kg MM/día
+con masa magra estimada), y `carryOverKcal` se **acota dentro del recorte y se condiciona a modo pulsera**
+(se descartó convertirlo en presupuesto semanal o eliminarlo).
+
+---
+
 ## Lo que está bien hecho (no tocar, y reutilizar)
 
 - **`OnboardingScreen` es el modelo a seguir**: valida rangos reales con mensajes claros y maneja éxito

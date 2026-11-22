@@ -132,7 +132,35 @@ efecto en producción.
   datos silenciosa y, de rebote, oculta cualquier problema de seguridad o de cuota en la base de datos.
 - **Estado**: 🟠 Abierto (DB-1 en el backlog).
 
+### 15. Parámetros de cálculo sin validar en `/profile/me` y `/profile/save` (encontrado en la auditoría de kcal)
+- **Dónde**: `server/.../routes/ProfileRoute.kt:92-93` (y 186).
+- **Problema**: `avgActiveKcal` y `carryOverKcal` se leen con `toDoubleOrNull() ?: 0.0`, **sin rango y sin
+  `isFinite`**, en contraste con el resto del endpoint, que sí valida peso/altura/edad/sexo/goal/ritmo.
+  `String.toDoubleOrNull()` acepta `"NaN"` e `"Infinity"`. `NaN` → `roundToInt()` lanza → 500;
+  `Infinity` → objetivo `Int.MAX_VALUE`; `-3000` → objetivo **−1010 kcal** con grasa de **−17 g**
+  (`macrosFor` no tiene guarda para `targetKcal` negativo).
+- **Impacto hoy**: bajo como *seguridad* — los dos endpoints exigen sesión, así que no hay vector externo:
+  el único que puede mandar esto es el propio autor o un bug del cliente (p. ej. una pulsera que devuelva
+  basura). El impacto real es de **corrección del cálculo**, no de seguridad.
+- **Impacto con usuarios reales**: un cliente manipulado puede fijarse un objetivo calórico arbitrario, y
+  un `NaN` provoca un 500 trivialmente reproducible.
+- **Estado**: 🟠 Abierto. Es la misma puerta que debe acotar AUD-1, así que se arregla en el **Bloque A**
+  del plan de [11-auditoria-kcal.md](11-auditoria-kcal.md). Detalle en AUD-15 de ese documento.
+
 ## 🟡 Bajos
+
+### 16. `GET /profile/adaptive` escribe en la BBDD, sin transacción (encontrado en la auditoría de kcal)
+- **Dónde**: `server/.../routes/ProfileRoute.kt:100-123` + `services/ProfileService.kt:285-348`.
+- **Problema**: un `GET` con efectos secundarios de escritura. La secuencia
+  `getProfile → comprobar cooldown → reconcile → saveAdaptiveTdee` no es atómica, así que dos peticiones
+  simultáneas (doble apertura de pantalla, reintento de red) pueden aplicar la mezcla dos veces — justo
+  contra lo que avisa el comentario de `ProfileService.kt:266-273`. En el mismo saco, `upsertProfile` usa
+  `INSERT OR REPLACE` (que borra `adaptive_tdee`) y lo restaura en una **segunda** llamada: si esa falla,
+  el TDEE medido se pierde sin rastro **después** de haber escrito ya el perfil.
+- **Impacto hoy**: bajo (un solo usuario), no nulo.
+- **Impacto con usuarios reales**: corrupción silenciosa del parámetro que gobierna el objetivo calórico;
+  además los GET son cacheables y reintentables por proxies e infraestructura.
+- **Estado**: 🟡 Abierto. Detalle en AUD-24 de [11-auditoria-kcal.md](11-auditoria-kcal.md).
 
 ### 8. `EmailService` construye JSON por interpolación de string sin escapar
 - **Dónde**: servidor, `EmailService.kt` (Brevo/Resend).
