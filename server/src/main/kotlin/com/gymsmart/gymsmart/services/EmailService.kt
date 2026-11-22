@@ -3,6 +3,7 @@ package com.gymsmart.gymsmart.services
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.request.*
+import io.ktor.client.statement.*
 import io.ktor.http.*
 import kotlinx.serialization.json.*
 import org.slf4j.LoggerFactory
@@ -34,7 +35,9 @@ class EmailService {
                 contentType(ContentType.Application.Json)
                 setBody(body.toString())
             }
-            logger.debug("Brevo response: {}", response.status)
+            if (!response.status.isSuccess()) {
+                logger.warn("Brevo rechazó el envío a {}: {} — {}", to, response.status, response.bodyAsText())
+            }
             response.status.isSuccess()
         } catch (e: Exception) {
             logger.warn("Error enviando email: {}", e.message)
