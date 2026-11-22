@@ -11,7 +11,9 @@ data class ProfileRequest(
     val activityLevel: String,
     val goal:          String,
     val goalRate:      Double,
-    val hasWearable:   Boolean = false
+    val hasWearable:   Boolean = false,
+    /** Opcional, solo lo manda el diálogo de añadir peso (ver doc/10-fundamento-cientifico.md §9). */
+    val waistCm:       Double? = null
 )
 
 @Serializable
@@ -34,7 +36,44 @@ data class NutritionTargets(
     val carbsG:      Int,
     val fatG:        Int,
     val bmi:         Double,
-    val bmiCategory: String
+    val bmiCategory: String,
+    val bmr:            Int     = 0,
+    /** El suelo de seguridad recortó el ritmo pedido: hay que avisar, no callarlo. */
+    val rateLimited:    Boolean = false,
+    /** Ritmo pedido y ritmo realmente alcanzable, en % de peso corporal por semana. */
+    val requestedRate:  Double  = 0.0,
+    val effectiveRate:  Double  = 0.0,
+    /** El gasto viene de medición real (autoajuste) y no de la fórmula. */
+    val tdeeIsMeasured: Boolean = false,
+    /** El suelo por disponibilidad energética mordió: el objetivo **es** ese suelo. */
+    val energyFloorHit: Boolean = false,
+    /** El suelo calculado para este cuerpo, en kcal, para poder nombrarlo en el aviso. */
+    val energyFloor:    Int     = 0,
+    /** Arrastre del día realmente aplicado, ya acotado y filtrado por modo pulsera. */
+    val appliedCarryOver: Int   = 0,
+    /**
+     * No hay déficit seguro posible: el suelo alcanza el mantenimiento y el objetivo se queda ahí.
+     * Es la diferencia entre "voy despacio" y "no voy", y hay que decírselo al usuario.
+     */
+    val noSafeDeficit:  Boolean = false
+)
+
+/** Respuesta de `GET /profile/adaptive` (autoajuste). */
+@Serializable
+data class AdaptiveResponse(
+    val adjusted:     Boolean,
+    val reason:       String? = null,
+    val newTdee:      Int?    = null,
+    val measuredTdee: Int?    = null,
+    /**
+     * Objetivo calórico resultante del ajuste.
+     *
+     * `deltaKcal` es ahora el cambio real **del objetivo**, no la diferencia entre gastos mezclados:
+     * esa podía tener el signo opuesto a lo que el usuario iba a comer (AUD-4).
+     */
+    val newTargetKcal: Int?   = null,
+    val previousTdee: Int?    = null,
+    val deltaKcal:    Int?    = null
 )
 
 @Serializable

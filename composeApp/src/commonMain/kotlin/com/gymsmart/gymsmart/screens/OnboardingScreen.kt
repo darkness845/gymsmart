@@ -21,6 +21,9 @@ import com.gymsmart.gymsmart.services.ProfileService
 import com.gymsmart.gymsmart.ui.theme.GymSmartColors
 import com.gymsmart.gymsmart.validation.validateAge
 import com.gymsmart.gymsmart.validation.validateGoalRate
+import com.gymsmart.gymsmart.components.RateSlider
+import com.gymsmart.gymsmart.nutrition.NutritionMath
+import com.gymsmart.gymsmart.validation.parseDecimal
 import com.gymsmart.gymsmart.validation.validateHeightCm
 import com.gymsmart.gymsmart.validation.validateWeightKg
 import kotlinx.coroutines.launch
@@ -157,8 +160,8 @@ fun OnboardingScreen(
                             scope.launch {
                                 profileService.saveProfile(
                                     ProfileRequest(
-                                        weightKg      = form.weightKg.toDouble(),
-                                        heightCm      = form.heightCm.toDouble(),
+                                        weightKg      = parseDecimal(form.weightKg)!!,
+                                        heightCm      = parseDecimal(form.heightCm)!!,
                                         age           = form.age.toInt(),
                                         sex           = form.sex,
                                         activityLevel = form.activityLevel,
@@ -247,8 +250,8 @@ private fun StepBody(form: FormState, onChange: (FormState) -> Unit) {
                 }
             }
         }
-        val w = form.weightKg.toDoubleOrNull()
-        val h = form.heightCm.toDoubleOrNull()
+        val w = parseDecimal(form.weightKg)
+        val h = parseDecimal(form.heightCm)
         if (w != null && h != null && h > 0) BmiCard(bmi = w / ((h / 100.0) * (h / 100.0)))
     }
 }
@@ -301,39 +304,75 @@ private fun StepGoal(form: FormState, onChange: (FormState) -> Unit) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 CardTitle("¿Cuál es tu objetivo?")
                 listOf(
-                    Triple("lose_fat",    "🔥", "Perder grasa\nDéficit calórico controlado"),
-                    Triple("maintain",    "⚖️", "Mantener peso\nComer en mantenimiento"),
-                    Triple("gain_muscle", "💪", "Ganar músculo\nSuperávit calórico limpio")
+                    Triple(NutritionMath.GOAL_LOSE,     "🔥", "Perder grasa\nDéficit calórico controlado"),
+                    Triple(NutritionMath.GOAL_RECOMP,   "⚖️", "Recomposición\nPerder grasa y ganar músculo a la vez"),
+                    Triple(NutritionMath.GOAL_GAIN,     "💪", "Ganar músculo\nSuperávit calórico limpio"),
+                    Triple(NutritionMath.GOAL_MAINTAIN, "➖", "Mantener peso\nComer en mantenimiento")
                 ).forEach { (value, emoji, desc) ->
                     SelectableRow(emoji, desc, form.goal == value) {
-                        onChange(form.copy(goal = value, goalRate = if (value == "maintain") 0.0 else 0.0))
+                        onChange(form.copy(goal = value, goalRate = NutritionMath.defaultRateFor(value)))
                     }
                 }
             }
         }
 
-        if (form.goal == "lose_fat" || form.goal == "gain_muscle") {
+        // La recomposición funciona sobre todo en principiantes y en quien tiene grasa que perder; en
+        // alguien ya entrenado y definido apenas ocurre. Decirlo evita prometer de más (§8).
+        if (form.goal == NutritionMath.GOAL_RECOMP) {
+            OnboardingCard {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    CardTitle("⚖️ Sobre la recomposición")
+                    Text(
+                        "Funciona mejor si empiezas ahora o si tienes grasa que perder. Es más lenta " +
+                            "que una fase dedicada de definición o de volumen, pero mejora tu " +
+                            "composición sin que la báscula se mueva mucho. Necesita entrenamiento de " +
+                            "fuerza y proteína alta.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = GymSmartColors.TextSecondary, lineHeight = 18.sp
+                    )
+                }
+            }
+        }
+
+        val pesoActual = parseDecimal(form.weightKg)
+        if (form.goal != NutritionMath.GOAL_MAINTAIN && form.goal.isNotBlank() && pesoActual != null) {
             OnboardingCard {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     CardTitle("Ritmo de cambio")
                     Text(
-                        if (form.goal == "lose_fat") "Cuanto más lento, más músculo conservas."
-                        else "Cuanto más lento, menos grasa acumulas.",
+                        when (form.goal) {
+                            NutritionMath.GOAL_LOSE -> "Cuanto más lento, más músculo conservas."
+                            NutritionMath.GOAL_GAIN -> "Cuanto más lento, menos grasa acumulas."
+                            else -> "En recomposición se come cerca del mantenimiento."
+                        },
                         style = MaterialTheme.typography.bodySmall, color = GymSmartColors.TextSecondary,
                         modifier = Modifier.padding(bottom = 4.dp)
                     )
-                    val options = if (form.goal == "lose_fat") listOf(
-                        -300.0 to "🐢  Lento — déficit de 300 kcal/día",
-                        -400.0 to "🏃  Moderado — déficit de 400 kcal/día",
-                        -500.0 to "⚡  Rápido — déficit de 500 kcal/día"
-                    ) else listOf(
-                        300.0 to "🐢  Lento — superávit de 300 kcal/día",
-                        400.0 to "🏃  Moderado — superávit de 400 kcal/día",
-                        500.0 to "⚡  Rápido — superávit de 500 kcal/día"
+                    // El deslizador necesita el gasto para que su extremo sea el tope **efectivo** y no
+                    // prometa ritmos que el tope del 25% o el suelo van a recortar después (AUD-5).
+                    // En este paso ya están todos los datos del cuerpo, así que se puede calcular.
+                    val alturaActual = parseDecimal(form.heightCm)
+                    val edadActual = form.age.toIntOrNull()
+                    val gasto = if (alturaActual != null && edadActual != null && form.sex.isNotBlank()) {
+                        NutritionMath.tdee(
+                            NutritionMath.bmr(form.sex, pesoActual, alturaActual, edadActual),
+                            form.activityLevel
+                        )
+                    } else null
+                    val suelo = if (alturaActual != null && edadActual != null && form.sex.isNotBlank()) {
+                        NutritionMath.energyAvailabilityFloor(form.sex, pesoActual, alturaActual, edadActual)
+                    } else 0.0
+
+                    // Mismo componente y misma fuente de números que ProfileScreen: antes cada
+                    // pantalla ofrecía valores distintos (-300/-400/-500 aquí vs -250/-400/-500 allí).
+                    RateSlider(
+                        goal = form.goal,
+                        weightKg = pesoActual,
+                        ratePct = form.goalRate,
+                        onRateChange = { onChange(form.copy(goalRate = it)) },
+                        tdee = gasto,
+                        energyFloor = suelo
                     )
-                    options.forEach { (rate, label) ->
-                        SelectableRow("", label, form.goalRate == rate) { onChange(form.copy(goalRate = rate)) }
-                    }
                 }
             }
         }
@@ -342,30 +381,27 @@ private fun StepGoal(form: FormState, onChange: (FormState) -> Unit) {
 
 @Composable
 private fun StepSummary(form: FormState) {
-    val weight = form.weightKg.toDoubleOrNull() ?: 0.0
-    val height = form.heightCm.toDoubleOrNull() ?: 0.0
+    val weight = parseDecimal(form.weightKg) ?: 0.0
+    val height = parseDecimal(form.heightCm) ?: 0.0
     val age    = form.age.toIntOrNull() ?: 0
 
-    val bmr = if (form.sex == "male")
-        10.0 * weight + 6.25 * height - 5.0 * age + 5.0
-    else
-        10.0 * weight + 6.25 * height - 5.0 * age - 161.0
-
-    val tdee = if (form.activityLevel == "wearable") bmr.toInt()
-    else {
-        val multiplier = when (form.activityLevel) {
-            "sedentary" -> 1.2; "light" -> 1.375; "moderate" -> 1.55; "active" -> 1.725; else -> 1.9
-        }
-        (bmr * multiplier).toInt()
-    }
-
-    val dailyDelta = form.goalRate.toInt()
-    val minKcal    = if (form.sex == "male") 1500 else 1200
-    val target     = (tdee + dailyDelta).coerceAtLeast(minKcal)
-    val proteinG   = (weight * if (form.goal == "lose_fat") 2.0 else 1.8).toInt()
-    val fatG       = (target * 0.25 / 9.0).toInt()
-    val carbsG     = ((target - proteinG * 4 - fatG * 9) / 4.0).toInt().coerceAtLeast(0)
-    val bmi        = if (height > 0) weight / ((height / 100.0) * (height / 100.0)) else 0.0
+    // Misma función que usa el servidor, desde `shared`. Antes esto era una copia de la fórmula que
+    // ya había divergido de la del servidor (doc/10-fundamento-cientifico.md).
+    val result = NutritionMath.computeTargets(
+        sex           = form.sex,
+        weightKg      = weight,
+        heightCm      = height,
+        age           = age,
+        activityLevel = form.activityLevel,
+        goal          = form.goal,
+        ratePct       = form.goalRate
+    )
+    val tdee     = result.tdee
+    val target   = result.targetKcal
+    val proteinG = result.proteinG
+    val fatG     = result.fatG
+    val carbsG   = result.carbsG
+    val bmi      = result.bmi
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         OnboardingCard {
@@ -410,13 +446,18 @@ private fun StepSummary(form: FormState) {
                 Text(
                     "• Fórmula Mifflin-St Jeor para BMR\n" +
                             (if (form.hasWearable == true)
-                                "• Modo pulsera: objetivo base = BMR\n• Pulsera suma kcal activas en tiempo real\n"
+                                // Decía "en tiempo real", justo lo que §1.3 prohíbe prometer: el objetivo
+                                // usa la media de días **completos** a propósito, para que el presupuesto
+                                // no se mueva mientras comes (AUD-21).
+                                "• Modo pulsera: BMR + media de kcal activas\n• Media de días completos, no la lectura de hoy\n"
                             else
                                 "• Factor de actividad × BMR = TDEE\n") +
-                            "• Proteína: ${if (form.goal == "lose_fat") "2.0" else "1.8"} g/kg\n" +
+                            "• Proteína: ${if (form.goal == NutritionMath.GOAL_LOSE || form.goal == NutritionMath.GOAL_RECOMP) "2.0" else "1.8"} g/kg\n" +
                             "• Grasa: 25% kcal totales\n" +
                             "• Carbos: resto calórico\n" +
-                            "• Mínimo calórico de seguridad aplicado",
+                            // El suelo del BMR se retiró en §7.3; prometerlo era falso (AUD-2).
+                            "• Ajuste máximo: 25% de tu gasto\n" +
+                            "• Suelo según tu masa magra estimada",
                     style = MaterialTheme.typography.bodySmall, color = GymSmartColors.TextSecondary, lineHeight = 18.sp
                 )
             }
@@ -620,9 +661,10 @@ private fun validate(step: Step, f: FormState): String? = when (step) {
     Step.ACTIVITY  -> if (f.activityLevel.isEmpty()) "Selecciona tu nivel de actividad" else null
     Step.GOAL ->
         if (f.goal.isEmpty()) "Selecciona tu objetivo"
-        // El Onboarding guarda el ritmo como Double (0.0 = sin seleccionar) en vez del String del
-        // desplegable que usa ProfileScreen — se traduce a "" para reusar la misma validación.
-        else validateGoalRate(f.goal, if (f.goalRate == 0.0) "" else f.goalRate.toString())
-            ?.let { "Selecciona el ritmo de cambio" }
+        // Se valida el Double directamente con el validador compartido. Antes se traducía 0.0 a ""
+        // para reusar la validación de ProfileScreen, pero en recomposición 0 % (mantenimiento) es
+        // un ritmo perfectamente válido y quedaba rechazado como "sin seleccionar".
+        else if (!NutritionMath.isRateValid(f.goal, f.goalRate)) "Selecciona el ritmo de cambio"
+        else null
     Step.SUMMARY -> null
 }

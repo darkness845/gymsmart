@@ -59,6 +59,30 @@ class NutritionService(private val turso: TursoService) {
         return turso.extractRows(result)
     }
 
+    /**
+     * Ingesta total por día desde `sinceDay` (inclusive), para el autoajuste
+     * (doc/10-fundamento-cientifico.md §5). Solo devuelve días con comidas registradas: los días sin
+     * registrar **no** cuentan como 0 kcal, que falsearía la media a la baja y haría creer al sistema
+     * que el usuario gasta mucho más de lo real.
+     */
+    suspend fun getDailyIntake(userId: String, sinceDay: String): List<Pair<String, Double>> {
+        val result = turso.execute(
+            """
+            SELECT date, SUM(grams * kcal_per_100 / 100.0) AS kcal
+            FROM meals
+            WHERE user_id = ? AND date >= ?
+            GROUP BY date
+            ORDER BY date ASC
+            """.trimIndent(),
+            listOf(userId, sinceDay)
+        )
+        return turso.extractRows(result).mapNotNull { row ->
+            val day = row.getOrNull(0) ?: return@mapNotNull null
+            val kcal = row.getOrNull(1)?.toDoubleOrNull() ?: return@mapNotNull null
+            day to kcal
+        }
+    }
+
     // Historial — últimos alimentos únicos usados
     suspend fun getFoodHistory(userId: String): List<List<String?>> {
         val result = turso.execute(

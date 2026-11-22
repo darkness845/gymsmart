@@ -14,6 +14,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.*
 import com.gymsmart.gymsmart.routes.getLocation
 import com.gymsmart.gymsmart.services.GpsService
+import com.gymsmart.gymsmart.services.WorkoutService
 
 fun main() {
     val port = System.getenv("PORT")?.toInt() ?: 8080
@@ -39,6 +40,7 @@ fun Application.module() {
     val nutritionService = NutritionService(turso)
     val profileService   = ProfileService(turso)
     val gpsService       = GpsService(turso)
+    val workoutService   = WorkoutService(turso)
 
     runBlocking {
         userService.initTable()
@@ -46,8 +48,9 @@ fun Application.module() {
         profileService.initTable()
         profileService.initWeightHistoryTable()
         gpsService.initTables()
+        workoutService.initTable()
         profileService.initSubscriptionTable()
     }
 
-    configureRouting(userService, nutritionService, profileService, gpsService)
+    configureRouting(userService, nutritionService, profileService, gpsService, workoutService)
 }

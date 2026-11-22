@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -40,6 +41,7 @@ import com.gymsmart.gymsmart.BarcodeScannerSheet
 import com.gymsmart.gymsmart.config.AppConfig
 import com.gymsmart.gymsmart.model.FoodSearchResponse
 import com.gymsmart.gymsmart.model.MealEntry
+import com.gymsmart.gymsmart.model.NutritionTargets
 import com.gymsmart.gymsmart.model.Nutriments
 import com.gymsmart.gymsmart.model.Product
 import com.gymsmart.gymsmart.model.estimatedKcalPer100
@@ -47,6 +49,7 @@ import com.gymsmart.gymsmart.services.HealthDataProvider
 import com.gymsmart.gymsmart.services.NutritionService
 import com.gymsmart.gymsmart.services.ProfileService
 import com.gymsmart.gymsmart.services.WEARABLE_POLL_INTERVAL_MS
+import com.gymsmart.gymsmart.services.WearableEnergy
 import com.gymsmart.gymsmart.ui.theme.GymSmartColors
 import io.ktor.client.*
 import io.ktor.client.plugins.contentnegotiation.*
@@ -106,26 +109,26 @@ fun NutritionScreen(
 
     fun closeSheet() { scope.launch { sheetState.hide() }.invokeOnCompletion { sheetMode = null } }
 
-    var activeCalories  by remember { mutableStateOf(0.0) }
-    var proteinGoalBase by remember { mutableStateOf(150.0) }
-    var fatGoalBase     by remember { mutableStateOf(65.0) }
-    var carbGoalBase    by remember { mutableStateOf(200.0) }
-    var kcalGoal        by remember { mutableStateOf(2000.0) }
+    var activeCalories    by remember { mutableStateOf(0.0) }
+    var wearableRefreshing by remember { mutableStateOf(false) }
     var hasWearable     by remember { mutableStateOf(false) }
-    // Sin esto, si falla la carga del perfil el usuario cuenta todo el día contra los valores de
-    // arriba (2000 kcal, etc.) creyendo que son sus objetivos reales, sin ninguna señal de que no lo
-    // son (ver NUT-3 en doc/08-backlog-mejoras.md).
-    var goalsLoaded     by remember { mutableStateOf(false) }
+    var wearableEnergy  by remember { mutableStateOf(WearableEnergy.EMPTY) }
+    // Los objetivos los calcula entero el servidor con NutritionMath (compartido). Antes esta pantalla
+    // reescalaba grasa y carbos por su cuenta con una tercera copia de la fórmula, que podía divergir
+    // de la del servidor y la del Onboarding.
+    var targets         by remember { mutableStateOf<NutritionTargets?>(null) }
+    // Sin esto, si falla la carga del perfil el usuario cuenta todo el día contra valores por defecto
+    // creyendo que son sus objetivos reales, sin ninguna señal de que no lo son (NUT-3). Empieza en
+    // false y solo pasa a true en el onFailure: así no se confunde "todavía cargando" con "falló de
+    // verdad" (antes mostraba el aviso rojo un instante en cada entrada a la pantalla).
+    var goalsFailed     by remember { mutableStateOf(false) }
 
-    val proteinGoal by remember { derivedStateOf { proteinGoalBase } }
-    val fatGoal by remember { derivedStateOf {
-        if (hasWearable && activeCalories > 0) ((kcalGoal + activeCalories) * 0.25 / 9.0) else fatGoalBase
-    }}
-    val carbGoal by remember { derivedStateOf {
-        if (hasWearable && activeCalories > 0) {
-            ((kcalGoal + activeCalories - proteinGoalBase * 4.0 - fatGoal * 9.0) / 4.0).coerceAtLeast(0.0)
-        } else carbGoalBase
-    }}
+    val kcalGoal    = targets?.targetKcal?.toDouble() ?: 2000.0
+    val proteinGoal = targets?.proteinG?.toDouble()   ?: 150.0
+    val carbGoal    = targets?.carbsG?.toDouble()     ?: 200.0
+    val fatGoal     = targets?.fatG?.toDouble()       ?: 65.0
+
+    val isToday = selectedDate == today
 
     val totalKcal     by remember(selectedDate) { derivedStateOf { meals.values.flatten().sumOf { it.kcal } } }
     val totalProteins by remember(selectedDate) { derivedStateOf { meals.values.flatten().sumOf { it.proteins } } }
@@ -135,27 +138,34 @@ fun NutritionScreen(
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(selectedDate) {
-        profileService.getProfileResponse()
+        // La energía de la pulsera se lee ANTES del perfil porque el objetivo depende de ella: el
+        // servidor no tiene acceso a Health Connect, así que es el cliente quien aporta la media.
+        val energy = runCatching { healthDataProvider.getEnergySummary() }
+            .getOrDefault(WearableEnergy.EMPTY)
+        wearableEnergy = energy
+
+        profileService.getProfileResponse(
+            avgActiveKcal = energy.takeIf { it.hasData }?.averageActiveKcal,
+            // El arrastre solo tiene sentido para hoy. Aplicarlo a un día pasado falsearía su
+            // objetivo con actividad que no es suya (BUG-N7 de la revisión técnica).
+            carryOverKcal = if (isToday) energy.carryOverKcal else 0.0
+        )
             .onSuccess { response ->
-                kcalGoal        = response.targets.targetKcal.toDouble()
-                proteinGoalBase = response.targets.proteinG.toDouble()
-                carbGoalBase    = response.targets.carbsG.toDouble()
-                fatGoalBase     = response.targets.fatG.toDouble()
-                hasWearable     = response.profile.activityLevel == "wearable"
-                goalsLoaded     = true
+                targets     = response.targets
+                hasWearable = response.profile.activityLevel == "wearable"
+                goalsFailed = false
             }
-            .onFailure { goalsLoaded = false }
+            .onFailure { goalsFailed = true }
+
         nutritionService.getUserMeals(selectedDate.toString())?.forEach { entryWithTarget ->
             val mealType = MealType.entries.find { it.name == entryWithTarget.mealType }
             if (mealType != null) meals[mealType]?.add(entryWithTarget.entry)
         }
     }
 
-    // WEAR-3 (doc/08-backlog-mejoras.md): antes esto era una lectura única dentro del LaunchedEffect de
-    // arriba. Si el usuario abría la pantalla a primera hora, el "+N kcal" de la pulsera se quedaba
-    // congelado en ~0 el resto del día aunque hiciera mucha actividad real. Ahora se refresca sola
-    // mientras la pantalla está abierta, cada WEARABLE_POLL_INTERVAL_MS — se reinicia si cambia
-    // `hasWearable` (perfil recién cargado) para no esperar un ciclo completo a la primera lectura.
+    // La lectura del día en curso ya NO alimenta el objetivo (eso lo hace la media de días completos,
+    // ver doc/10-fundamento-cientifico.md §1.3): aquí es solo informativa, para que el usuario vea su
+    // actividad de hoy sin que el presupuesto se mueva bajo sus pies mientras come.
     LaunchedEffect(hasWearable) {
         if (!hasWearable) return@LaunchedEffect
         while (true) {
@@ -281,6 +291,37 @@ fun NutritionScreen(
                             )
                         }
                     },
+                    actions = {
+                        // Permite forzar una relectura inmediata tras sincronizar la pulsera a mano,
+                        // en vez de esperar al siguiente ciclo de WEARABLE_POLL_INTERVAL_MS.
+                        if (hasWearable) {
+                            IconButton(
+                                onClick = {
+                                    scope.launch {
+                                        wearableRefreshing = true
+                                        runCatching { healthDataProvider.getTodayActiveCalories() }
+                                            .onSuccess { activeCalories = it }
+                                        wearableRefreshing = false
+                                    }
+                                },
+                                enabled = !wearableRefreshing
+                            ) {
+                                if (wearableRefreshing) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        strokeWidth = 2.dp,
+                                        color = GymSmartColors.TextPrimary
+                                    )
+                                } else {
+                                    Icon(
+                                        Icons.Default.Refresh,
+                                        contentDescription = "Actualizar calorías de la pulsera",
+                                        tint = GymSmartColors.TextPrimary
+                                    )
+                                }
+                            }
+                        }
+                    },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = GymSmartColors.Background
                     )
@@ -316,7 +357,7 @@ fun NutritionScreen(
                     onDateSelected = { selectedDate = it }
                 )
             }
-            if (!goalsLoaded) {
+            if (goalsFailed) {
                 item {
                     Spacer(Modifier.height(16.dp))
                     Surface(
@@ -333,6 +374,44 @@ fun NutritionScreen(
                     }
                 }
             }
+            // Antes, si el suelo de seguridad recortaba el déficit, no se decía en ningún sitio: el
+            // usuario creía ir a -500 kcal/día y en realidad iba a -200, y achacaba a su cuerpo lo
+            // que era un recorte de la app (doc/10-fundamento-cientifico.md §7.3).
+            // El texto anterior decía "no bajamos de tu metabolismo basal". Ese suelo se retiró en su día
+            // (doc/10-fundamento-cientifico.md §7.3) y el objetivo estaba al 90% del BMR justo cuando
+            // este aviso aparecía: le afirmaba al usuario lo contrario de lo que hacía el cálculo
+            // (AUD-2). Ahora el mensaje nombra el límite que de verdad ha mordido.
+            targets?.takeIf { it.rateLimited || it.noSafeDeficit }?.let { t ->
+                item {
+                    Spacer(Modifier.height(16.dp))
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        color = GymSmartColors.Warning.copy(alpha = 0.12f),
+                        shape = MaterialTheme.shapes.small
+                    ) {
+                        Text(
+                            when {
+                                t.noSafeDeficit ->
+                                    "⚠ Con tu gasto actual no puedo darte un déficit seguro, así que te " +
+                                        "dejo en mantenimiento (${t.targetKcal} kcal). Para perder grasa " +
+                                        "desde aquí, lo que toca es aumentar el gasto, no comer menos."
+                                t.energyFloorHit ->
+                                    "⚠ Tu ritmo se ha limitado por seguridad: no bajamos de ${t.energyFloor} " +
+                                        "kcal, el mínimo para tu masa magra estimada. Avanzarás a " +
+                                        "${formatRate(t.effectiveRate)} en vez de " +
+                                        "${formatRate(t.requestedRate)} por semana."
+                                else ->
+                                    "⚠ Tu ritmo se ha limitado por seguridad: el ajuste no pasa del " +
+                                        "25% de tu gasto. Avanzarás a ${formatRate(t.effectiveRate)} en " +
+                                        "vez de ${formatRate(t.requestedRate)} por semana."
+                            },
+                            modifier = Modifier.padding(12.dp),
+                            color = GymSmartColors.Warning,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
             item {
                 Spacer(Modifier.height(16.dp))
                 CalorieCard(
@@ -340,7 +419,8 @@ fun NutritionScreen(
                     proteins = totalProteins, proteinGoal = proteinGoal,
                     carbs = totalCarbs, carbGoal = carbGoal,
                     fat = totalFat, fatGoal = fatGoal,
-                    activeCalories = if (hasWearable) activeCalories else 0.0
+                    // Solo informativo, y solo si el día mostrado es hoy.
+                    activeCaloriesToday = if (hasWearable && isToday) activeCalories else 0.0
                 )
             }
             item { Spacer(Modifier.height(8.dp)) }
@@ -363,6 +443,12 @@ fun NutritionScreen(
     }
 }
 
+/** Ritmo en % de peso corporal por semana, con signo, para mensajes al usuario. */
+private fun formatRate(ratePct: Double): String {
+    val abs = com.gymsmart.gymsmart.nutrition.NutritionMath.formatOneDecimal(kotlin.math.abs(ratePct))
+    return if (ratePct < 0) "-$abs%" else "+$abs%"
+}
+
 // ── Rueda de calorías ─────────────────────────────────────────────────────────
 
 @Composable
@@ -371,9 +457,14 @@ private fun CalorieCard(
     proteins: Double, proteinGoal: Double,
     carbs: Double, carbGoal: Double,
     fat: Double, fatGoal: Double,
-    activeCalories: Double = 0.0
+    /**
+     * Actividad de hoy según la pulsera. **No se suma al objetivo**: el objetivo ya viene completo del
+     * servidor, calculado con la media de días completos. Antes se sumaba aquí la lectura en curso, que
+     * va siempre por debajo y hacía que el usuario comiera de menos sin saberlo.
+     */
+    activeCaloriesToday: Double = 0.0
 ) {
-    val realGoal = kcalGoal + activeCalories
+    val realGoal = kcalGoal
 
     Surface(
         modifier = Modifier
@@ -422,8 +513,8 @@ private fun CalorieCard(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("${totalKcal.toInt()}", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = GymSmartColors.TextPrimary)
                     Text("/ ${realGoal.toInt()} kcal", style = MaterialTheme.typography.labelSmall, color = GymSmartColors.TextSecondary)
-                    if (activeCalories > 0) {
-                        Text("+${activeCalories.toInt()} 🔥", fontSize = 9.sp, color = GymSmartColors.Warning, fontWeight = FontWeight.Bold)
+                    if (activeCaloriesToday > 0) {
+                        Text("${activeCaloriesToday.toInt()} kcal 🔥 hoy", fontSize = 9.sp, color = GymSmartColors.Warning, fontWeight = FontWeight.Bold)
                     }
                 }
             }

@@ -35,7 +35,11 @@ import com.gymsmart.gymsmart.services.ProfileService
 import com.gymsmart.gymsmart.services.SubscriptionService
 import com.gymsmart.gymsmart.ui.theme.GymSmartColors
 import com.gymsmart.gymsmart.validation.validateAge
+import com.gymsmart.gymsmart.components.RateSlider
+import com.gymsmart.gymsmart.model.AdaptiveResponse
+import com.gymsmart.gymsmart.nutrition.NutritionMath
 import com.gymsmart.gymsmart.validation.validateGoalRate
+import com.gymsmart.gymsmart.validation.parseDecimal
 import com.gymsmart.gymsmart.validation.validateHeightCm
 import com.gymsmart.gymsmart.validation.validateWeightKg
 import androidx.compose.foundation.text.KeyboardOptions
@@ -104,7 +108,8 @@ fun ProfileScreen(
     var sex           by remember { mutableStateOf("male") }
     var activityLevel by remember { mutableStateOf("moderate") }
     var goal          by remember { mutableStateOf("maintain") }
-    var goalRate      by remember { mutableStateOf("0.5") }
+    // Vacío = "sin elegir". El "0.5" anterior era un resto de cuando goalRate eran kg/semana.
+    var goalRate      by remember { mutableStateOf("") }
     var isSaving      by remember { mutableStateOf(false) }
     // VAL-1 (doc/08-backlog-mejoras.md): antes solo existía esta validación para el ritmo semanal;
     // peso/altura/edad se mandaban con toDoubleOrNull() ?: 0.0 sin avisar si el campo estaba vacío o
@@ -118,6 +123,8 @@ fun ProfileScreen(
     // Diálogo resumen
     var showSummaryDialog by remember { mutableStateOf(false) }
     var savedTargets      by remember { mutableStateOf<NutritionTargets?>(null) }
+    var adaptive          by remember { mutableStateOf<AdaptiveResponse?>(null) }
+    var avgActive         by remember { mutableStateOf<Double?>(null) }
 
     data class OriginalPersonal(val name: String, val phone: String, val country: String, val birthDate: String)
     data class OriginalProfile(val weight: String, val height: String, val age: String,
@@ -152,12 +159,24 @@ fun ProfileScreen(
         profileService.getProfileResponse().onSuccess { response ->
             val p = response.profile
             weight = p.weightKg.toString(); height = p.heightCm.toString(); age = p.age.toString()
-            sex = p.sex; activityLevel = p.activityLevel; goal = p.goal; goalRate = p.goalRate.toString()
+            sex = p.sex; activityLevel = p.activityLevel; goal = p.goal
+            // Se encaja en lo permitido por si llega un valor fuera de rango (perfil migrado desde
+            // el formato antiguo de kcal/día, o un valor tocado a mano en la base de datos).
+            goalRate = NutritionMath.clampRate(p.goal, p.goalRate).toString()
             originalProfile = OriginalProfile(weight, height, age, sex, activityLevel, goal, goalRate)
         }
         runCatching { healthDataProvider.getTodaySteps() }.onSuccess { steps = it }
         runCatching { healthDataProvider.getTodayActiveCalories() }.onSuccess { calories = it }
+        // Media de días completos, para que el resumen tras guardar coincida con lo que se ve en
+        // Nutrición en vez de calcularse con 0 de actividad.
+        avgActive = runCatching { healthDataProvider.getEnergySummary() }
+            .getOrNull()?.takeIf { it.hasData }?.averageActiveKcal
         SubscriptionService(authService.client).getStatus().onSuccess { subStatus = it }
+        // El autoajuste se lanza solo. El servidor aplica un límite de una vez por semana, así que
+        // llamarlo en cada entrada a la pantalla no deshace el suavizado.
+        // Se le pasa la media de activas, que ya está calculada arriba: sin ella el servidor anclaba el
+        // ajuste al respaldo `BMR × 1,2` y empujaba en dirección contraria a la medición (AUD-4).
+        profileService.runAdaptiveAdjustment(avgActive).onSuccess { adaptive = it }
     }
 
     Scaffold(
@@ -296,14 +315,14 @@ fun ProfileScreen(
                                         if (physicalDataValid) {
                                             age = calculatedAge.toString()
                                             val request = ProfileRequest(
-                                                weightKg = weight.toDouble(),
-                                                heightCm = height.toDouble(),
+                                                weightKg = parseDecimal(weight)!!,
+                                                heightCm = parseDecimal(height)!!,
                                                 age = calculatedAge, sex = sex,
                                                 activityLevel = activityLevel, goal = goal,
-                                                goalRate = if (goal == "maintain") 0.0 else goalRate.toDouble(),
+                                                goalRate = if (goal == NutritionMath.GOAL_MAINTAIN) 0.0 else parseDecimal(goalRate)!!,
                                                 hasWearable = steps != null
                                             )
-                                            profileService.saveProfile(request).onSuccess { response ->
+                                            profileService.saveProfile(request, avgActive).onSuccess { response ->
                                                 savedTargets = response.targets
                                                 originalProfile = OriginalProfile(weight, height, calculatedAge.toString(), sex, activityLevel, goal, goalRate)
                                             }
@@ -361,6 +380,9 @@ fun ProfileScreen(
                 }
             }
 
+            // ── Autoajuste ───────────────────────────────────────────────────
+            AdaptiveCard(adaptive)
+
             // ── Datos físicos ────────────────────────────────────────────────
             ProfileSection(icon = Icons.Default.FitnessCenter, title = "Datos físicos y preferencias") {
 
@@ -413,32 +435,56 @@ fun ProfileScreen(
                 DropdownField(
                     label = "Objetivo", selected = goal,
                     options = listOf(
-                        "lose_fat"    to "Perder peso",
-                        "maintain"    to "Mantener",
-                        "gain_muscle" to "Ganar músculo"
+                        NutritionMath.GOAL_LOSE     to "Perder grasa",
+                        NutritionMath.GOAL_RECOMP   to "Recomposición (perder grasa y ganar músculo)",
+                        NutritionMath.GOAL_GAIN     to "Ganar músculo",
+                        NutritionMath.GOAL_MAINTAIN to "Mantener"
                     ),
-                    onSelect = { goal = it; goalRate = if (it == "maintain") "0.0" else "" }
+                    onSelect = {
+                        goal = it
+                        // Se arranca en el ritmo por defecto del objetivo en vez de vacío: con un
+                        // deslizador no hay estado "sin seleccionar" que tenga sentido enseñar.
+                        goalRate = NutritionMath.defaultRateFor(it).toString()
+                    }
                 )
 
-                AnimatedVisibility(visible = goal != "maintain") {
-                    DropdownField(
-                        label = "Ritmo semanal", selected = goalRate,
-                        options = when (goal) {
-                            "lose_fat" -> listOf(
-                                ""       to "Selecciona un ritmo...",
-                                "-250.0" to "Suave (-250 kcal/día ≈ 0.25 kg/sem)",
-                                "-400.0" to "Moderado (-400 kcal/día ≈ 0.5 kg/sem)",
-                                "-500.0" to "Agresivo (-500 kcal/día ≈ 1 kg/sem)"
+                AnimatedVisibility(visible = goal != NutritionMath.GOAL_MAINTAIN) {
+                    // Todo se deriva del peso real con NutritionMath, así que los kg/semana que se
+                    // enseñan son los que de verdad produce el déficit mostrado. Antes la etiqueta
+                    // estaba escrita a mano y no cuadraba (§3.3).
+                    val pesoActual = parseDecimal(weight) ?: 70.0
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            "Ritmo semanal",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = GymSmartColors.TextSecondary
+                        )
+                        // El gasto y el suelo se calculan con lo que hay en el formulario (no con los
+                        // targets cargados), para que el deslizador reaccione al instante si el usuario
+                        // cambia peso o actividad. Sin el gasto, su extremo prometía ritmos que el
+                        // tope del 25% recortaba después (AUD-5).
+                        val alturaActual = parseDecimal(height)
+                        val edadActual = age.toIntOrNull()
+                        val datosCompletos = alturaActual != null && edadActual != null && sex.isNotBlank()
+                        val gasto = if (datosCompletos) {
+                            NutritionMath.tdee(
+                                NutritionMath.bmr(sex, pesoActual, alturaActual!!, edadActual!!),
+                                activityLevel
                             )
-                            else -> listOf(
-                                ""      to "Selecciona un ritmo...",
-                                "250.0" to "Suave (+250 kcal/día ≈ 0.25 kg/sem)",
-                                "400.0" to "Moderado (+400 kcal/día ≈ 0.5 kg/sem)",
-                                "500.0" to "Agresivo (+500 kcal/día ≈ 1 kg/sem)"
-                            )
-                        },
-                        onSelect = { goalRate = it }
-                    )
+                        } else null
+                        val suelo = if (datosCompletos) {
+                            NutritionMath.energyAvailabilityFloor(sex, pesoActual, alturaActual!!, edadActual!!)
+                        } else 0.0
+
+                        RateSlider(
+                            goal = goal,
+                            weightKg = pesoActual,
+                            ratePct = parseDecimal(goalRate) ?: NutritionMath.defaultRateFor(goal),
+                            onRateChange = { goalRate = it.toString() },
+                            tdee = gasto,
+                            energyFloor = suelo
+                        )
+                    }
                 }
 
                 AnimatedVisibility(visible = profileError != null) {
@@ -459,14 +505,14 @@ fun ProfileScreen(
                             if (error != null) { profileError = error; return@launch }
                             profileError = null; isSaving = true
                             val request = ProfileRequest(
-                                weightKg = weight.toDouble(),
-                                heightCm = height.toDouble(),
+                                weightKg = parseDecimal(weight)!!,
+                                heightCm = parseDecimal(height)!!,
                                 age = age.toInt(), sex = sex,
                                 activityLevel = activityLevel, goal = goal,
-                                goalRate = if (goal == "maintain") 0.0 else goalRate.toDouble(),
+                                goalRate = if (goal == NutritionMath.GOAL_MAINTAIN) 0.0 else parseDecimal(goalRate)!!,
                                 hasWearable = steps != null
                             )
-                            profileService.saveProfile(request).onSuccess { response ->
+                            profileService.saveProfile(request, avgActive).onSuccess { response ->
                                 savedTargets = response.targets
                                 showSummaryDialog = true
                                 originalProfile = OriginalProfile(weight, height, age, sex, activityLevel, goal, goalRate)
@@ -805,6 +851,63 @@ private fun ProfileSection(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 content = content
             )
+        }
+    }
+}
+
+/**
+ * Autoajuste: compara el gasto estimado por fórmula con el gasto **medido** a partir de la tendencia
+ * de peso y de lo comido (doc/10-fundamento-cientifico.md §5).
+ *
+ * Existe porque hay tres errores independientes que ninguna fórmula resuelve: el ±10% de Mifflin, un
+ * multiplicador de actividad mal elegido (hasta ±350 kcal/día, permanente) y la adaptación metabólica,
+ * cuyo rango individual va de −337 a +352 kcal/día. Medir el resultado los absorbe los tres.
+ *
+ * El texto evita deliberadamente presentarlo como "científicamente calculado": el método de
+ * reconciliación es convención, no evidencia revisada por pares (§5.4).
+ */
+@Composable
+private fun AdaptiveCard(adaptive: AdaptiveResponse?) {
+    if (adaptive == null) return
+
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        shape = MaterialTheme.shapes.medium,
+        color = GymSmartColors.SurfaceCard
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(
+                "Ajuste según tu progreso real",
+                fontWeight = FontWeight.Bold,
+                color = GymSmartColors.TextPrimary
+            )
+            if (adaptive.adjusted) {
+                val delta = adaptive.deltaKcal ?: 0
+                val signo = if (delta >= 0) "+" else "−"
+                // `deltaKcal` es ahora el cambio real del **objetivo**. Antes era la diferencia entre
+                // gastos mezclados, que podía tener el signo opuesto a lo que el usuario iba a comer:
+                // decía "+100 kcal/día" mientras su objetivo bajaba 139 (AUD-4).
+                Text(
+                    "Según tu progreso real, tu gasto ronda las ${adaptive.measuredTdee} kcal/día. " +
+                        "He ajustado tu objetivo en $signo${kotlin.math.abs(delta)} kcal/día" +
+                        (adaptive.newTargetKcal?.let { ", hasta $it kcal" } ?: "") +
+                        ", para que tu ritmo real se acerque al que elegiste.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = GymSmartColors.TextSecondary
+                )
+            } else {
+                Text(
+                    adaptive.reason ?: "Todavía no hay datos suficientes.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = GymSmartColors.TextSecondary
+                )
+                Text(
+                    "Registra tus comidas y pésate con regularidad: con eso puedo medir tu gasto " +
+                        "real en vez de estimarlo con una fórmula.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = GymSmartColors.TextSecondary
+                )
+            }
         }
     }
 }
