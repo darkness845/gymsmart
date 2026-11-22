@@ -35,6 +35,7 @@ sealed class Screen(val route: String) {
     object Dashboard  : Screen("dashboard")
     object Nutrition  : Screen("nutrition")
     object Training   : Screen("training")
+    object Workout    : Screen("workout")
     object Gps        : Screen("gps")
     object Weight     : Screen("weight")
     object MyRoutes : Screen("my_routes")
@@ -91,6 +92,7 @@ fun NavGraph(
     val nutritionService = remember { NutritionService(authService.client) }
     val profileService   = remember { ProfileService(authService.client) }
     val gpsService = remember { GpsService(authService.client) }
+    val workoutService = remember { WorkoutService(authService.client) }
 
     val scope = rememberCoroutineScope()
     var startDestination by remember { mutableStateOf<String?>(null) }
@@ -179,6 +181,9 @@ fun NavGraph(
         }
         composable(Screen.Training.route) {
             TrainingScreen(navController)
+        }
+        composable(Screen.Workout.route) {
+            WorkoutScreen(navController = navController, workoutService = workoutService)
         }
         composable(Screen.Gps.route) {
             GpsScreen(

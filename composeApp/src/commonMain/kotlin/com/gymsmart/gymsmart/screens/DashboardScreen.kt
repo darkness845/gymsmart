@@ -11,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -42,6 +43,7 @@ fun DashboardScreen(
     var todaySteps    by remember { mutableStateOf<Long?>(null) }
     var todayCalories by remember { mutableStateOf<Double?>(null) }
     var menuExpanded  by remember { mutableStateOf(false) }
+    var wearableRefreshing by remember { mutableStateOf(false) }
 
     // WEAR-3 (doc/08-backlog-mejoras.md): antes esto leía una sola vez al entrar y se quedaba
     // congelado el resto del día si el usuario no volvía a abrir el Dashboard. Ahora se refresca sola
@@ -70,6 +72,33 @@ fun DashboardScreen(
                         }
                     },
                     actions = {
+                        // Igual que en Nutrición: fuerza una relectura inmediata de Health Connect
+                        // tras sincronizar la pulsera a mano, sin esperar al ciclo automático.
+                        IconButton(
+                            onClick = {
+                                scope.launch {
+                                    wearableRefreshing = true
+                                    runCatching { healthDataProvider.getTodaySteps() }.onSuccess { todaySteps = it }
+                                    runCatching { healthDataProvider.getTodayActiveCalories() }.onSuccess { todayCalories = it }
+                                    wearableRefreshing = false
+                                }
+                            },
+                            enabled = !wearableRefreshing
+                        ) {
+                            if (wearableRefreshing) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    strokeWidth = 2.dp,
+                                    color = GymSmartColors.TextPrimary
+                                )
+                            } else {
+                                Icon(
+                                    Icons.Default.Refresh,
+                                    contentDescription = "Actualizar pasos y calorías",
+                                    tint = GymSmartColors.TextSecondary
+                                )
+                            }
+                        }
                         Box {
                             IconButton(onClick = { menuExpanded = true }) {
                                 Icon(Icons.Default.Menu, contentDescription = "Menú", tint = GymSmartColors.TextSecondary)
@@ -255,12 +284,16 @@ fun DashboardScreen(
 
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    AnimatedMiniCard("Entreno",   "🏋️", { navController.navigate(Screen.Workout.route) },  Modifier.weight(1f))
                     AnimatedMiniCard("Nutrición", "🥗", { navController.navigate(Screen.Nutrition.route) }, Modifier.weight(1f))
-                    AnimatedMiniCard("Peso",      "⚖️", { navController.navigate(Screen.Weight.route) },    Modifier.weight(1f))
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    AnimatedMiniCard("Peso",      "⚖️", { navController.navigate(Screen.Weight.route) },    Modifier.weight(1f))
                     AnimatedMiniCard("GPS",       "📍", { navController.navigate(Screen.Gps.route) },       Modifier.weight(1f))
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     AnimatedMiniCard("Mis Rutas", "🗺️", { navController.navigate(Screen.MyRoutes.route) },  Modifier.weight(1f))
+                    Spacer(Modifier.weight(1f))
                 }
             }
         }
