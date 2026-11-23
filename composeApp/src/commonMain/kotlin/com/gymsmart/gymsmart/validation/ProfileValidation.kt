@@ -23,16 +23,6 @@ fun validateHeightCm(raw: String): String? {
     return if (value == null || value !in 100.0..250.0) "Introduce una altura válida (100–250 cm)" else null
 }
 
-/**
- * La cintura es opcional: en blanco es válido. Solo se valida el rango si el usuario escribió algo,
- * para no bloquear el guardado de peso a quien no quiera medirse.
- */
-fun validateWaistCm(raw: String): String? {
-    if (raw.isBlank()) return null
-    val value = parseDecimal(raw)
-    return if (value == null || value !in 40.0..200.0) "Introduce una cintura válida (40–200 cm)" else null
-}
-
 fun validateAge(raw: String): String? {
     val value = raw.toIntOrNull()
     return if (value == null || value !in 14..100) "Introduce una edad válida (14–100 años)" else null

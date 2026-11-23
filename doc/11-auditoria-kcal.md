@@ -230,7 +230,17 @@ es real pero no muerde en el único perfil que existe hoy — de ahí 🟠 y no 
 
 ---
 
-## 🟠 AUD-7 (MEDIO) — `recomp` es `lose_fat` bit a bit
+## ✅ AUD-7 (MEDIO) — `recomp` es `lose_fat` bit a bit — RESUELTO eliminando la opción (2026-11-23)
+
+> **Decisión del usuario, no implementación**: entre las dos vías que proponía el informe original
+> ("implementarla de verdad" o "presentarla honestamente como déficit suave"), el usuario eligió una
+> tercera: quitarla del menú. Queda `lose_fat` / `gain_muscle` / `maintain`. `GOAL_RECOMP` se borró de
+> `NutritionMath` (constante, `maxRateFor`, `recommendedBandFor`, `signFor`, `defaultRateFor`,
+> `isRateValid`, `macrosFor`), de los tres selectores de objetivo (Onboarding, Perfil) y del
+> `RateSlider`. La migración SQL del servidor convierte cualquier perfil con `goal = 'recomp'` que
+> quedara en BBDD a `maintain` con ritmo 0, que es el objetivo más cercano a lo que de verdad hacía (un
+> déficit del 0-0,25%, casi mantenimiento). Verificado con `:shared:jvmTest` (40 tests),
+> `:server:compileKotlin` y `:composeApp:compileKotlinJvm`.
 
 Salida de `computeTargets` **idéntica campo por campo** para el mismo cuerpo (hombre 80/180/30, moderado)
 y el mismo ritmo (−0,15 %): gasto 2759, objetivo 2627, macros 160/333/73, `rateLimited = false`.

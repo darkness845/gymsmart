@@ -29,11 +29,17 @@ object NutritionMath {
     const val KCAL_PER_KG = 7700.0
 
     const val GOAL_LOSE     = "lose_fat"
-    const val GOAL_RECOMP   = "recomp"
     const val GOAL_GAIN     = "gain_muscle"
     const val GOAL_MAINTAIN = "maintain"
 
-    val ALL_GOALS = listOf(GOAL_LOSE, GOAL_RECOMP, GOAL_GAIN, GOAL_MAINTAIN)
+    // GOAL_RECOMP ("recomp") se eliminó (decisión del usuario, 2026-11-23). La auditoría (AUD-7 en
+    // doc/11-auditoria-kcal.md) encontró que en el código no era un objetivo distinto: su única
+    // diferencia con GOAL_LOSE era el tope de ritmo, sin nada de lo que la recomposición corporal
+    // de verdad exige (entrenamiento de fuerza, seguimiento de cintura). En vez de implementarla o
+    // de dejarla como un déficit con otro nombre, se retira. Un perfil antiguo con goal = "recomp" en
+    // BBDD cae en la rama `else` de los `when` exhaustivos (equivalente a mantenimiento, sin ritmo),
+    // y la migración de ProfileService.initTable() lo reescribe a "maintain" en el próximo arranque.
+    val ALL_GOALS = listOf(GOAL_LOSE, GOAL_GAIN, GOAL_MAINTAIN)
 
     const val ACTIVITY_WEARABLE = "wearable"
 
@@ -185,10 +191,9 @@ object NutritionMath {
      * Devuelve `null` para mantenimiento, que no tiene ritmo.
      */
     fun maxRateFor(goal: String): Double? = when (goal) {
-        GOAL_LOSE   -> 1.0
-        GOAL_GAIN   -> 0.5
-        GOAL_RECOMP -> 0.25
-        else        -> null
+        GOAL_LOSE -> 1.0
+        GOAL_GAIN -> 0.5
+        else      -> null
     }
 
     /**
@@ -201,25 +206,23 @@ object NutritionMath {
      * versión) impedía ritmos perfectamente razonables como 0,2 kg/semana.
      */
     fun recommendedBandFor(goal: String): ClosedFloatingPointRange<Double>? = when (goal) {
-        GOAL_LOSE   -> 0.5..1.0
-        GOAL_GAIN   -> 0.25..0.5
-        GOAL_RECOMP -> 0.0..0.25
-        else        -> null
+        GOAL_LOSE -> 0.5..1.0
+        GOAL_GAIN -> 0.25..0.5
+        else      -> null
     }
 
     /** Signo que corresponde al objetivo: negativo para déficit, positivo para superávit. */
     fun signFor(goal: String): Double = when (goal) {
-        GOAL_LOSE, GOAL_RECOMP -> -1.0
-        GOAL_GAIN              -> 1.0
-        else                   -> 0.0
+        GOAL_LOSE -> -1.0
+        GOAL_GAIN -> 1.0
+        else      -> 0.0
     }
 
     /** Ritmo por defecto: el punto medio de la banda recomendada, ya con su signo. */
     fun defaultRateFor(goal: String): Double = when (goal) {
-        GOAL_LOSE   -> -0.75
-        GOAL_GAIN   -> 0.375
-        GOAL_RECOMP -> -0.15
-        else        -> 0.0
+        GOAL_LOSE -> -0.75
+        GOAL_GAIN -> 0.375
+        else      -> 0.0
     }
 
     /**
@@ -230,9 +233,9 @@ object NutritionMath {
         val max = maxRateFor(goal) ?: return ratePct == 0.0
         if (abs(ratePct) > max + 1e-9) return false
         val sign = signFor(goal)
-        // Un ritmo de 0 es válido en recomposición (mantenimiento estricto) pero no en perder/ganar,
-        // donde significaría que el objetivo elegido no hace nada.
-        if (ratePct == 0.0) return goal == GOAL_RECOMP
+        // Un ritmo de 0 en perder/ganar significaría que el objetivo elegido no hace nada: solo
+        // mantenimiento (que no llega a maxRateFor) tiene ritmo 0 como válido.
+        if (ratePct == 0.0) return false
         return ratePct * sign > 0
     }
 
@@ -519,7 +522,7 @@ object NutritionMath {
     /**
      * Reparto de macronutrientes (§6).
      *
-     * Proteína: 2,0 g/kg en déficit y recomposición, 1,8 g/kg en el resto. Ambos valores caen dentro
+     * Proteína: 2,0 g/kg en déficit, 1,8 g/kg en el resto. Ambos valores caen dentro
      * de los rangos respaldados (Morton 2018 sitúa la meseta en 1,6 g/kg; Helms 2014 pide 2,3-3,1 g/kg
      * de masa magra en déficit, que para un 20% de grasa equivale a los 2,0 g/kg de peso total).
      *
@@ -534,7 +537,7 @@ object NutritionMath {
         // abajo no se disparan con un objetivo negativo, porque `remaining` ya sale negativo de otro modo.
         val targetKcal = if (targetKcalRaw.isFinite()) max(0.0, targetKcalRaw) else 0.0
 
-        val proteinPerKg = if (goal == GOAL_LOSE || goal == GOAL_RECOMP) 2.0 else 1.8
+        val proteinPerKg = if (goal == GOAL_LOSE) 2.0 else 1.8
         var proteinKcal = weightKg * proteinPerKg * 4.0
         var fatKcal = targetKcal * 0.25
 

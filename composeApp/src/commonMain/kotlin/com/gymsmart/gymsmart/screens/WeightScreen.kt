@@ -38,7 +38,6 @@ import com.gymsmart.gymsmart.services.byteArrayToImageBitmap
 import com.gymsmart.gymsmart.services.rememberImagePicker
 import com.gymsmart.gymsmart.ui.theme.GymSmartColors
 import com.gymsmart.gymsmart.validation.parseDecimal
-import com.gymsmart.gymsmart.validation.validateWaistCm
 import com.gymsmart.gymsmart.validation.validateWeightKg
 import kotlinx.coroutines.launch
 import kotlinx.datetime.TimeZone
@@ -65,8 +64,6 @@ fun WeightScreen(
     // VAL-1 (doc/08-backlog-mejoras.md): antes un peso vacío o mal escrito simplemente no hacía nada
     // al pulsar el botón (`toFloatOrNull() ?: return@Button`), sin ninguna explicación visible.
     var inputWeightError by remember { mutableStateOf<String?>(null) }
-    var inputWaist by remember { mutableStateOf("") }
-    var inputWaistError by remember { mutableStateOf<String?>(null) }
     var previewBytes by remember { mutableStateOf<ByteArray?>(null) }
     var analysis by remember { mutableStateOf<BodyAnalysisResponse?>(null) }
     var analysisError by remember { mutableStateOf<String?>(null) }
@@ -297,9 +294,6 @@ fun WeightScreen(
 
             Spacer(Modifier.height(16.dp))
 
-            // COMPOSICIÓN (peso + cintura)
-            CompositionCard(entries)
-
             // GRÁFICA
             if (entries.isNotEmpty()) {
                 Surface(
@@ -433,7 +427,7 @@ fun WeightScreen(
     // DIALOG
     if (showDialog) {
         AlertDialog(
-            onDismissRequest = { inputWeightError = null; inputWaistError = null; showDialog = false },
+            onDismissRequest = { inputWeightError = null; showDialog = false },
             containerColor = GymSmartColors.SurfaceElevated,
             titleContentColor = GymSmartColors.TextPrimary,
             textContentColor = GymSmartColors.TextSecondary,
@@ -461,20 +455,6 @@ fun WeightScreen(
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         colors = fieldColors
                     )
-                    // Opcional a propósito: el peso por sí solo no distingue músculo de grasa, pero
-                    // obligar a medirse sería una barrera para registrar el peso (§9 del fundamento).
-                    OutlinedTextField(
-                        value = inputWaist,
-                        onValueChange = { inputWaist = it; inputWaistError = null },
-                        label = { Text("Cintura (cm) — opcional") },
-                        singleLine = true,
-                        isError = inputWaistError != null,
-                        supportingText = {
-                            Text(inputWaistError ?: "Mídete siempre a la misma altura")
-                        },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        colors = fieldColors
-                    )
                 }
             },
             confirmButton = {
@@ -485,10 +465,7 @@ fun WeightScreen(
                         // ProfileScreen/Onboarding (30-300 kg), reutilizada en vez de duplicarla.
                         val error = validateWeightKg(inputWeight)
                         if (error != null) { inputWeightError = error; return@Button }
-                        val waistError = validateWaistCm(inputWaist)
-                        if (waistError != null) { inputWaistError = waistError; return@Button }
                         val weightValue = parseDecimal(inputWeight)!!
-                        val waistValue  = inputWaist.takeIf { it.isNotBlank() }?.let { parseDecimal(it) }
                         scope.launch {
                             try {
                                 val profile = currentProfile?.profile ?: return@launch
@@ -500,8 +477,7 @@ fun WeightScreen(
                                     activityLevel = profile.activityLevel,
                                     goal = profile.goal,
                                     goalRate = profile.goalRate,
-                                    hasWearable = profile.activityLevel == "wearable",
-                                    waistCm = waistValue
+                                    hasWearable = profile.activityLevel == "wearable"
                                 )
                                 // Antes el diálogo se cerraba y el campo se vaciaba sin comprobar si
                                 // saveProfile() había tenido éxito (ERR-1 en doc/08-backlog-mejoras.md) —
@@ -511,9 +487,7 @@ fun WeightScreen(
                                     .onSuccess {
                                         entries = weightService.getHistory()
                                         inputWeight = ""
-                                        inputWaist = ""
                                         inputWeightError = null
-                                        inputWaistError = null
                                         showDialog = false
                                     }
                                     .onFailure {
@@ -541,71 +515,6 @@ fun WeightScreen(
             }
         )
     }
-}
-
-/**
- * Interpreta peso + cintura juntos. La báscula sola no distingue músculo de grasa: subir 2 kg puede
- * ser lo que buscabas o justo lo contrario, y sin una segunda medida no hay forma de saberlo. Cruzando
- * la tendencia del peso con la de la cintura sí se puede (doc/10-fundamento-cientifico.md §9).
- *
- * Umbrales: 1 cm de cintura y 0,5 kg de peso. Por debajo de eso se considera "estable", porque es el
- * orden de magnitud del ruido de medir con cinta y de la variación diaria por agua y glucógeno — dar
- * un veredicto con menos diferencia sería interpretar ruido.
- */
-@Composable
-private fun CompositionCard(entries: List<WeightEntry>) {
-    val withWaist = entries.filter { it.waistCm != null }.sortedBy { it.day }
-    if (withWaist.size < 2) return
-
-    val first = withWaist.first()
-    val last  = withWaist.last()
-    val dWeight = last.weightKg - first.weightKg
-    val dWaist  = last.waistCm!! - first.waistCm!!
-
-    val weightUp   = dWeight >  0.5f
-    val weightDown = dWeight < -0.5f
-    val waistUp    = dWaist  >  1.0f
-    val waistDown  = dWaist  < -1.0f
-
-    val (veredicto, color) = when {
-        weightUp   && !waistUp && !waistDown -> "Estás ganando músculo" to GymSmartColors.Success
-        weightUp   && waistUp                -> "Estás ganando también grasa — reduce el superávit" to GymSmartColors.Warning
-        weightDown && waistDown              -> "Estás perdiendo grasa" to GymSmartColors.Success
-        weightDown && !waistDown && !waistUp -> "Puede que estés perdiendo músculo — sube la proteína o reduce el déficit" to GymSmartColors.Warning
-        !weightUp  && !weightDown && waistDown -> "Recomposición: pierdes grasa sin perder peso" to GymSmartColors.Success
-        !weightUp  && !weightDown && waistUp   -> "La cintura sube sin subir el peso — revisa tu registro" to GymSmartColors.Warning
-        else -> "Sin cambios relevantes todavía" to GymSmartColors.TextSecondary
-    }
-
-    fun signo(v: Float, unidad: String): String {
-        val redondeado = (v * 10).toInt() / 10.0
-        return if (redondeado >= 0) "+$redondeado $unidad" else "$redondeado $unidad"
-    }
-
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.large,
-        color = GymSmartColors.SurfaceCard,
-        tonalElevation = 0.dp
-    ) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Composición", fontWeight = FontWeight.Bold, color = GymSmartColors.TextPrimary)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text("Peso ${signo(dWeight, "kg")}", color = GymSmartColors.TextSecondary)
-                Text("Cintura ${signo(dWaist, "cm")}", color = GymSmartColors.TextSecondary)
-            }
-            Text(veredicto, color = color, fontWeight = FontWeight.Bold)
-            Text(
-                "Desde ${first.day} · cintura actual ${last.waistCm} cm",
-                style = MaterialTheme.typography.labelSmall,
-                color = GymSmartColors.TextSecondary
-            )
-        }
-    }
-    Spacer(Modifier.height(16.dp))
 }
 
 @Composable

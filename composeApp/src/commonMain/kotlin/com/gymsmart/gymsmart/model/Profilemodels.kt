@@ -11,9 +11,7 @@ data class ProfileRequest(
     val activityLevel: String,
     val goal:          String,
     val goalRate:      Double,
-    val hasWearable:   Boolean = false,
-    /** Opcional, solo lo manda el diálogo de añadir peso (ver doc/10-fundamento-cientifico.md §9). */
-    val waistCm:       Double? = null
+    val hasWearable:   Boolean = false
 )
 
 @Serializable

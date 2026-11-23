@@ -194,8 +194,13 @@ elige en % y la app traduce a kg y a kcal.**
 |---|---|---|---|
 | Perder grasa | 1,0 % PC/semana | 0,5 – 1,0 % | ✅ Helms 2014, Garthe 2011 |
 | Ganar músculo | 0,5 % PC/semana | 0,25 – 0,5 % | 🟡 Iraki et al. 2019 |
-| Recomposición | 0,25 % PC/semana de déficit | 0 – 0,25 % | 🟡 ver §8 |
 | Mantener | — | 0 | — |
+
+> **Eliminada la fila "Recomposición" (2026-11-23)**: existía como objetivo seleccionable
+> (`GOAL_RECOMP`) pero en el cálculo real no era más que `lose_fat` con el tope bajado a 0,25%
+> — sin nada de lo que §8 exige para que sea recomposición de verdad. Detalle en AUD-7 de
+> `doc/11-auditoria-kcal.md`. §8 se conserva porque describe un fenómeno real, solo que ya no
+> es una opción del menú.
 
 **Por debajo de la banda**: permitido y sin aviso. Un ritmo de 0,2 kg/semana es perfectamente válido.
 
@@ -443,6 +448,14 @@ combinaciones.
 
 ## 8. Recomposición corporal 🟡
 
+> **Nota (2026-11-23)**: la app tuvo un objetivo `GOAL_RECOMP` seleccionable y se eliminó. En el código
+> era, campo por campo, idéntico a `lose_fat` salvo el tope de ritmo (AUD-7 en
+> `doc/11-auditoria-kcal.md`): no consultaba entrenamiento de fuerza, no usaba la cintura que §9.3 pide
+> para verificarla, y no sugería nada según el perfil — exactamente lo que la "implicación de diseño"
+> de abajo ya señalaba como pendiente antes de implementarse. Esta sección se conserva porque el
+> fenómeno es real y puede volver a justificar una funcionalidad si algún día se implementa de verdad
+> (con las tres condiciones de abajo), no como una tercera dirección del déficit con otro nombre.
+
 Ganar músculo y perder grasa simultáneamente. Está documentado, pero **depende mucho del punto de
 partida**:
 
@@ -462,8 +475,10 @@ mantenimiento.
 maximiza ni la pérdida de grasa ni la ganancia de músculo; optimiza la combinación.
 
 > **Implicación de diseño**: el modelo actual (`lose_fat` / `maintain` / `gain_muscle`) obliga a elegir
-> entre subir y bajar. Para un principiante o alguien con grasa que perder, **lo correcto es
-> recomposición**, y hoy no hay forma de expresarlo. La app debería poder sugerirlo según el perfil.
+> entre subir y bajar. Para un principiante o alguien con grasa que perder, en teoría lo correcto sería
+> recomposición, y hoy no hay forma de expresarlo — a propósito, tras retirar la versión que no la
+> expresaba bien (ver la nota al principio de esta sección). Si se vuelve a intentar, tiene que
+> cumplir las tres condiciones de arriba, no solo recortar el tope de déficit.
 
 ---
 
@@ -487,6 +502,14 @@ grasa**:
 - Un estudio advierte explícitamente que puede ser **malo para seguir cambios a corto plazo**.
 
 ### 9.3 Lo que sí se propone: seguir la cintura 🟡
+
+> **Eliminado de la app (2026-11-23), decisión del usuario**: medirse la cintura con cinta cada vez era
+> fricción que no quería ("es pereza"). Se quitó el campo del diálogo de añadir peso, el guardado y la
+> lectura en servidor y cliente, y la tarjeta `CompositionCard` de `WeightScreen` que interpretaba la
+> tabla de abajo. **La columna `waist_cm` se deja sin tocar en la BBDD** (no se borra: es destructivo y
+> no hacía falta), simplemente ya no la escribe ni la lee ningún código. Esta sección se conserva
+> entera porque la ciencia sigue siendo correcta — si algún día se quiere retomar el seguimiento de
+> composición corporal sin báscula, es la base a usar.
 
 No como % de grasa, sino como **medida cruda cuya tendencia se compara con la del peso**.
 

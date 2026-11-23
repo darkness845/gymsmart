@@ -94,6 +94,17 @@ class ProfileService(private val turso: TursoService) {
             )
         }
 
+        // La opción de "recomposición" se eliminó (decisión del usuario, 2026-11-23): en el cálculo
+        // real no era más que un déficit con otro nombre (AUD-7 en doc/11-auditoria-kcal.md). Un
+        // perfil que todavía tenga goal = 'recomp' en BBDD se migra a mantenimiento, el objetivo más
+        // cercano a lo que de verdad hacía (era un déficit del 0-0,25%, casi mantenimiento).
+        // Idempotente: una fila ya migrada no vuelve a entrar en el WHERE.
+        runCatching {
+            turso.execute(
+                "UPDATE user_profiles SET goal = 'maintain', goal_rate = 0.0 WHERE goal = 'recomp'"
+            )
+        }
+
         // Encaja el ritmo dentro de lo permitido por su objetivo. Solo limita la **magnitud máxima**:
         // un ritmo más lento que la banda recomendada es perfectamente válido (se retiene músculo
         // igual o mejor, solo se tarda más), así que no se sube nada hacia arriba. Un -400 kcal/día a
@@ -107,7 +118,6 @@ class ProfileService(private val turso: TursoService) {
                 SET goal_rate = CASE goal
                     WHEN 'lose_fat'    THEN MAX(-1.0,  MIN(-0.05, goal_rate))
                     WHEN 'gain_muscle' THEN MIN(0.5,   MAX(0.05,  goal_rate))
-                    WHEN 'recomp'      THEN MAX(-0.25, MIN(0.0,   goal_rate))
                     ELSE 0.0
                 END
                 WHERE ABS(goal_rate) <= 10
@@ -130,10 +140,13 @@ class ProfileService(private val turso: TursoService) {
         )
         """.trimIndent()
         )
-        // Las bases creadas antes de 2026-11 no tienen waist_cm y CREATE TABLE IF NOT EXISTS no la
-        // añade. SQLite no soporta "ADD COLUMN IF NOT EXISTS", así que el error de columna duplicada
-        // se ignora a propósito: es el caso normal en cada arranque posterior al primero. Sin este
-        // runCatching, el fallo tumbaría el arranque entero (TursoService.execute lanza desde DB-1).
+        // `waist_cm` ya no la escribe ni la lee ningún código (se eliminó el seguimiento de cintura,
+        // decisión del usuario, 2026-11-23). Se deja la columna sin DROP: borrarla es destructivo y no
+        // hacía falta, es inofensiva ahí sin uso. El ALTER se mantiene también sin cambios porque es
+        // el mismo runCatching idempotente de siempre: las bases creadas antes de 2026-11 no tienen la
+        // columna y CREATE TABLE IF NOT EXISTS no la añade; SQLite no soporta "ADD COLUMN IF NOT
+        // EXISTS", así que el error de columna duplicada se ignora a propósito en cada arranque
+        // posterior al primero.
         runCatching { turso.execute("ALTER TABLE weight_history ADD COLUMN waist_cm REAL") }
     }
 
@@ -158,8 +171,7 @@ class ProfileService(private val turso: TursoService) {
         sex:           String,
         activityLevel: String,
         goal:          String,
-        goalRate:      Double,
-        waistCm:       Double? = null
+        goalRate:      Double
     ): UserProfile {
         val now = System.currentTimeMillis()
 
@@ -189,9 +201,11 @@ class ProfileService(private val turso: TursoService) {
             saveAdaptiveTdee(userId, it, previous.adaptiveFactor, previous.adaptiveUpdatedAt)
         }
 
-        // Guardar historial si cambió el peso o si se aporta cintura. La segunda condición importa:
-        // registrar solo la cintura (mismo peso que ayer) es un caso real, y sin ella se perdería.
-        if (previous == null || previous.weightKg != weightKg || waistCm != null) {
+        // Guardar historial solo si cambió el peso. El seguimiento de cintura se eliminó (decisión del
+        // usuario, 2026-11-23: medirla era pereza para el día a día); la columna `waist_cm` se deja sin
+        // tocar en la BBDD (no es destructivo borrarla, pero tampoco hace falta) y simplemente ya no se
+        // escribe ni se lee desde aquí.
+        if (previous == null || previous.weightKg != weightKg) {
             val today = java.time.LocalDate.now().toString()
 
             // Evitar duplicado del mismo día
@@ -199,33 +213,16 @@ class ProfileService(private val turso: TursoService) {
                 "SELECT id FROM weight_history WHERE user_id = ? AND day = ?",
                 listOf(userId, today)
             )
-            // Los args de Turso se mandan todos como texto, así que no se puede pasar un NULL: se elige
-            // la variante de SQL que no menciona waist_cm. En el UPDATE eso además evita borrar una
-            // cintura ya registrada cuando se guarda el perfil desde ProfileScreen, que no la aporta.
             if (turso.extractRows(existing).isEmpty()) {
-                if (waistCm != null) {
-                    turso.execute(
-                        "INSERT INTO weight_history (user_id, weight_kg, waist_cm, day, created_at) VALUES (?, ?, ?, ?, ?)",
-                        listOf(userId, weightKg.toString(), waistCm.toString(), today, now.toString())
-                    )
-                } else {
-                    turso.execute(
-                        "INSERT INTO weight_history (user_id, weight_kg, day, created_at) VALUES (?, ?, ?, ?)",
-                        listOf(userId, weightKg.toString(), today, now.toString())
-                    )
-                }
+                turso.execute(
+                    "INSERT INTO weight_history (user_id, weight_kg, day, created_at) VALUES (?, ?, ?, ?)",
+                    listOf(userId, weightKg.toString(), today, now.toString())
+                )
             } else {
-                if (waistCm != null) {
-                    turso.execute(
-                        "UPDATE weight_history SET weight_kg = ?, waist_cm = ?, created_at = ? WHERE user_id = ? AND day = ?",
-                        listOf(weightKg.toString(), waistCm.toString(), now.toString(), userId, today)
-                    )
-                } else {
-                    turso.execute(
-                        "UPDATE weight_history SET weight_kg = ?, created_at = ? WHERE user_id = ? AND day = ?",
-                        listOf(weightKg.toString(), now.toString(), userId, today)
-                    )
-                }
+                turso.execute(
+                    "UPDATE weight_history SET weight_kg = ?, created_at = ? WHERE user_id = ? AND day = ?",
+                    listOf(weightKg.toString(), now.toString(), userId, today)
+                )
             }
         }
 
@@ -483,17 +480,13 @@ class ProfileService(private val turso: TursoService) {
 
     suspend fun getWeightHistory(userId: String): List<Map<String, String>> {
         val result = turso.execute(
-            "SELECT weight_kg, day, waist_cm FROM weight_history WHERE user_id = ? ORDER BY day ASC",
+            "SELECT weight_kg, day FROM weight_history WHERE user_id = ? ORDER BY day ASC",
             listOf(userId)
         )
         return turso.extractRows(result).mapNotNull { row ->
             val w = row[0] ?: return@mapNotNull null
             val d = row[1] ?: return@mapNotNull null
-            // La cintura es opcional: si no hay dato, se omite la clave en vez de mandar una cadena
-            // vacía (el cliente la declara anulable con valor por defecto).
-            val waist = row.getOrNull(2)
-            if (waist != null) mapOf("weightKg" to w, "day" to d, "waistCm" to waist)
-            else               mapOf("weightKg" to w, "day" to d)
+            mapOf("weightKg" to w, "day" to d)
         }
     }
 

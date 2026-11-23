@@ -434,9 +434,10 @@ fun ProfileScreen(
 
                 DropdownField(
                     label = "Objetivo", selected = goal,
+                    // Se eliminó "recomposición" (decisión del usuario, 2026-11-23): en el cálculo
+                    // real no era más que un déficit con otro nombre (AUD-7 en doc/11-auditoria-kcal.md).
                     options = listOf(
                         NutritionMath.GOAL_LOSE     to "Perder grasa",
-                        NutritionMath.GOAL_RECOMP   to "Recomposición (perder grasa y ganar músculo)",
                         NutritionMath.GOAL_GAIN     to "Ganar músculo",
                         NutritionMath.GOAL_MAINTAIN to "Mantener"
                     ),

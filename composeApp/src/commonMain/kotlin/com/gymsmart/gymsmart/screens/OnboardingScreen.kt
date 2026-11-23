@@ -303,9 +303,11 @@ private fun StepGoal(form: FormState, onChange: (FormState) -> Unit) {
         OnboardingCard {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 CardTitle("¿Cuál es tu objetivo?")
+                // La opción de "recomposición" se eliminó (decisión del usuario, 2026-11-23): en el
+                // cálculo real no era más que un déficit con otro nombre (AUD-7 en
+                // doc/11-auditoria-kcal.md). Quedan solo las tres direcciones reales.
                 listOf(
                     Triple(NutritionMath.GOAL_LOSE,     "🔥", "Perder grasa\nDéficit calórico controlado"),
-                    Triple(NutritionMath.GOAL_RECOMP,   "⚖️", "Recomposición\nPerder grasa y ganar músculo a la vez"),
                     Triple(NutritionMath.GOAL_GAIN,     "💪", "Ganar músculo\nSuperávit calórico limpio"),
                     Triple(NutritionMath.GOAL_MAINTAIN, "➖", "Mantener peso\nComer en mantenimiento")
                 ).forEach { (value, emoji, desc) ->
@@ -316,34 +318,18 @@ private fun StepGoal(form: FormState, onChange: (FormState) -> Unit) {
             }
         }
 
-        // La recomposición funciona sobre todo en principiantes y en quien tiene grasa que perder; en
-        // alguien ya entrenado y definido apenas ocurre. Decirlo evita prometer de más (§8).
-        if (form.goal == NutritionMath.GOAL_RECOMP) {
-            OnboardingCard {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    CardTitle("⚖️ Sobre la recomposición")
-                    Text(
-                        "Funciona mejor si empiezas ahora o si tienes grasa que perder. Es más lenta " +
-                            "que una fase dedicada de definición o de volumen, pero mejora tu " +
-                            "composición sin que la báscula se mueva mucho. Necesita entrenamiento de " +
-                            "fuerza y proteína alta.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = GymSmartColors.TextSecondary, lineHeight = 18.sp
-                    )
-                }
-            }
-        }
-
         val pesoActual = parseDecimal(form.weightKg)
         if (form.goal != NutritionMath.GOAL_MAINTAIN && form.goal.isNotBlank() && pesoActual != null) {
             OnboardingCard {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     CardTitle("Ritmo de cambio")
                     Text(
+                        // Este bloque solo se muestra cuando el objetivo no es "maintain" (ver el `if`
+                        // de arriba), y ya no quedan más objetivos que lose/gain, así que el `when` es
+                        // exhaustivo sin necesitar un `else`.
                         when (form.goal) {
                             NutritionMath.GOAL_LOSE -> "Cuanto más lento, más músculo conservas."
-                            NutritionMath.GOAL_GAIN -> "Cuanto más lento, menos grasa acumulas."
-                            else -> "En recomposición se come cerca del mantenimiento."
+                            else                    -> "Cuanto más lento, menos grasa acumulas."
                         },
                         style = MaterialTheme.typography.bodySmall, color = GymSmartColors.TextSecondary,
                         modifier = Modifier.padding(bottom = 4.dp)
@@ -452,7 +438,7 @@ private fun StepSummary(form: FormState) {
                                 "• Modo pulsera: BMR + media de kcal activas\n• Media de días completos, no la lectura de hoy\n"
                             else
                                 "• Factor de actividad × BMR = TDEE\n") +
-                            "• Proteína: ${if (form.goal == NutritionMath.GOAL_LOSE || form.goal == NutritionMath.GOAL_RECOMP) "2.0" else "1.8"} g/kg\n" +
+                            "• Proteína: ${if (form.goal == NutritionMath.GOAL_LOSE) "2.0" else "1.8"} g/kg\n" +
                             "• Grasa: 25% kcal totales\n" +
                             "• Carbos: resto calórico\n" +
                             // El suelo del BMR se retiró en §7.3; prometerlo era falso (AUD-2).
@@ -662,8 +648,8 @@ private fun validate(step: Step, f: FormState): String? = when (step) {
     Step.GOAL ->
         if (f.goal.isEmpty()) "Selecciona tu objetivo"
         // Se valida el Double directamente con el validador compartido. Antes se traducía 0.0 a ""
-        // para reusar la validación de ProfileScreen, pero en recomposición 0 % (mantenimiento) es
-        // un ritmo perfectamente válido y quedaba rechazado como "sin seleccionar".
+        // para reusar la validación de ProfileScreen, pero en mantenimiento 0 % es el único ritmo
+        // válido y quedaba rechazado como "sin seleccionar".
         else if (!NutritionMath.isRateValid(f.goal, f.goalRate)) "Selecciona el ritmo de cambio"
         else null
     Step.SUMMARY -> null

@@ -25,10 +25,7 @@ data class ProfileRequest(
     val activityLevel: String,
     val goal:          String,
     val goalRate:      Double,
-    val hasWearable:   Boolean = false,
-    // Opcional: solo lo manda el diálogo de añadir peso. Permite distinguir músculo de grasa, que el
-    // peso por sí solo no puede (ver doc/10-fundamento-cientifico.md §9).
-    val waistCm:       Double? = null
+    val hasWearable:   Boolean = false
 )
 
 /** Respuesta común de perfil + objetivos, para no repetir el mapeo en cada endpoint. */
@@ -214,9 +211,6 @@ fun Route.profileRoutes(
                     HttpStatusCode.BadRequest,
                     "Ritmo fuera del rango seguro para ese objetivo"
                 )
-            if (req.waistCm != null && req.waistCm !in 40.0..200.0)
-                return@post call.respond(HttpStatusCode.BadRequest, "Cintura fuera de rango (40–200 cm)")
-
             val resolvedAge: Int = run {
                 val user = userService.findById(session.userId)
                 val bd = user?.birthDate?.takeIf { it.isNotBlank() }
@@ -238,8 +232,7 @@ fun Route.profileRoutes(
                 sex           = req.sex,
                 activityLevel = req.activityLevel,
                 goal          = req.goal,
-                goalRate      = req.goalRate,
-                waistCm       = req.waistCm
+                goalRate      = req.goalRate
             )
             // Igual que en /profile/me: sin esto, el resumen que ve el usuario justo después de
             // guardar se calculaba siempre con 0 de actividad, así que a los usuarios de pulsera les

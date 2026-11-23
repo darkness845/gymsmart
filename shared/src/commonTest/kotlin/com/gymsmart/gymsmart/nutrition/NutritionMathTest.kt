@@ -95,8 +95,7 @@ class NutritionMathTest {
     private fun ratesFor(goal: String): List<Double> {
         val max = NutritionMath.maxRateFor(goal) ?: return listOf(0.0)
         val sign = NutritionMath.signFor(goal)
-        val base = rateFractions.map { it * max * sign }
-        return if (goal == NutritionMath.GOAL_RECOMP) base + 0.0 else base
+        return rateFractions.map { it * max * sign }
     }
 
     @Test
@@ -303,13 +302,6 @@ class NutritionMathTest {
                 assertTrue(m.carbsG >= 0 && m.proteinG >= 0 && m.fatG >= 0)
             }
         }
-    }
-
-    @Test
-    fun `la recomposicion usa proteina alta como el deficit`() {
-        val recomp = NutritionMath.macrosFor(2200.0, 75.0, NutritionMath.GOAL_RECOMP)
-        val deficit = NutritionMath.macrosFor(2200.0, 75.0, NutritionMath.GOAL_LOSE)
-        assertEquals(deficit.proteinG, recomp.proteinG)
     }
 
     // ── Modo pulsera ──────────────────────────────────────────────────────────
@@ -523,8 +515,7 @@ class NutritionMathTest {
     // ── Validación de ritmos ──────────────────────────────────────────────────
 
     @Test
-    fun `cero solo es valido en recomposicion`() {
-        assertTrue(NutritionMath.isRateValid(NutritionMath.GOAL_RECOMP, 0.0))
+    fun `cero solo es valido en mantenimiento`() {
         assertFalse(NutritionMath.isRateValid(NutritionMath.GOAL_LOSE, 0.0))
         assertFalse(NutritionMath.isRateValid(NutritionMath.GOAL_GAIN, 0.0))
         assertTrue(NutritionMath.isRateValid(NutritionMath.GOAL_MAINTAIN, 0.0))

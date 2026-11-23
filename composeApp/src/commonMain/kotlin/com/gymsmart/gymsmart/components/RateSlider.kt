@@ -55,9 +55,10 @@ fun RateSlider(
     val band    = NutritionMath.recommendedBandFor(goal) ?: return
     val sign    = NutritionMath.signFor(goal)
 
-    // El deslizador trabaja en magnitud; el signo lo pone el objetivo. En recomposición se permite
-    // bajar hasta 0 (mantenimiento estricto), en perder/ganar un 0 significaría no hacer nada.
-    val minPct = if (goal == NutritionMath.GOAL_RECOMP) 0.0 else 0.05
+    // El deslizador trabaja en magnitud; el signo lo pone el objetivo. En perder/ganar un 0
+    // significaría no hacer nada (mantenimiento, que no usa este deslizador), así que el mínimo real
+    // es el primer paso de la rejilla.
+    val minPct = 0.05
     val stepSize = 0.05
 
     // Tope efectivo, redondeado **hacia abajo** a la rejilla para que todas las posiciones del

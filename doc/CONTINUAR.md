@@ -6,7 +6,60 @@
 > [08-backlog-mejoras.md](08-backlog-mejoras.md) (cada hallazgo con su estado).
 > Este documento se actualiza cada vez que se termina algo, no solo al final de la sesión.
 
-**Última actualización**: 2026-11-22, sesión en curso (auditoría independiente del cálculo de kcal).
+**Última actualización**: 2026-11-23 (eliminado el seguimiento de cintura y la opción "recomposición"
+del objetivo; bloques A y B de la auditoría commiteados el 2026-11-22, pendientes C/D/E).
+
+---
+
+## ✅ 2026-11-23 — Eliminado el seguimiento de cintura (`waistCm`)
+
+Decisión del usuario: medirse con cinta era fricción que no quería ("es pereza"). Se quitó de punta a
+punta:
+
+- **Servidor**: `ProfileRequest.waistCm`, el parámetro de `upsertProfile`, el `INSERT`/`UPDATE` de
+  `weight_history` que lo escribía, el `SELECT` de `getWeightHistory` que lo leía, y la validación de
+  rango en `ProfileRoute`.
+- **Cliente**: `ProfileRequest.waistCm`, `WeightEntry.waistCm`, `validateWaistCm`, el segundo campo del
+  diálogo de añadir peso en `WeightScreen`, y la tarjeta `CompositionCard` entera (la que interpretaba
+  peso + cintura para detectar "estás ganando músculo" / "recomposición" / etc. — ver §9.3 del
+  fundamento científico).
+- **BBDD**: la columna `waist_cm` de `weight_history` **no se ha borrado** — eso es destructivo y no
+  hacía falta confirmarlo para esto. Simplemente ya no la escribe ni la lee ningún código; queda inerte.
+
+Verificado con `:shared:jvmTest` (40 tests), `:server:compileKotlin`, `:composeApp:compileKotlinJvm`.
+**Nada de esto commiteado todavía** (va junto con la eliminación de "recomposición" de más abajo).
+
+## ✅ 2026-11-23 — Eliminada la opción de objetivo "Recomposición" (`GOAL_RECOMP`)
+
+Decisión directa del usuario, sin pasar por las dos vías que proponía AUD-7 ("implementarla de verdad" o
+"renombrarla como déficit suave"): **se quita del menú**. Quedan solo `lose_fat` / `gain_muscle` /
+`maintain`.
+
+Tocado: `NutritionMath` (constante y las seis funciones que la mencionaban), `RateSlider`, los tres
+selectores de objetivo (`OnboardingScreen`, `ProfileScreen`), y la migración SQL del servidor (un perfil
+con `goal = 'recomp'` en BBDD se convierte a `maintain` con ritmo 0 en el próximo arranque). Detalle
+completo, con el AUD-7 marcado resuelto, en [11-auditoria-kcal.md](11-auditoria-kcal.md).
+
+**Lo que NO se tocó, y es importante no confundir**: `WeightScreen.kt:575` sigue diciendo
+"Recomposición: pierdes grasa sin perder peso" — eso es la interpretación de tendencias peso/cintura de
+§9.3, un fenómeno fisiológico que no depende del selector de objetivo. Se queda.
+
+Verificado con `:shared:jvmTest` (40 tests), `:server:compileKotlin`, `:composeApp:compileKotlinJvm`.
+**Nada de esto commiteado todavía.**
+
+---
+
+## 🟡 Bloques C, D y E de la auditoría de kcal — pendientes
+
+Los Bloques A y B (ver más abajo) ya están commiteados. Quedan, por orden de complejidad creciente:
+
+- **Bloque C** (calidad del dato del autoajuste): 5 cambios mecánicos en `shared`/`server`, sin UI.
+- **Bloque D** (honestidad de la interfaz): bandas en vez de número único, aviso de pulsera sin datos,
+  señal cuando los macros degeneran, guardia por IMC y condición de parada. Nivel de decisión más alto.
+- **Bloque E**: AUD-18, AUD-19, AUD-23, AUD-24 — triviales (AUD-20/22 ya cerrados en A; AUD-7 ya
+  resuelto hoy; AUD-17 se resuelve dentro de D; la mitad de AUD-21 — la caja "BMR" — sigue en D).
+
+Detalle de cada punto en [11-auditoria-kcal.md](11-auditoria-kcal.md), sección "Plan de arreglo acordado".
 
 ---
 
