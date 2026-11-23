@@ -400,11 +400,11 @@ cumplimiento de los 44 requisitos de referencia, y el plan de arreglo acordado. 
 | AUD-6 | 🟠 MEDIO | No hay tope de superávit: hasta +32 % frente al +10-20 % que fija §10.3. `rateLimited` nunca puede ser `true` en `gain_muscle`. |
 | AUD-7 | ✅ RESUELTO (2026-11-23) | `recomp` producía salida **idéntica** a `lose_fat`. El usuario decidió eliminar la opción en vez de implementarla o renombrarla: el menú queda en perder/ganar/mantener. |
 | AUD-8 | 🟠 MEDIO | El IMC se calcula, se pinta y **nunca se usa como guardia**. No hay condición de parada ni transición a `maintain`. |
-| AUD-9 | 🟠 MEDIO | Mínimos del autoajuste más laxos que los de §5.3 (10 días / 4 pesajes), y el guard `[800, 6000]` trunca asimétricamente el ruido → sesgo de +289 kcal/d. |
-| AUD-10 | 🟠 MEDIO | El registro **parcial** (no el uniforme, que se autocancela) endurece el déficit: 31-44 % real informado como 25 %. `getDailyIntake` no exige mínimo de kcal por día. |
+| AUD-9 | ✅ RESUELTO (2026-11-23) | `ADAPTIVE_MIN_SPAN_DAYS` 10→14, `ADAPTIVE_MIN_WEIGH_INS` 4→8 (lo que exige §5.3), y nueva cobertura mínima de ventana (80%, ver AUD-10). |
+| AUD-10 | ✅ RESUELTO (2026-11-23) | Umbral de "día válido" (`ADAPTIVE_MIN_DAY_KCAL = 1000`) antes de contar un día como registrado, y cobertura mínima del 80% de la ventana (`ADAPTIVE_MIN_COVERAGE`) añadida a `AdaptiveInput`/`reconcile`. |
 | AUD-11 | 🟠 MEDIO | Sin snapshot ni `calcVersion`: los días pasados se juzgan con el perfil de hoy, y cambiar una constante reescribe el historial entero. |
-| AUD-12 | 🟠 MEDIO | `weight_history` solo se escribe si el peso **cambia** → muestra sesgada que infla la pendiente, y `recomp` se queda sin autoajuste habiéndose pesado a diario. |
-| AUD-13 | 🟠 MEDIO | Media de la pulsera sin mínimo de días (un solo día puede ser la media). `WEARABLE_AVERAGE_DAYS` no se referencia desde ningún archivo. |
+| AUD-12 | ✅ RESUELTO (2026-11-23) | `weight_history` ahora se escribe **siempre** al guardar el perfil, no solo si el peso cambia — ya no se pierden los días de peso estable de la muestra. |
+| AUD-13 | ✅ RESUELTO (2026-11-23) | Nuevo `WEARABLE_MIN_DAYS_WITH_DATA` (mitad de la ventana, 7 de 14 días): un solo día ya no puede ser "la media". `WEARABLE_AVERAGE_DAYS` ahora sí se referencia (el `days` por defecto de `getEnergySummary`). ⚠️ Sin verificar con build real — `HealthConnectProvider.kt` es `androidMain`. |
 | AUD-14 | 🟠 MEDIO | Fallo silencioso de la pulsera: sin datos el gasto cae a `BMR × 1,2` (−300 kcal/d) sin aviso. `wearableEnergy` se asigna y nunca se lee. |
 | AUD-15 | 🟠 MEDIO | `avgActiveKcal`/`carryOverKcal` sin rango ni `isFinite`: `NaN` → 500, `Infinity` → `Int.MAX_VALUE`, negativos → objetivo negativo. Ver hallazgo 15 de [03-seguridad.md](03-seguridad.md). |
 | AUD-16 | 🟠 MEDIO | **Falta `ALTER TABLE ... ADD COLUMN has_wearable`** (condicional: si la BBDD desplegada es anterior a `dc1b216`, `POST /profile/save` y el registro de peso están rotos). ⏳ **Pendiente de la verificación de 30 s del usuario.** |

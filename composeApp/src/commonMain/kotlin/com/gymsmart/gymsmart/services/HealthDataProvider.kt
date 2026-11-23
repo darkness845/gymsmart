@@ -1,5 +1,7 @@
 package com.gymsmart.gymsmart.services
 
+import com.gymsmart.gymsmart.nutrition.NutritionMath
+
 /**
  * Energía de la pulsera, con la separación que hace falta para calcular bien el objetivo diario
  * (doc/10-fundamento-cientifico.md §1.3).
@@ -40,8 +42,12 @@ interface HealthDataProvider {
      * Health Connect guarda histórico y sabe agregarlo por día, así que esto no requiere almacenar
      * nada por nuestra parte: la limitación anterior ("solo sabemos leer hoy") era de esta interfaz,
      * no de la plataforma.
+     *
+     * El valor por defecto estaba duplicado a mano (14) en vez de referenciar la constante del
+     * cálculo, así que la "ventana documentada" y la que de verdad se usaba podían divergir sin que
+     * nada lo detectara (AUD-13 en doc/11-auditoria-kcal.md).
      */
-    suspend fun getEnergySummary(days: Int = 14): WearableEnergy
+    suspend fun getEnergySummary(days: Int = NutritionMath.WEARABLE_AVERAGE_DAYS): WearableEnergy
 }
 
 /**

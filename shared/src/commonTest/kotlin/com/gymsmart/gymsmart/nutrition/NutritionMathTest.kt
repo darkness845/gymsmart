@@ -478,7 +478,7 @@ class NutritionMathTest {
         val previo = 2500.0
         val r = NutritionMath.reconcile(
             NutritionMath.AdaptiveInput(
-                loggedDays = 20, weighIns = 6, spanDays = 20,
+                loggedDays = 20, weighIns = 8, spanDays = 20,
                 avgDailyIntakeKcal = 2800.0, weightChangeKg = 0.0, previousTdee = previo
             )
         )
@@ -492,11 +492,56 @@ class NutritionMathTest {
     fun `un gasto medido absurdo se rechaza en vez de destrozar el objetivo`() {
         val r = NutritionMath.reconcile(
             NutritionMath.AdaptiveInput(
-                loggedDays = 20, weighIns = 6, spanDays = 20,
+                loggedDays = 20, weighIns = 8, spanDays = 20,
                 avgDailyIntakeKcal = 600.0, weightChangeKg = 0.0, previousTdee = 2500.0
             )
         )
         assertTrue(r is NutritionMath.AdaptiveResult.NotEnoughData)
+    }
+
+    @Test
+    fun `dias registrados concentrados en poca ventana no bastan sin cobertura`() {
+        // 14 días con buen registro (pasa ADAPTIVE_MIN_LOGGED_DAYS) pero repartidos en una ventana de
+        // 90 días: cobertura real del 15,5%, muy por debajo del 80% exigido (AUD-9/AUD-10).
+        val r = NutritionMath.reconcile(
+            NutritionMath.AdaptiveInput(
+                loggedDays = 14, weighIns = 8, spanDays = 20,
+                avgDailyIntakeKcal = 2600.0, weightChangeKg = -0.4, previousTdee = 2500.0,
+                windowDays = 90
+            )
+        )
+        assertTrue(r is NutritionMath.AdaptiveResult.NotEnoughData)
+    }
+
+    @Test
+    fun `con cobertura suficiente dentro de la ventana si se ajusta`() {
+        val r = NutritionMath.reconcile(
+            NutritionMath.AdaptiveInput(
+                loggedDays = 24, weighIns = 8, spanDays = 28,
+                avgDailyIntakeKcal = 2600.0, weightChangeKg = -0.4, previousTdee = 2500.0,
+                windowDays = 28
+            )
+        )
+        assertTrue(r is NutritionMath.AdaptiveResult.Adjusted)
+    }
+
+    @Test
+    fun `el minimo de dias de la pulsera es la mitad de la ventana, redondeado hacia arriba`() {
+        // Con WEARABLE_AVERAGE_DAYS = 14 y cobertura 0,5, hacen falta 7 días con dato (AUD-13): un solo
+        // día ya no puede ser "la media".
+        assertEquals(7, NutritionMath.WEARABLE_MIN_DAYS_WITH_DATA)
+    }
+
+    @Test
+    fun `el valor por defecto de windowDays reproduce el comportamiento anterior a AUD-10`() {
+        // Sin pasar windowDays explícitamente, la cobertura es siempre 100% (loggedDays / loggedDays):
+        // los tests y llamadores anteriores a este cambio no se rompen por el nuevo requisito.
+        val input = NutritionMath.AdaptiveInput(
+            loggedDays = 14, weighIns = 8, spanDays = 14,
+            avgDailyIntakeKcal = 2600.0, weightChangeKg = -0.4, previousTdee = 2500.0
+        )
+        assertEquals(14, input.windowDays)
+        assertTrue(NutritionMath.reconcile(input) is NutritionMath.AdaptiveResult.Adjusted)
     }
 
     @Test

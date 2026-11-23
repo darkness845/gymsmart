@@ -6,8 +6,43 @@
 > [08-backlog-mejoras.md](08-backlog-mejoras.md) (cada hallazgo con su estado).
 > Este documento se actualiza cada vez que se termina algo, no solo al final de la sesión.
 
-**Última actualización**: 2026-11-23 (eliminado el seguimiento de cintura y la opción "recomposición"
-del objetivo; bloques A y B de la auditoría commiteados el 2026-11-22, pendientes C/D/E).
+**Última actualización**: 2026-11-23 (Bloque C de la auditoría de kcal completo, sin commitear; eliminado
+el seguimiento de cintura y la opción "recomposición", commit `3d19e2f`; bloques A y B de la auditoría
+commiteados el 2026-11-22; pendientes D/E).
+
+---
+
+## ✅ 2026-11-23 — Bloque C de la auditoría de kcal: calidad del dato del autoajuste
+
+Los cinco puntos del plan, con el detalle AUD-9/10/12/13 marcado resuelto en
+[11-auditoria-kcal.md](11-auditoria-kcal.md):
+
+1. **`ADAPTIVE_MIN_SPAN_DAYS` 10→14 y `ADAPTIVE_MIN_WEIGH_INS` 4→8** (`NutritionMath`), lo que exige
+   §5.3 y el punto donde el Montecarlo del informe deja de ganar el ruido al mecanismo.
+2. **Umbral de "día válido"**: `ADAPTIVE_MIN_DAY_KCAL = 1000`, filtrado en
+   `ProfileService.runAdaptiveAdjustment` antes de contar `loggedDays` — un día con solo el desayuno
+   ya no cuenta como registrado.
+3. **Cobertura mínima de ventana**: `ADAPTIVE_MIN_COVERAGE = 0.8`, nuevo campo `windowDays` en
+   `AdaptiveInput` (por defecto `= loggedDays`, para no romper nada que no lo use a propósito) y
+   comprobación en `reconcile`.
+4. **Mínimo de días en la media de la pulsera**: `WEARABLE_MIN_DAYS_WITH_DATA` (mitad de
+   `WEARABLE_AVERAGE_DAYS`, 7 de 14), comprobado en `HealthConnectProvider.getEnergySummary`. De
+   regalo, `HealthDataProvider.getEnergySummary` ya referencia la constante en vez de duplicar el 14.
+5. **`weight_history` se escribe siempre** al guardar el perfil, no solo si el peso cambia — se quitó
+   la condición `previous.weightKg != weightKg`.
+
+**El escenario modal del informe original (20 días bien registrados + 8 con solo desayuno → déficit
+real del 31-44% informado como 23%) ya no pasa el filtro**: los 8 días de 300 kcal no cuentan como
+registrados, así que `loggedDays` cae por debajo del mínimo antes de llegar a la cobertura.
+
+Tests nuevos en `NutritionMathTest`: cobertura insuficiente rechazada, cobertura suficiente aceptada, el
+valor por defecto de `windowDays` no rompe nada anterior, y el cálculo de `WEARABLE_MIN_DAYS_WITH_DATA`.
+**43 tests en verde**, `:server:compileKotlin` y `:composeApp:compileKotlinJvm` también.
+
+**⚠️ Punto 4 sin verificar con build real**: `HealthConnectProvider.kt` es `androidMain` y este entorno
+no tiene Android SDK. Probarlo en dispositivo/emulador antes de confiar en él al 100%.
+
+**Nada de esto commiteado todavía.**
 
 ---
 
@@ -27,7 +62,7 @@ punta:
   hacía falta confirmarlo para esto. Simplemente ya no la escribe ni la lee ningún código; queda inerte.
 
 Verificado con `:shared:jvmTest` (40 tests), `:server:compileKotlin`, `:composeApp:compileKotlinJvm`.
-**Nada de esto commiteado todavía** (va junto con la eliminación de "recomposición" de más abajo).
+**Commiteado el 2026-11-23** junto con la eliminación de "recomposición" de más abajo (commit `3d19e2f`).
 
 ## ✅ 2026-11-23 — Eliminada la opción de objetivo "Recomposición" (`GOAL_RECOMP`)
 
@@ -45,19 +80,20 @@ completo, con el AUD-7 marcado resuelto, en [11-auditoria-kcal.md](11-auditoria-
 §9.3, un fenómeno fisiológico que no depende del selector de objetivo. Se queda.
 
 Verificado con `:shared:jvmTest` (40 tests), `:server:compileKotlin`, `:composeApp:compileKotlinJvm`.
-**Nada de esto commiteado todavía.**
+**Commiteado el 2026-11-23** (commit `3d19e2f`, junto con la eliminación de cintura de arriba).
 
 ---
 
-## 🟡 Bloques C, D y E de la auditoría de kcal — pendientes
+## 🟡 Bloques D y E de la auditoría de kcal — pendientes
 
-Los Bloques A y B (ver más abajo) ya están commiteados. Quedan, por orden de complejidad creciente:
+Los Bloques A, B y C ya están hechos (A y B commiteados; C hecho el 2026-11-23, ver más arriba, **sin
+commitear todavía**). Quedan:
 
-- **Bloque C** (calidad del dato del autoajuste): 5 cambios mecánicos en `shared`/`server`, sin UI.
 - **Bloque D** (honestidad de la interfaz): bandas en vez de número único, aviso de pulsera sin datos,
   señal cuando los macros degeneran, guardia por IMC y condición de parada. Nivel de decisión más alto.
-- **Bloque E**: AUD-18, AUD-19, AUD-23, AUD-24 — triviales (AUD-20/22 ya cerrados en A; AUD-7 ya
-  resuelto hoy; AUD-17 se resuelve dentro de D; la mitad de AUD-21 — la caja "BMR" — sigue en D).
+- **Bloque E**: AUD-18, AUD-19, AUD-23, AUD-24 — triviales (AUD-20/22 ya cerrados en A; AUD-7, AUD-9,
+  AUD-10, AUD-12 y AUD-13 ya resueltos; AUD-17 se resuelve dentro de D; la mitad de AUD-21 — la caja
+  "BMR" — sigue en D).
 
 Detalle de cada punto en [11-auditoria-kcal.md](11-auditoria-kcal.md), sección "Plan de arreglo acordado".
 
@@ -207,12 +243,12 @@ nutrición sin cargar. Lo no numérico sí se sigue rechazando, porque eso es un
 - **Bloque B — TDEE adaptativo**: componer en vez de sustituir · invalidar/re-anclar al cambiar
   `activityLevel` o `goal` · pasar `avgActiveKcal` al `previousTdee` del `reconcile` · arreglar el signo
   de `AdaptiveCard`.
-- **Bloque C — calidad del dato**: umbral de "día válido" · cobertura mínima de ventana · subir
-  `ADAPTIVE_MIN_SPAN_DAYS`/`WEIGH_INS` a lo que exige §5.3 · mínimo de días en la media de la pulsera ·
-  escribir en `weight_history` siempre.
+- **✅ Bloque C — calidad del dato (hecho, 2026-11-23)**: umbral de "día válido" · cobertura mínima de
+  ventana · `ADAPTIVE_MIN_SPAN_DAYS`/`WEIGH_INS` subidos a lo que exige §5.3 · mínimo de días en la
+  media de la pulsera · escribir en `weight_history` siempre. Detalle arriba.
 - **Bloque D — honestidad de la interfaz**: bandas en vez de número único · etiqueta "BMR" que muestre el
-  BMR · quitar "tiempo real" · aviso cuando la pulsera no tiene datos · señal cuando los macros degeneran
-  · guardia por IMC y condición de parada · decidir qué hacer con `recomp`.
+  BMR · aviso cuando la pulsera no tiene datos · señal cuando los macros degeneran · guardia por IMC y
+  condición de parada. (Quitar "tiempo real" y decidir `recomp` ya están hechos.)
 - **Bloque E — los 🟡**: AUD-17 a AUD-24.
 
 **Dos avisos de encuadre para quien implemente esto**: (1) **no** añadir peso objetivo con fecha — no

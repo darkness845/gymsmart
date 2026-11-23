@@ -49,6 +49,21 @@ object NutritionMath {
     /** Ventana de días completos usada para la media de calorías activas de la pulsera (§1.3). */
     const val WEARABLE_AVERAGE_DAYS = 14
 
+    /**
+     * Fracción mínima de [WEARABLE_AVERAGE_DAYS] con datos antes de confiar en la media de la pulsera.
+     *
+     * Antes el único guard era "si hay al menos un día, la media es ese día": quien instalara la app
+     * el día después de una excursión fijaba su presupuesto sobre esa única jornada atípica hasta que
+     * la ventana se llenara (AUD-13 en doc/11-auditoria-kcal.md). Con 0,5 hacen falta al menos 7 de los
+     * 14 días para que `hasData` sea `true`; por debajo de eso el modo pulsera cae al respaldo
+     * sedentario de [tdee], que es la estimación conservadora mientras no haya histórico suficiente.
+     */
+    const val WEARABLE_MIN_COVERAGE = 0.5
+
+    /** Días mínimos con dato, ya redondeado hacia arriba: lo que de verdad comprueba el código. */
+    val WEARABLE_MIN_DAYS_WITH_DATA: Int =
+        kotlin.math.ceil(WEARABLE_AVERAGE_DAYS * WEARABLE_MIN_COVERAGE).toInt()
+
     // ── Metabolismo ───────────────────────────────────────────────────────────
 
     /** Mifflin-St Jeor (§1.1): la más fiable sin conocer composición corporal. Error típico ±10%. */
@@ -570,13 +585,44 @@ object NutritionMath {
 
     // ── Autoajuste por medición (§5) ──────────────────────────────────────────
 
-    /** Mínimos de datos antes de atreverse a corregir nada (§5.3). Por debajo se amplifica ruido. */
+    /**
+     * Mínimos de datos antes de atreverse a corregir nada (§5.3). Por debajo se amplifica ruido.
+     *
+     * `SPAN_DAYS` y `WEIGH_INS` eran más laxos que lo que exige el propio documento ("regresión lineal
+     * sobre 14-28 días") y que lo que hacía falta para que el ruido no domine: con el mínimo anterior
+     * (10 días / 4 pesajes) un Montecarlo de 4.000 trayectorias dio una desviación del gasto persistido
+     * de ±476 kcal/d — **mayor que el déficit que el mecanismo pretende gestionar** (AUD-9 en
+     * doc/11-auditoria-kcal.md). Con 14 días / 8 pesajes esa desviación baja a ~154 kcal/d, por debajo
+     * del error que ya se acepta en el multiplicador de actividad (~350 kcal/d).
+     */
     const val ADAPTIVE_MIN_LOGGED_DAYS = 14
-    const val ADAPTIVE_MIN_WEIGH_INS   = 4
-    const val ADAPTIVE_MIN_SPAN_DAYS   = 10
+    const val ADAPTIVE_MIN_WEIGH_INS   = 8
+    const val ADAPTIVE_MIN_SPAN_DAYS   = 14
 
     /** Peso del valor recién medido frente al anterior, para que una semana atípica no dé un salto. */
     const val ADAPTIVE_BLEND = 0.3
+
+    /**
+     * Umbral de kcal para que un día cuente como "registrado" en el autoajuste.
+     *
+     * Un día con solo el desayuno anotado (300 kcal) pasaba como si fuera un día completo: la ingesta
+     * se promediaba sobre "días con alguna fila en la BBDD", mientras la pendiente de peso se medía
+     * sobre días naturales. Esas dos poblaciones no son la misma, y la diferencia se interpretaba como
+     * metabolismo — un escenario modal (20 días bien registrados, 8 con solo el desayuno) producía un
+     * déficit real del 31-44% informado como el 23% elegido (AUD-10). 1000 kcal es conservador: incluso
+     * alguien en un día de muy baja actividad no suele quedarse por debajo si registra todo lo comido.
+     */
+    const val ADAPTIVE_MIN_DAY_KCAL = 1000.0
+
+    /**
+     * Cobertura mínima de la ventana: fracción de los días de la ventana de autoajuste que tienen que
+     * ser "días registrados" (ver [ADAPTIVE_MIN_DAY_KCAL]) antes de confiar en la media.
+     *
+     * Sin esto, 14 días sueltos de buen registro repartidos en una ventana de 90 días bastaban para
+     * pasar [ADAPTIVE_MIN_LOGGED_DAYS] mientras la mayoría del periodo era puro ruido sin medir. El
+     * 80% es el valor que propone AUD-9/AUD-10 de la auditoría.
+     */
+    const val ADAPTIVE_MIN_COVERAGE = 0.8
 
     /**
      * Rango admitido para el factor de corrección del autoajuste (`medido / fórmula`).
@@ -620,7 +666,13 @@ object NutritionMath {
         val spanDays:           Int,
         val avgDailyIntakeKcal: Double,
         val weightChangeKg:     Double,
-        val previousTdee:       Double
+        val previousTdee:       Double,
+        /**
+         * Tamaño de la ventana sobre la que se buscaron los datos, para calcular la cobertura
+         * ([ADAPTIVE_MIN_COVERAGE]). Por defecto igual a `loggedDays`, lo que da cobertura 100% y
+         * reproduce el comportamiento anterior a AUD-10 para quien no pase este parámetro a propósito.
+         */
+        val windowDays:         Int = loggedDays
     )
 
     /**
@@ -644,6 +696,22 @@ object NutritionMath {
             return AdaptiveResult.NotEnoughData(
                 "Los pesajes deben repartirse en al menos $ADAPTIVE_MIN_SPAN_DAYS días"
             )
+
+        // Cobertura: no basta con el mínimo absoluto de días registrados si están concentrados en una
+        // fracción pequeña de la ventana (AUD-9/AUD-10). `loggedDays` ya cuenta solo días por encima de
+        // ADAPTIVE_MIN_DAY_KCAL (filtrado en el llamador), así que esta cobertura es sobre días
+        // *completos*, no sobre cualquier fila en la BBDD.
+        if (input.windowDays > 0) {
+            val coverage = input.loggedDays.toDouble() / input.windowDays
+            if (coverage < ADAPTIVE_MIN_COVERAGE) {
+                val pct = (coverage * 100).roundToInt()
+                val minPct = (ADAPTIVE_MIN_COVERAGE * 100).roundToInt()
+                return AdaptiveResult.NotEnoughData(
+                    "Necesito comidas completas en al menos $minPct% de los últimos ${input.windowDays} " +
+                        "días (llevas $pct%)"
+                )
+            }
+        }
 
         val raw = measuredTdee(input.avgDailyIntakeKcal, input.weightChangeKg, input.spanDays)
 

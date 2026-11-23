@@ -7,6 +7,7 @@ import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.request.AggregateGroupByPeriodRequest
 import androidx.health.connect.client.request.AggregateRequest
 import androidx.health.connect.client.time.TimeRangeFilter
+import com.gymsmart.gymsmart.nutrition.NutritionMath
 import java.time.Instant
 import java.time.LocalDate
 import java.time.Period
@@ -92,7 +93,14 @@ class HealthConnectProvider(
                 ?.let { bucket.startTime.toLocalDate() to it }
         }
 
-        if (perDay.isEmpty()) return WearableEnergy.EMPTY
+        // Antes bastaba un solo día con dato para que esa única jornada *fuera* la media: quien
+        // instalara la app el día después de una excursión fijaba su presupuesto sobre ese día atípico
+        // hasta que la ventana se llenara (AUD-13 en doc/11-auditoria-kcal.md). Por debajo del mínimo
+        // se cae a EMPTY, que es exactamente lo que ya hace que el gasto use el respaldo sedentario de
+        // `NutritionMath.tdee` en vez de inventar un presupuesto sobre un histórico insuficiente.
+        if (perDay.size < NutritionMath.WEARABLE_MIN_DAYS_WITH_DATA) {
+            return WearableEnergy.EMPTY
+        }
 
         val yesterday = today.minusDays(1)
         val average = perDay.map { it.second }.average()

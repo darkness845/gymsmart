@@ -287,7 +287,15 @@ Lo que falta es una **condición de parada** y una **guardia por IMC**.
 
 ---
 
-## 🟠 AUD-9 (MEDIO) — Los mínimos del autoajuste son más laxos que los del propio documento
+## ✅ AUD-9 (MEDIO) — Los mínimos del autoajuste son más laxos que los del propio documento — RESUELTO (2026-11-23)
+
+> `ADAPTIVE_MIN_SPAN_DAYS` 10→14 y `ADAPTIVE_MIN_WEIGH_INS` 4→8, que es justo la combinación que el
+> Montecarlo de abajo identifica como el punto donde la desviación del gasto persistido (154 kcal/d)
+> cae por debajo del error ya aceptado del multiplicador de actividad (~350 kcal/d). Más una cobertura
+> mínima de ventana del 80% (ver AUD-10), que ataca el sesgo del guard desde el otro lado: con pocos
+> días válidos muy concentrados, ya no basta con superar el mínimo absoluto si están lejos en el
+> tiempo. No se tocó el guard `[800, 6000]` en sí — bajarlo o hacerlo asimétrico queda fuera de este
+> bloque, ver el ángulo del ciclo menstrual más abajo (sigue sin cubrirse, no aplica al usuario actual).
 
 `ADAPTIVE_MIN_SPAN_DAYS = 10` y `ADAPTIVE_MIN_WEIGH_INS = 4`, frente a la *"regresión lineal sobre 14-28
 días"* que exige §5.3. Y el guard `raw < 800 || raw > 6000` **trunca asimétricamente la cola inferior del
@@ -320,7 +328,16 @@ entra directo en la pendiente. No aplica al usuario actual.
 
 ---
 
-## 🟠 AUD-10 (MEDIO) — El registro parcial endurece el déficit progresivamente
+## ✅ AUD-10 (MEDIO) — El registro parcial endurece el déficit progresivamente — RESUELTO (2026-11-23)
+
+> Dos cosas, no una: **(a)** `NutritionMath.ADAPTIVE_MIN_DAY_KCAL = 1000`, filtrado en
+> `ProfileService.runAdaptiveAdjustment` antes de contar `loggedDays` — un día con 300 kcal ya no pasa
+> como día registrado. **(b)** `NutritionMath.ADAPTIVE_MIN_COVERAGE = 0.8`, nuevo campo `windowDays` en
+> `AdaptiveInput` y comprobación en `reconcile`: hacen falta comidas completas en el 80% de la ventana,
+> no solo superar el mínimo absoluto. El escenario modal del informe (20 días bien registrados + 8 con
+> solo desayuno) ahora falla en `loggedDays` (los 8 días de 300 kcal no cuentan) antes de llegar
+> siquiera a la cobertura. `windowDays` tiene valor por defecto `= loggedDays` (cobertura 100%) para no
+> romper nada que no pase este parámetro a propósito — ver el test correspondiente.
 
 `NutritionService.getDailyIntake` agrupa por día **sin mínimo de kcal**: un día con solo el desayuno
 cuenta como día registrado y pasa `ADAPTIVE_MIN_LOGGED_DAYS`. La ingesta se promedia sobre **días con
@@ -371,7 +388,16 @@ con precedente conocido.
 
 ---
 
-## 🟠 AUD-12 (MEDIO) — `weight_history` solo se escribe si el peso *cambia*
+## ✅ AUD-12 (MEDIO) — `weight_history` solo se escribe si el peso *cambia* — RESUELTO (2026-11-23)
+
+> Se quitó la condición `previous.weightKg != weightKg`: ahora `upsertProfile` escribe siempre una fila
+> para hoy (o actualiza la existente, el "evitar duplicado del mismo día" ya lo hacía). Un día de peso
+> estable deja rastro en vez de desaparecer de la muestra. Efecto colateral aceptado a propósito: como
+> `/profile/save` también lo usan `ProfileScreen` (editar objetivo/actividad) y `OnboardingScreen`, no
+> solo el diálogo de pesaje de `WeightScreen`, cualquier guardado de perfil ahora también registra el
+> peso del día — es el comportamiento que pide el hallazgo, no un efecto no buscado. El punto 2 de
+> abajo ("recomposición se queda sin autoajuste") ya no aplica: `GOAL_RECOMP` se eliminó el mismo día
+> (ver AUD-7).
 
 `ProfileService.kt:163`: `if (previous == null || previous.weightKg != weightKg || waistCm != null)`. Un
 pesaje que coincide con el peso almacenado **no genera fila**. Dos consecuencias:
@@ -392,7 +418,15 @@ de agua, y de él dependen BMR, delta diario, macros e IMC a la vez.
 
 ---
 
-## 🟠 AUD-13 (MEDIO) — Media de la pulsera sin mínimo de días
+## ✅ AUD-13 (MEDIO) — Media de la pulsera sin mínimo de días — RESUELTO (2026-11-23, ⚠️ sin build real)
+
+> Nuevo `NutritionMath.WEARABLE_MIN_DAYS_WITH_DATA` (mitad de `WEARABLE_AVERAGE_DAYS`, redondeado hacia
+> arriba: 7 de 14), comprobado en `HealthConnectProvider.getEnergySummary` antes de confiar en la
+> media — por debajo cae a `WearableEnergy.EMPTY`, que ya hace que el gasto use el respaldo sedentario.
+> De regalo, el `days: Int = 14` duplicado de `HealthDataProvider.getEnergySummary` ahora referencia
+> `NutritionMath.WEARABLE_AVERAGE_DAYS` en vez de repetir el número a mano. **Sin verificar con build
+> real**: `HealthConnectProvider.kt` es `androidMain` y este entorno no tiene Android SDK (ver
+> CLAUDE.md) — probarlo en dispositivo/emulador antes de confiar en él al 100%.
 
 `androidMain/.../HealthConnectProvider.kt:89-98`: los días sin dato se descartan con `mapNotNull`, y el
 único guard es `if (perDay.isEmpty()) return WearableEnergy.EMPTY`. **Con un solo día en la ventana de
@@ -642,13 +676,17 @@ Todo es `shared/` y `server/`, así que se compila y se testea sin Android SDK.
 `activityLevel` o `goal` · pasar `avgActiveKcal` al `previousTdee` del `reconcile` · arreglar el signo de
 `AdaptiveCard`.
 
-**Bloque C — calidad del dato**: umbral de "día válido" · cobertura mínima de la ventana · subir
-`ADAPTIVE_MIN_SPAN_DAYS`/`WEIGH_INS` a lo que exige §5.3 · mínimo de días en la media de la pulsera ·
-escribir en `weight_history` siempre.
+**✅ Bloque C — calidad del dato (RESUELTO, 2026-11-23)**: umbral de "día válido" (AUD-10) · cobertura
+mínima de la ventana (AUD-9/10) · `ADAPTIVE_MIN_SPAN_DAYS`/`WEIGH_INS` subidos a lo que exige §5.3
+(AUD-9) · mínimo de días en la media de la pulsera (AUD-13, ⚠️ sin build real) · escribir en
+`weight_history` siempre (AUD-12). Detalle en cada hallazgo más arriba. Verificado con `:shared:jvmTest`
+(43 tests), `:server:compileKotlin`, `:composeApp:compileKotlinJvm`.
 
 **Bloque D — honestidad de la interfaz**: bandas en vez de número único · etiqueta "BMR" que muestre el
-BMR · quitar "tiempo real" · aviso cuando la pulsera no tiene datos · señal cuando los macros degeneran ·
-guardia por IMC y condición de parada · decidir si `recomp` se implementa de verdad o se presenta como
-"déficit suave".
+BMR (mitad pendiente de AUD-21) · aviso cuando la pulsera no tiene datos (AUD-14) · señal cuando los
+macros degeneran (AUD-17) · guardia por IMC y condición de parada (AUD-8). *El punto de `recomp` ya no
+aplica: se eliminó la opción entera el 2026-11-23 (AUD-7). Quitar "tiempo real" ya se hizo en el
+Bloque A.*
 
-**Bloque E — los 🟡**: AUD-18 a AUD-24, todos triviales, en una sola pasada.
+**Bloque E — los 🟡**: AUD-18, AUD-19, AUD-23, AUD-24 — triviales, en una sola pasada. (AUD-20/22 ya
+cerrados en A; AUD-7 resuelto el 2026-11-23.)

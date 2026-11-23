@@ -4,6 +4,36 @@ Bitácora corta por sesión de trabajo sobre el endurecimiento del proyecto. Ent
 
 ---
 
+## 2026-11-23 — Eliminación de "recomposición"/cintura y Bloque C de la auditoría de kcal
+
+Dos decisiones directas del usuario, sin pasar por las vías intermedias que proponía el informe:
+
+- **Eliminada la opción de objetivo "Recomposición" (`GOAL_RECOMP`)** en vez de implementarla de verdad
+  o renombrarla como "déficit suave". Quedan `lose_fat` / `gain_muscle` / `maintain`. AUD-7 resuelto.
+- **Eliminado el seguimiento de cintura** ("es pereza" medirse con cinta): quitado el campo del diálogo
+  de peso, su validación, los modelos cliente/servidor, y la tarjeta `CompositionCard` que interpretaba
+  peso + cintura. La columna `waist_cm` se deja sin tocar en la BBDD (no es destructivo borrarla, pero
+  tampoco hacía falta).
+
+Ambos cambios commiteados en `3d19e2f`. Verificado con `:shared:jvmTest` (40 tests),
+`:server:compileKotlin`, `:composeApp:compileKotlinJvm`.
+
+**A continuación, Bloque C de la auditoría** (calidad del dato del autoajuste), los cinco puntos del
+plan: mínimos de `ADAPTIVE_MIN_SPAN_DAYS`/`WEIGH_INS` subidos a lo que exige §5.3 (10→14, 4→8), umbral
+de "día válido" (`ADAPTIVE_MIN_DAY_KCAL = 1000`), cobertura mínima de ventana (`ADAPTIVE_MIN_COVERAGE =
+0.8`, nuevo campo `windowDays` en `AdaptiveInput`), mínimo de días en la media de la pulsera
+(`WEARABLE_MIN_DAYS_WITH_DATA`), y `weight_history` escribiéndose siempre en vez de solo cuando cambia
+el peso. AUD-9, AUD-10, AUD-12 y AUD-13 marcados resueltos en `11-auditoria-kcal.md`.
+
+El escenario modal del informe original (déficit real del 31-44% informado como 23%, por registro
+parcial) ya no pasa el filtro de "día válido". 43 tests en verde, con cuatro nuevos específicos de estos
+cambios. **Sin verificar con build real el punto de la pulsera** (`HealthConnectProvider.kt` es
+`androidMain`). **Sin commitear todavía.**
+
+Quedan los Bloques D y E.
+
+---
+
 ## 2026-11-22 — Auditoría independiente del cálculo de kcal por objetivo (solo diagnóstico)
 
 El usuario pidió una **auditoría objetiva e independiente** de la funcionalidad de kcal en el sentido de

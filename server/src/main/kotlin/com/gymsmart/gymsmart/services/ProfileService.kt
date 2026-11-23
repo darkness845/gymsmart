@@ -201,11 +201,18 @@ class ProfileService(private val turso: TursoService) {
             saveAdaptiveTdee(userId, it, previous.adaptiveFactor, previous.adaptiveUpdatedAt)
         }
 
-        // Guardar historial solo si cambió el peso. El seguimiento de cintura se eliminó (decisión del
-        // usuario, 2026-11-23: medirla era pereza para el día a día); la columna `waist_cm` se deja sin
-        // tocar en la BBDD (no es destructivo borrarla, pero tampoco hace falta) y simplemente ya no se
-        // escribe ni se lee desde aquí.
-        if (previous == null || previous.weightKg != weightKg) {
+        // Se guarda historial SIEMPRE, no solo cuando cambia el peso. Antes, un pesaje que coincidía
+        // con el peso ya guardado no generaba fila: los días de peso estable se eliminaban
+        // sistemáticamente de la muestra, lo que infla la pendiente de la regresión y distorsiona el
+        // autoajuste directamente, porque el término de corrección *es* esa pendiente (AUD-12 en
+        // doc/11-auditoria-kcal.md). El "evitar duplicado del mismo día" de abajo ya hacía un
+        // UPSERT-por-día; con esto, un día sin cambio de peso simplemente reescribe la fila de hoy con
+        // el mismo número, en vez de no dejar ningún rastro de que ese día se siguió el peso.
+        //
+        // El seguimiento de cintura se eliminó (decisión del usuario, 2026-11-23: medirla era pereza
+        // para el día a día); la columna `waist_cm` se deja sin tocar en la BBDD (no es destructivo
+        // borrarla, pero tampoco hace falta) y simplemente ya no se escribe ni se lee desde aquí.
+        run {
             val today = java.time.LocalDate.now().toString()
 
             // Evitar duplicado del mismo día
@@ -401,10 +408,14 @@ class ProfileService(private val turso: TursoService) {
         val spanDays = java.time.temporal.ChronoUnit.DAYS
             .between(weighIns.first().first, weighIns.last().first).toInt()
 
+        // Un día con solo el desayuno contaba como un día completo registrado: la ingesta se
+        // promediaba sobre "días con alguna fila" mientras la pendiente de peso se media sobre días
+        // naturales, y la diferencia se interpretaba como metabolismo (AUD-10). Se filtra a días por
+        // encima de ADAPTIVE_MIN_DAY_KCAL antes de contarlos como registrados.
         val intakeInWindow = dailyIntake.mapNotNull { (day, kcal) ->
             runCatching { java.time.LocalDate.parse(day) }.getOrNull()
                 ?.takeIf { !it.isBefore(since) }?.let { kcal }
-        }
+        }.filter { it >= NutritionMath.ADAPTIVE_MIN_DAY_KCAL }
         if (intakeInWindow.isEmpty())
             return NutritionMath.AdaptiveResult.NotEnoughData("Sin comidas registradas en el periodo")
 
@@ -432,7 +443,8 @@ class ProfileService(private val turso: TursoService) {
                 spanDays           = spanDays,
                 avgDailyIntakeKcal = intakeInWindow.average(),
                 weightChangeKg     = slopeKgPerDay * spanDays,
-                previousTdee       = anchor
+                previousTdee       = anchor,
+                windowDays         = windowDays
             )
         )
 
