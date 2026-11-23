@@ -454,6 +454,69 @@ class NutritionMathTest {
         assertTrue(m.proteinG >= 0 && m.carbsG >= 0 && m.fatG >= 0, "Macros negativos: $m")
     }
 
+    // ── Bloque D: honestidad de la interfaz ─────────────────────────────────────
+
+    @Test
+    fun `la banda de incertidumbre es mas estrecha con medicion que con formula`() {
+        val formula = NutritionMath.targetBand(1624, tdeeIsMeasured = false)
+        val medido  = NutritionMath.targetBand(1624, tdeeIsMeasured = true)
+        assertTrue(
+            (medido.last - medido.first) < (formula.last - formula.first),
+            "La banda medida ($medido) debería ser más estrecha que la de fórmula ($formula)"
+        )
+        // Redondeada a múltiplos de 25 y centrada aproximadamente en el objetivo.
+        assertEquals(0, formula.first % 25)
+        assertEquals(0, formula.last % 25)
+        assertTrue(formula.first < 1624 && formula.last > 1624)
+    }
+
+    @Test
+    fun `macros degradados se señalan cuando el reparto ideal no cabe`() {
+        // 200 kg / 1600 kcal: el caso extremo del informe (AUD-17), proteína al límite y 0 g de carbos.
+        val degenerado = NutritionMath.macrosFor(1600.0, 200.0, NutritionMath.GOAL_LOSE)
+        assertTrue(degenerado.degraded, "Debería marcarse degradado: $degenerado")
+
+        // El perfil real del usuario (75,5 kg / 1800 kcal) no debería activarlo.
+        val sano = NutritionMath.macrosFor(1800.0, 75.5, NutritionMath.GOAL_LOSE)
+        assertTrue(!sano.degraded, "No debería marcarse degradado: $sano")
+    }
+
+    @Test
+    fun `la guardia por IMC cae a mantenimiento en bajo peso pidiendo mas deficit`() {
+        // Mujer 45 kg / 162 cm, IMC ≈ 17,1 (bajo peso), pidiendo perder al 1%/sem.
+        val r = NutritionMath.computeTargets(
+            sex = "female", weightKg = 45.0, heightCm = 162.0, age = 30,
+            activityLevel = "sedentary", goal = NutritionMath.GOAL_LOSE, ratePct = -1.0
+        )
+        assertTrue(r.bmi < 18.5, "El cuerpo de prueba debería estar en bajo peso: IMC ${r.bmi}")
+        assertTrue(r.lowBmiGuard, "Debería activarse la guardia por IMC")
+        assertTrue(r.noSafeDeficit, "lowBmiGuard también implica noSafeDeficit")
+        assertEquals(r.tdee, r.targetKcal, "Sin déficit seguro el objetivo debe ser el mantenimiento")
+        assertClose(0.0, r.effectiveRate)
+    }
+
+    @Test
+    fun `la guardia por IMC no se activa para quien quiere ganar estando en bajo peso`() {
+        // El mismo cuerpo, pero pidiendo ganar músculo: no tiene sentido bloquear un superávit.
+        val r = NutritionMath.computeTargets(
+            sex = "female", weightKg = 45.0, heightCm = 162.0, age = 30,
+            activityLevel = "sedentary", goal = NutritionMath.GOAL_GAIN, ratePct = 0.3
+        )
+        assertTrue(r.bmi < 18.5)
+        assertTrue(!r.lowBmiGuard, "No debería activarse al pedir ganar peso")
+        assertTrue(r.targetKcal > r.tdee)
+    }
+
+    @Test
+    fun `la guardia por IMC no se activa en normopeso`() {
+        val r = NutritionMath.computeTargets(
+            sex = "male", weightKg = 75.5, heightCm = 184.0, age = 21,
+            activityLevel = "sedentary", goal = NutritionMath.GOAL_LOSE, ratePct = -0.75
+        )
+        assertTrue(r.bmi >= 18.5)
+        assertTrue(!r.lowBmiGuard)
+    }
+
     // ── Autoajuste ────────────────────────────────────────────────────────────
 
     @Test
@@ -601,5 +664,16 @@ class NutritionMathTest {
         assertEquals("1.0", NutritionMath.formatOneDecimal(0.96))
         assertEquals("0.53", NutritionMath.formatTwoDecimals(0.5298))
         assertEquals("0.05", NutritionMath.formatTwoDecimals(0.05))
+    }
+
+    @Test
+    fun `el formateo conserva el signo para magnitudes menores que 1`() {
+        // AUD-23: la división entera truncaba hacia cero (`-4 / 10 == 0`), así que un valor negativo
+        // menor que 1 en magnitud perdía el signo. Justo el tramo donde viven todos los ritmos.
+        assertEquals("-0.4", NutritionMath.formatOneDecimal(-0.4))
+        assertEquals("-0.05", NutritionMath.formatTwoDecimals(-0.05))
+        // Y sigue funcionando igual que antes para |valor| >= 1, donde el bug no se notaba.
+        assertEquals("-1.5", NutritionMath.formatOneDecimal(-1.5))
+        assertEquals("-2.30", NutritionMath.formatTwoDecimals(-2.3))
     }
 }

@@ -391,6 +391,14 @@ fun NutritionScreen(
                     ) {
                         Text(
                             when {
+                                // Mismo mecanismo que noSafeDeficit (el objetivo cae a mantenimiento),
+                                // pero el motivo es distinto y hay que decirlo con su propio texto: no
+                                // es que falte margen de gasto, es que seguir en bajo peso sin
+                                // supervisión no tiene cobertura clínica (AUD-8).
+                                t.lowBmiGuard ->
+                                    "⚠ Tu IMC (${t.bmi}) está en bajo peso. No te doy más déficit: te " +
+                                        "dejo en mantenimiento (${t.targetKcal} kcal). Si quieres seguir " +
+                                        "perdiendo, habla primero con un profesional."
                                 t.noSafeDeficit ->
                                     "⚠ Con tu gasto actual no puedo darte un déficit seguro, así que te " +
                                         "dejo en mantenimiento (${t.targetKcal} kcal). Para perder grasa " +
@@ -405,6 +413,51 @@ fun NutritionScreen(
                                         "25% de tu gasto. Avanzarás a ${formatRate(t.effectiveRate)} en " +
                                         "vez de ${formatRate(t.requestedRate)} por semana."
                             },
+                            modifier = Modifier.padding(12.dp),
+                            color = GymSmartColors.Warning,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
+            // Antes esto se calculaba y se tiraba: `hasData` distinguía "0 kcal" de "no lo sé" pero la
+            // interfaz no decía nada cuando era "no lo sé", así que el objetivo caía en silencio al
+            // respaldo sedentario (~300 kcal/día menos para alguien activo) sin ninguna explicación —
+            // el mismo "déficit encubierto" que motivó toda esta línea de trabajo (AUD-14).
+            if (hasWearable && isToday && !wearableEnergy.hasData) {
+                item {
+                    Spacer(Modifier.height(16.dp))
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        color = GymSmartColors.Warning.copy(alpha = 0.12f),
+                        shape = MaterialTheme.shapes.small
+                    ) {
+                        Text(
+                            "⚠ No tengo datos recientes de tu pulsera. Tu objetivo de hoy se calcula " +
+                                "como si fueras sedentario, que puede quedarse corto si has hecho " +
+                                "ejercicio. Sincroniza la app de tu pulsera y vuelve a entrar.",
+                            modifier = Modifier.padding(12.dp),
+                            color = GymSmartColors.Warning,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
+            // Cuadrar las kcal no es lo mismo que ser un reparto razonable: con objetivo bajo y peso
+            // alto la proteína podía llegar al 85% de las kcal y los carbohidratos a 0 g, sin que nada
+            // lo señalara (AUD-17).
+            targets?.takeIf { it.macrosDegraded }?.let {
+                item {
+                    Spacer(Modifier.height(16.dp))
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        color = GymSmartColors.Warning.copy(alpha = 0.12f),
+                        shape = MaterialTheme.shapes.small
+                    ) {
+                        Text(
+                            "⚠ Con este objetivo calórico, el reparto de macros no es realista: la " +
+                                "proteína y la grasa ocupan casi todas las kcal y apenas queda sitio " +
+                                "para carbohidratos. Puede ser momento de revisar el ritmo elegido.",
                             modifier = Modifier.padding(12.dp),
                             color = GymSmartColors.Warning,
                             style = MaterialTheme.typography.bodySmall

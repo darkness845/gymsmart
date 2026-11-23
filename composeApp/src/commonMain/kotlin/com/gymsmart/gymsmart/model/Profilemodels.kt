@@ -53,10 +53,14 @@ data class NutritionTargets(
      * No hay déficit seguro posible: el suelo alcanza el mantenimiento y el objetivo se queda ahí.
      * Es la diferencia entre "voy despacio" y "no voy", y hay que decírselo al usuario.
      */
-    val noSafeDeficit:  Boolean = false
+    val noSafeDeficit:  Boolean = false,
+    /** Ya está en bajo peso y pide más déficit: el objetivo se cae a mantenimiento (AUD-8). */
+    val lowBmiGuard:    Boolean = false,
+    /** El reparto de macros no cupo en el objetivo y tuvo que recortar grasa/proteína (AUD-17). */
+    val macrosDegraded: Boolean = false
 )
 
-/** Respuesta de `GET /profile/adaptive` (autoajuste). */
+/** Respuesta de `POST /profile/adaptive` (autoajuste). */
 @Serializable
 data class AdaptiveResponse(
     val adjusted:     Boolean,

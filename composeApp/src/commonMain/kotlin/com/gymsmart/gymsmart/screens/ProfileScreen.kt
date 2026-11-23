@@ -678,16 +678,23 @@ fun ProfileScreen(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
+                            // Antes, en modo pulsera, decía "BMR" pero mostraba `targets.tdee` — la
+                            // etiqueta y el número no coincidían (AUD-21). Cada etiqueta su número.
                             SummaryKcalBox(
                                 label = if (activityLevel == "wearable") "BMR" else "TDEE",
-                                value = "${targets.tdee}",
-                                sub = "mantenimiento",
+                                value = if (activityLevel == "wearable") "${targets.bmr}" else "${targets.tdee}",
+                                sub = if (activityLevel == "wearable") "sin actividad" else "mantenimiento",
                                 modifier = Modifier.weight(1f)
                             )
+                            // Banda en vez de número único: "1624 kcal" promete una precisión que el
+                            // cálculo no tiene (ver doc/11-auditoria-kcal.md, sección de la banda).
                             SummaryKcalBox(
                                 label = "Objetivo",
                                 value = "${targets.targetKcal}",
-                                sub = "kcal/día",
+                                sub = run {
+                                    val band = NutritionMath.targetBand(targets.targetKcal, targets.tdeeIsMeasured)
+                                    "${band.first}-${band.last} kcal/día"
+                                },
                                 highlight = true,
                                 modifier = Modifier.weight(1f)
                             )

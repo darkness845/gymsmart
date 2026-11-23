@@ -54,7 +54,9 @@ class ProfileService(private val client: HttpClient) {
      * comido, y corrige el objetivo si hay datos suficientes (doc/10-fundamento-cientifico.md §5).
      */
     suspend fun runAdaptiveAdjustment(avgActiveKcal: Double? = null): Result<AdaptiveResponse> = runCatching {
-        client.get("$base/profile/adaptive") {
+        // POST, no GET: el autoajuste escribe en la BBDD, y un GET con efecto de escritura es
+        // cacheable/reintentable por infraestructura sin que nada lo impida (AUD-24).
+        client.post("$base/profile/adaptive") {
             // El servidor necesita la media de activas para anclar el ajuste al gasto con el que el
             // usuario ha estado comiendo de verdad. Sin ella caía al respaldo `BMR × 1,2` y el ajuste
             // salía en dirección contraria a la medición (AUD-4 en doc/11-auditoria-kcal.md).

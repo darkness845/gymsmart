@@ -4,6 +4,41 @@ Bitácora corta por sesión de trabajo sobre el endurecimiento del proyecto. Ent
 
 ---
 
+## 2026-11-23 (continuación) — Bloques D y E: los 5 bloques de la auditoría de kcal quedan completos
+
+Último tramo del plan de `doc/11-auditoria-kcal.md`, sin pasar por delegación a otro modelo (se había
+valorado para C/E, pero se hizo todo en la misma sesión).
+
+**Bloque D (honestidad de la interfaz)**: `NutritionMath.targetBand` nueva (banda de incertidumbre, ±150
+kcal con fórmula / ±75 con medición, redondeada a 25) mostrada en Onboarding y Perfil junto al objetivo
+exacto; la caja "BMR" corregida en ambas pantallas (mostraba `tdee`, ahora muestra `bmr`); aviso en
+`NutritionScreen` cuando hay pulsera y no hay datos de hoy (`wearableEnergy` se calculaba y se tiraba);
+`Macros.degraded`/`TargetResult.macrosDegraded` nuevos, con aviso cuando el reparto ideal no cupo en el
+objetivo; y la pieza más grande, `TargetResult.lowBmiGuard` — IMC < 18,5 con un objetivo que pide más
+déficit hace caer el suelo al mantenimiento entero, con su propio texto, sin bloquear a quien en ese
+mismo rango pide ganar peso.
+
+**Bloque E (AUD-18, 19, 23, 24)**: la migración SQL del ritmo reescrita para reproducir exactamente
+`NutritionMath.clampRate` (antes `MIN(-0.05, goal_rate)` subía magnitudes válidas, el mismo género de
+bug que motivó la reescritura del ritmo en primer lugar); el formato de `resolvedAge` corregido de
+`"dd/MM/yyyy"` a `"ddMMyyyy"` (el real del cliente), con validación de rango añadida porque arreglar el
+formato reactivaba un riesgo de edad absurda que estaba dormido por el mismo bug; el signo recuperado en
+`formatOneDecimal`/`formatTwoDecimals`; y `/profile/adaptive` pasado de GET a POST, con
+`runAdaptiveAdjustment` serializado por un `Mutex` por usuario y `upsertProfile` haciendo el `INSERT OR
+REPLACE` + la restauración del autoajuste en un único `executeBatch` con `BEGIN IMMEDIATE`/`COMMIT`.
+
+**Verificación antes de confiar en el punto de las transacciones**: se probó contra la Turso real (de
+solo lectura, `BEGIN`/`SELECT 1`/`COMMIT`) que el pipeline HTTP de libSQL acepta esos statements antes de
+construir el arreglo de `upsertProfile` sobre ese supuesto.
+
+49 tests en verde (`:shared:jvmTest`), `:server:compileKotlin` y `:composeApp:compileKotlinJvm` también.
+Sin verificar con build real nada androidMain (no se tocó en este tramo). **Sin commitear todavía.**
+
+Fuera de alcance de los 5 bloques, documentado y sin tocar: AUD-11 (snapshot/`calcVersion` del objetivo
+histórico) y el ángulo del ciclo menstrual del autoajuste — ambos son cambios de arquitectura mayores.
+
+---
+
 ## 2026-11-23 — Eliminación de "recomposición"/cintura y Bloque C de la auditoría de kcal
 
 Dos decisiones directas del usuario, sin pasar por las vías intermedias que proponía el informe:

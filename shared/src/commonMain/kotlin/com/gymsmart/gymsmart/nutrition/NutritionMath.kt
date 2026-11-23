@@ -391,7 +391,22 @@ object NutritionMath {
          * Hay que decírselo al usuario: es la diferencia entre "voy despacio" y "no voy". Si aparece de
          * forma estable, lo que toca no es comer menos, es aumentar el gasto.
          */
-        val noSafeDeficit:  Boolean
+        val noSafeDeficit:  Boolean,
+        /**
+         * Ya está en bajo peso (IMC < 18,5) y el objetivo elegido pide más déficit (AUD-8). El objetivo
+         * se cae a mantenimiento igual que con [noSafeDeficit] — es el mismo mecanismo con un motivo
+         * distinto que explicar: aquí no es que falte margen de gasto, es que seguir recortando no
+         * tiene cobertura clínica sin supervisión. No bloquea el ritmo que el usuario eligió en la
+         * interfaz; solo deja de traducirlo en un déficit real mientras siga en este rango.
+         */
+        val lowBmiGuard:    Boolean,
+        /**
+         * El reparto de macros no pudo cumplir el objetivo por kg de proteína con el objetivo
+         * calórico dado: tuvo que recortar primero la grasa y, si no bastaba, también la proteína por
+         * debajo del gramaje objetivo (AUD-17). Cuadrar las kcal no es lo mismo que ser un reparto
+         * razonable — esto avisa cuando deja de serlo.
+         */
+        val macrosDegraded: Boolean
     )
 
     /**
@@ -449,6 +464,19 @@ object NutritionMath {
         val measuredFloor = bmrValue * activityMultiplier("sedentary")
         val baseTdee = measured?.let { max(it, measuredFloor) } ?: formulaTdee
 
+        // Se calcula aquí, antes del suelo y del delta, porque la guardia por IMC de abajo lo necesita
+        // para decidir si hay déficit en absoluto — no solo para informarlo al final.
+        val heightM = heightCm / 100.0
+        val bmiValue = if (heightM > 0) weightKg / (heightM * heightM) else 0.0
+
+        // Guardia por IMC (AUD-8): "alguien que baje a IMC 16 sigue recibiendo −25%" era el hueco
+        // funcional más grande de la auditoría. No hay condición de parada automática a día de hoy, y
+        // esta es la que faltaba: ya en bajo peso y pidiendo más déficit, no hay cobertura clínica para
+        // seguir recortando sin supervisión. No se toca el ritmo que el usuario eligió en el formulario
+        // (eso sigue siendo su decisión); lo que deja de ocurrir es que ese ritmo se traduzca en un
+        // déficit real mientras siga en este rango.
+        val lowBmiGuard = bmiValue > 0.0 && bmiValue < 18.5 && signFor(goal) < 0
+
         val effectiveRatePct = if (goal == GOAL_MAINTAIN) 0.0 else rate
         val requestedDelta = dailyDeltaFor(effectiveRatePct, weightKg)
 
@@ -471,8 +499,10 @@ object NutritionMath {
         // convierte "perder grasa" en un superávit: el usuario pediría adelgazar y la app le mandaría
         // comer de más. Si el suelo llega al mantenimiento, lo honesto es decir que no hay déficit
         // seguro posible y dejar el objetivo en mantenimiento, no inventarse un superávit.
-        val floor = min(floorRaw, baseTdee)
-        val noSafeDeficit = signFor(goal) < 0 && floorRaw >= baseTdee - 1e-9
+        // Si la guardia por IMC se dispara, manda ella: el suelo pasa a ser el mantenimiento entero,
+        // sin importar lo que permitiera la disponibilidad energética.
+        val floor = if (lowBmiGuard) baseTdee else min(floorRaw, baseTdee)
+        val noSafeDeficit = signFor(goal) < 0 && (floorRaw >= baseTdee - 1e-9 || lowBmiGuard)
 
         // Ritmo **sostenido**: lo que el plan entrega día tras día, sin contar el arrastre puntual.
         val sustainedTarget = max(baseTdee + cappedDelta, floor)
@@ -509,9 +539,6 @@ object NutritionMath {
 
         val macros = macrosFor(targetKcal, weightKg, goal)
 
-        val heightM = heightCm / 100.0
-        val bmiValue = if (heightM > 0) weightKg / (heightM * heightM) else 0.0
-
         return TargetResult(
             bmr              = bmrValue.roundToInt(),
             tdee             = baseTdee.roundToInt(),
@@ -528,11 +555,19 @@ object NutritionMath {
             energyFloorHit   = flooredHit,
             energyFloor      = floorRaw.roundToInt(),
             appliedCarryOver = (targetKcal - sustainedTarget).roundToInt(),
-            noSafeDeficit    = noSafeDeficit
+            noSafeDeficit    = noSafeDeficit,
+            lowBmiGuard      = lowBmiGuard,
+            macrosDegraded   = macros.degraded
         )
     }
 
-    data class Macros(val proteinG: Int, val carbsG: Int, val fatG: Int)
+    data class Macros(
+        val proteinG: Int,
+        val carbsG:   Int,
+        val fatG:     Int,
+        /** El reparto ideal no cabía en el objetivo y hubo que recortar grasa y/o proteína (AUD-17). */
+        val degraded: Boolean = false
+    )
 
     /**
      * Reparto de macronutrientes (§6).
@@ -557,6 +592,11 @@ object NutritionMath {
         var fatKcal = targetKcal * 0.25
 
         var remaining = targetKcal - proteinKcal - fatKcal
+        // El reparto ideal (proteína por kg + 25% de grasa) no cabía en el objetivo: hubo que recortar
+        // grasa y, si no bastaba, proteína por debajo del gramaje objetivo. El reparto final cuadra
+        // siempre (eso ya estaba resuelto y probado), pero cuadrar no es ser razonable — 0 g de
+        // carbohidratos y proteína al 85% de las kcal no es un plan que deba pasar sin aviso (AUD-17).
+        val degraded = remaining < 0.0
         if (remaining < 0) {
             val minFatKcal = targetKcal * 0.15
             fatKcal = max(minFatKcal, targetKcal - proteinKcal)
@@ -570,7 +610,8 @@ object NutritionMath {
         return Macros(
             proteinG = (proteinKcal / 4.0).roundToInt(),
             carbsG   = (remaining / 4.0).roundToInt(),
-            fatG     = (fatKcal / 9.0).roundToInt()
+            fatG     = (fatKcal / 9.0).roundToInt(),
+            degraded = degraded
         )
     }
 
@@ -581,6 +622,42 @@ object NutritionMath {
         bmi < 35.0 -> "Obesidad grado I"
         bmi < 40.0 -> "Obesidad grado II"
         else       -> "Obesidad grado III"
+    }
+
+    // ── Incertidumbre del objetivo ─────────────────────────────────────────────
+
+    /**
+     * Medio ancho de la banda cuando el gasto viene de **fórmula**, en kcal/día.
+     *
+     * La incertidumbre a priori del TDEE estimado ronda ±300-500 kcal/día: el error estándar publicado
+     * del BMR por Schofield es de 110-170 kcal/día (tabla 5.2 de FAO/WHO/UNU 2004), más ±9% por el
+     * ancho de la categoría de actividad, más 15-30% si el dato viene de un wearable. Se muestra la
+     * mitad de ese rango (150) para no ser alarmista mostrando el extremo superior, mientras se sigue
+     * comunicando que "1624 kcal" no es una cifra exacta — que es justo lo que la app no hacía.
+     */
+    const val TARGET_BAND_HALFWIDTH_FORMULA = 150
+
+    /**
+     * Medio ancho de la banda cuando el gasto viene de **medición** (autoajuste), en kcal/día.
+     *
+     * Más estrecho que el de fórmula porque ya está calibrado contra el resultado real, pero no es
+     * cero: sigue habiendo ruido de registro de comidas y de agua/glucógeno en el peso. 75 es la mitad
+     * del medio ancho de fórmula, una proporción razonable sin pretender una precisión que nadie ha
+     * medido para este caso concreto.
+     */
+    const val TARGET_BAND_HALFWIDTH_MEASURED = 75
+
+    /**
+     * Banda de incertidumbre alrededor del objetivo, redondeada a múltiplos de 25 kcal.
+     *
+     * Mostrar "1624 kcal" con cuatro cifras significativas es afirmar una precisión que ningún
+     * componente del cálculo tiene. Pensado para mostrarse como "1550-1700 kcal" en vez del número
+     * exacto, o junto a él como aclaración.
+     */
+    fun targetBand(targetKcal: Int, tdeeIsMeasured: Boolean): IntRange {
+        val halfWidth = if (tdeeIsMeasured) TARGET_BAND_HALFWIDTH_MEASURED else TARGET_BAND_HALFWIDTH_FORMULA
+        fun roundTo25(v: Int) = (v / 25.0).roundToInt() * 25
+        return roundTo25(targetKcal - halfWidth)..roundTo25(targetKcal + halfWidth)
     }
 
     // ── Autoajuste por medición (§5) ──────────────────────────────────────────
@@ -737,16 +814,28 @@ object NutritionMath {
      */
     fun Double.orZero(): Double = if (isFinite()) this else 0.0
 
-    /** `toString()` de Double varía entre plataformas en KMP; esto da siempre "1.2". */
+    /**
+     * `toString()` de Double varía entre plataformas en KMP; esto da siempre "1.2".
+     *
+     * AUD-23: la versión anterior dividía `rounded` (con signo) por 10 directamente. La división
+     * entera de Kotlin trunca hacia cero, así que `-4 / 10 == 0`: `formatOneDecimal(-0.4)` daba
+     * `"0.4"`, sin el signo — justo en el tramo donde viven todos los ritmos de la app. Funcionaba
+     * para `|valor| ≥ 1` porque ahí la parte entera ya no es cero. Ahora se trabaja con la magnitud y
+     * el signo se antepone aparte, así que el caso `|valor| < 1` también es correcto.
+     */
     fun formatOneDecimal(value: Double): String {
         val rounded = (value * 10.0).roundToInt()
-        return "${rounded / 10}.${abs(rounded % 10)}"
+        val sign = if (rounded < 0) "-" else ""
+        val magnitude = abs(rounded)
+        return "$sign${magnitude / 10}.${magnitude % 10}"
     }
 
-    /** Igual que [formatOneDecimal] pero con dos decimales: "0.53". */
+    /** Igual que [formatOneDecimal] pero con dos decimales: "0.53". Mismo arreglo de signo (AUD-23). */
     fun formatTwoDecimals(value: Double): String {
         val rounded = (value * 100.0).roundToInt()
-        val decimals = abs(rounded % 100)
-        return "${rounded / 100}.${if (decimals < 10) "0$decimals" else "$decimals"}"
+        val sign = if (rounded < 0) "-" else ""
+        val magnitude = abs(rounded)
+        val decimals = magnitude % 100
+        return "$sign${magnitude / 100}.${if (decimals < 10) "0$decimals" else "$decimals"}"
     }
 }

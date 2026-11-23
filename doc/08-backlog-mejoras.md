@@ -399,16 +399,17 @@ cumplimiento de los 44 requisitos de referencia, y el plan de arreglo acordado. 
 | AUD-5 | 🔴 ALTO | `RateSlider` no recibe el TDEE, así que su tercio superior no cambia el objetivo mientras promete +54 % de pérdida. El ritmo por defecto (−0,75 %) ya está recortado en `sedentary` **y** en `light`. |
 | AUD-6 | 🟠 MEDIO | No hay tope de superávit: hasta +32 % frente al +10-20 % que fija §10.3. `rateLimited` nunca puede ser `true` en `gain_muscle`. |
 | AUD-7 | ✅ RESUELTO (2026-11-23) | `recomp` producía salida **idéntica** a `lose_fat`. El usuario decidió eliminar la opción en vez de implementarla o renombrarla: el menú queda en perder/ganar/mantener. |
-| AUD-8 | 🟠 MEDIO | El IMC se calcula, se pinta y **nunca se usa como guardia**. No hay condición de parada ni transición a `maintain`. |
+| AUD-8 | ✅ RESUELTO (2026-11-23) | Nuevo `TargetResult.lowBmiGuard`: IMC < 18,5 + objetivo de más déficit → el suelo pasa a mantenimiento. No bloquea pedir ganar peso en bajo peso. |
 | AUD-9 | ✅ RESUELTO (2026-11-23) | `ADAPTIVE_MIN_SPAN_DAYS` 10→14, `ADAPTIVE_MIN_WEIGH_INS` 4→8 (lo que exige §5.3), y nueva cobertura mínima de ventana (80%, ver AUD-10). |
 | AUD-10 | ✅ RESUELTO (2026-11-23) | Umbral de "día válido" (`ADAPTIVE_MIN_DAY_KCAL = 1000`) antes de contar un día como registrado, y cobertura mínima del 80% de la ventana (`ADAPTIVE_MIN_COVERAGE`) añadida a `AdaptiveInput`/`reconcile`. |
 | AUD-11 | 🟠 MEDIO | Sin snapshot ni `calcVersion`: los días pasados se juzgan con el perfil de hoy, y cambiar una constante reescribe el historial entero. |
 | AUD-12 | ✅ RESUELTO (2026-11-23) | `weight_history` ahora se escribe **siempre** al guardar el perfil, no solo si el peso cambia — ya no se pierden los días de peso estable de la muestra. |
 | AUD-13 | ✅ RESUELTO (2026-11-23) | Nuevo `WEARABLE_MIN_DAYS_WITH_DATA` (mitad de la ventana, 7 de 14 días): un solo día ya no puede ser "la media". `WEARABLE_AVERAGE_DAYS` ahora sí se referencia (el `days` por defecto de `getEnergySummary`). ⚠️ Sin verificar con build real — `HealthConnectProvider.kt` es `androidMain`. |
-| AUD-14 | 🟠 MEDIO | Fallo silencioso de la pulsera: sin datos el gasto cae a `BMR × 1,2` (−300 kcal/d) sin aviso. `wearableEnergy` se asigna y nunca se lee. |
+| AUD-14 | ✅ RESUELTO (2026-11-23) | Nuevo aviso en `NutritionScreen` cuando hay pulsera y no hay datos de hoy — `wearableEnergy` ya se lee. |
 | AUD-15 | 🟠 MEDIO | `avgActiveKcal`/`carryOverKcal` sin rango ni `isFinite`: `NaN` → 500, `Infinity` → `Int.MAX_VALUE`, negativos → objetivo negativo. Ver hallazgo 15 de [03-seguridad.md](03-seguridad.md). |
 | AUD-16 | 🟠 MEDIO | **Falta `ALTER TABLE ... ADD COLUMN has_wearable`** (condicional: si la BBDD desplegada es anterior a `dc1b216`, `POST /profile/save` y el registro de peso están rotos). ⏳ **Pendiente de la verificación de 30 s del usuario.** |
-| AUD-17..24 | 🟡 BAJO | Macros degenerados sin señal · la migración SQL *sube* el ritmo · `resolvedAge` muerto por formato de fecha · `rateLimited` sin banda muerta · textos de "tiempo real" y caja "BMR" que muestra el TDEE · `defaultRateFor(gain)` fuera de la rejilla del slider · formateo que pierde el signo · escrituras no atómicas. |
+| AUD-17..24 | ✅ TODOS RESUELTOS (2026-11-23) | Macros degenerados con señal (`macrosDegraded`) · migración SQL reescrita como `clampRate` · `resolvedAge` con formato correcto y validado · banda muerta (Bloque A) · "tiempo real" quitado (Bloque A) y caja "BMR" corregida · slider en rejilla (Bloque A) · formateo con signo correcto · `/profile/adaptive` a POST + `Mutex` + `upsertProfile` atómico. |
+| AUD-11 | ⬜ FUERA DE ALCANCE | Sin snapshot/`calcVersion` del objetivo histórico: cambiar de día o una constante reescribe el pasado. Cambio de arquitectura mayor, nunca entró en el plan de bloques A-E. |
 
 **Veredicto de fondo**: el modelo energético es correcto (ritmo en %, déficit por velocidad y no por
 plazo, `BMR + ActiveCalories` sin doble conteo), y las constantes del código coinciden **todas** con

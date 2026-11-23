@@ -269,7 +269,16 @@ la cadena de caracteres, no en el modelo.
 
 ---
 
-## 🟠 AUD-8 (MEDIO) — El IMC se calcula, se pinta y nunca se usa como guardia
+## ✅ AUD-8 (MEDIO) — El IMC se calcula, se pinta y nunca se usa como guardia — RESUELTO (2026-11-23)
+
+> Nuevo `TargetResult.lowBmiGuard`: se calcula el IMC **antes** del suelo (no al final, como antes), y
+> si `bmi < 18.5` **y** el objetivo elegido implica más déficit (`signFor(goal) < 0`), el suelo pasa a
+> ser el mantenimiento entero — mismo mecanismo que `noSafeDeficit` (que también se activa en este
+> caso), con su propio texto en la interfaz explicando el motivo real. **No bloquea el ritmo elegido en
+> el formulario**: lo que deja de ocurrir es que ese ritmo se traduzca en un déficit real mientras el
+> IMC siga por debajo de 18,5. No se activa para quien pide ganar peso estando ya en bajo peso (no
+> tendría sentido bloquear un superávit). "Condición de parada" queda resuelta vía este mecanismo, no
+> vía un peso objetivo con fecha — ver la nota de encuadre de abajo, que sigue siendo válida.
 
 `bmiCategoryFor` (`NutritionMath.kt:349-356`) clasifica hasta "Obesidad grado III" y "Bajo peso", y
 `BmiCard` lo pinta. **No existe ninguna rama de código que use `bmi` o `bmiCategory` para condicionar
@@ -440,7 +449,13 @@ completo); el 14 vive duplicado como valor por defecto en `HealthDataProvider.kt
 
 ---
 
-## 🟠 AUD-14 (MEDIO) — Fallo silencioso de la pulsera
+## ✅ AUD-14 (MEDIO) — Fallo silencioso de la pulsera — RESUELTO (2026-11-23)
+
+> Nuevo aviso en `NutritionScreen`, condicionado a `hasWearable && isToday && !wearableEnergy.hasData`
+> (la variable que se calculaba y se tiraba, ahora sí se lee): *"No tengo datos recientes de tu
+> pulsera. Tu objetivo de hoy se calcula como si fueras sedentario... Sincroniza la app de tu pulsera y
+> vuelve a entrar."* No se cambió el comportamiento del cálculo (seguir cayendo al respaldo sedentario
+> sigue siendo lo correcto, ver §1.3) — solo se dejó de ocultarlo.
 
 Cuando Health Connect no devuelve nada, `hasData = false`, el cliente manda `avgActiveKcal = null` y el
 gasto cae a `BMR × 1,2`. Para alguien que quema 700 kcal activas eso son **~300 kcal/día de recorte
@@ -518,18 +533,18 @@ escritorio sin pulsera.
 
 ---
 
-## 🟡 AUD-17 a AUD-24 (BAJO)
+## 🟡 AUD-17 a AUD-24 (BAJO) — todos RESUELTOS (2026-11-23)
 
-| ID | Hallazgo |
-|---|---|
-| AUD-17 | **Macros degenerados sin señal**: con objetivo bajo y peso alto la proteína llega al **85 % de las kcal** y los carbohidratos a **0 g** (200 kg/1600 kcal → 340 P / 0 C / 27 G), y la rama `proteinKcal = max(0, targetKcal - fatKcal)` la degrada a **1,49 g/kg** —por debajo de la meseta de 1,6 de Morton 2018 que cita §6.1— **sin devolver ninguna bandera**, al contrario de lo que sí se hizo con `rateLimited`. El reparto siempre cuadra (eso está bien resuelto y hay test), pero **cuadrar no es ser comestible**. Perfil inalcanzable para el usuario actual (75,5 kg / 1800 kcal → 34 % de kcal, 2,0 g/kg, sano). |
-| AUD-18 | **La migración SQL *sube* el ritmo**, contradiciendo su propio comentario ("solo limita la magnitud máxima… no se sube nada hacia arriba") y §3.2 ("por debajo de la banda: permitido y sin aviso"): `MIN(-0.05, goal_rate)` convierte −0,02 en −0,05. Magnitud ínfima (≈25 kcal/d), pero corre en **cada arranque** del servidor. `NutritionMath.clampRate` sí respeta el contrato; la divergencia es solo del SQL. |
-| AUD-19 | **`resolvedAge` es código muerto por desajuste de formato**: el cliente guarda 8 dígitos (`"01012000"`, `ProfileScreen.kt:253`, con las barras solo como `VisualTransformation`), el servidor parsea `"dd/MM/yyyy"` (`ProfileRoute.kt:159-170`) → siempre lanza → `catch { req.age }`. El mecanismo que debía mantener la edad autoritativa **nunca se ejecuta**; la edad solo cambia si se teclea a mano (5 kcal/año de BMR, ~7,75 de TDEE). **Nota**: esto *desactiva* el riesgo teórico de `birthDate` sin validar (edades de 126 años o negativas), porque el formato que lo explotaría nunca llega a parsear — los dos hallazgos se anulan mutuamente. |
-| AUD-20 | **`rateLimited` sin banda muerta**: en `light` con el ritmo por defecto el recorte es de −0,750 % a −0,747 % y aun así dispara el aviso falso de AUD-2. Un clip numéricamente irrelevante produce un mensaje alarmante y falso. |
-| AUD-21 | **Textos que contradicen el diseño**: `OnboardingScreen.kt:417` y `:432` prometen que la pulsera suma *"en tiempo real"* y *"automáticamente cada día"*, cuando §1.3 cierra con *"la interfaz **no debe prometer tiempo real**"* y el diseño hace lo contrario a propósito (media de días completos). Y la caja etiquetada **"BMR"** con subtítulo "base sin actividad" (`OnboardingScreen.kt:394-400`, `ProfileScreen.kt:660-663`) muestra `targets.tdee`: **2166 para un BMR de 1805**. El campo `TargetResult.bmr` existe, está en el payload y en el modelo cliente, y no se usa. |
-| AUD-22 | `defaultRateFor(GOAL_GAIN) = 0.375` **fuera de la rejilla del deslizador**: `steps = ((0.5−0.05)/0.05).roundToInt() − 1 = 8` → 10 posiciones de 0,05 en 0,05. Al tocar el deslizador el valor salta a 0,35 o 0,40 y ya no se puede recuperar (±20 kcal/d). Solo falla `gain`; −0,75 y −0,15 sí están en rejilla. |
-| AUD-23 | `formatOneDecimal`/`formatTwoDecimals` **pierden el signo para \|valor\| < 1**: `(-0.4 * 10).roundToInt() = -4`, y la división entera trunca hacia cero → `-4 / 10 == 0` → `"0.4"`. Funciona para `\|valor\| ≥ 1`, así que falla justo en el tramo donde viven todos los ritmos. Latente: todos los llamadores pasan `abs()` y ponen el signo a mano, pero el KDoc no advierte nada y el test solo usa positivos. |
-| AUD-24 | **`GET /profile/adaptive` escribe en BBDD sin transacción** (y es un GET con efectos secundarios): la secuencia `getProfile → cooldown → reconcile → saveAdaptiveTdee` no es atómica, así que dos llamadas concurrentes pueden aplicar la mezcla dos veces — justo contra lo que avisa el comentario de `ProfileService.kt:266-273`, y el disparador es automático al entrar en la pantalla. Y `upsertProfile` tampoco es atómico: `INSERT OR REPLACE` borra `adaptive_tdee` y una **segunda** llamada lo restaura; si esa segunda falla, se pierde sin rastro después de haber escrito ya el perfil. |
+| ID | Hallazgo | Resolución |
+|---|---|---|
+| AUD-17 | **Macros degenerados sin señal**: con objetivo bajo y peso alto la proteína llega al **85 % de las kcal** y los carbohidratos a **0 g** (200 kg/1600 kcal → 340 P / 0 C / 27 G), y la rama `proteinKcal = max(0, targetKcal - fatKcal)` la degrada a **1,49 g/kg** —por debajo de la meseta de 1,6 de Morton 2018 que cita §6.1— **sin devolver ninguna bandera**, al contrario de lo que sí se hizo con `rateLimited`. El reparto siempre cuadra (eso está bien resuelto y hay test), pero **cuadrar no es ser comestible**. Perfil inalcanzable para el usuario actual (75,5 kg / 1800 kcal → 34 % de kcal, 2,0 g/kg, sano). | ✅ `Macros.degraded` nuevo, true cuando el reparto ideal (proteína por kg + 25% de grasa) no cabía en el objetivo y hubo que recortar. Propagado a `TargetResult.macrosDegraded` y a un aviso en `NutritionScreen`. Tests con el caso 200kg/1600kcal (degradado) y el perfil real del usuario (no degradado). |
+| AUD-18 | **La migración SQL *sube* el ritmo**, contradiciendo su propio comentario ("solo limita la magnitud máxima… no se sube nada hacia arriba") y §3.2 ("por debajo de la banda: permitido y sin aviso"): `MIN(-0.05, goal_rate)` convierte −0,02 en −0,05. Magnitud ínfima (≈25 kcal/d), pero corre en **cada arranque** del servidor. `NutritionMath.clampRate` sí respeta el contrato; la divergencia es solo del SQL. | ✅ Reescrito a `-MIN(1.0, ABS(goal_rate))` / `MIN(0.5, ABS(goal_rate))`, que reproduce exactamente `clampRate`: acota por arriba, nunca sube una magnitud válida, y de paso corrige cualquier fila con el signo equivocado. |
+| AUD-19 | **`resolvedAge` es código muerto por desajuste de formato**: el cliente guarda 8 dígitos (`"01012000"`, `ProfileScreen.kt:253`, con las barras solo como `VisualTransformation`), el servidor parsea `"dd/MM/yyyy"` (`ProfileRoute.kt:159-170`) → siempre lanza → `catch { req.age }`. El mecanismo que debía mantener la edad autoritativa **nunca se ejecuta**; la edad solo cambia si se teclea a mano (5 kcal/año de BMR, ~7,75 de TDEE). **Nota**: esto *desactiva* el riesgo teórico de `birthDate` sin validar (edades de 126 años o negativas), porque el formato que lo explotaría nunca llega a parsear — los dos hallazgos se anulan mutuamente. | ✅ Formatter cambiado a `"ddMMyyyy"` (el formato real del cliente). Como esto reactiva el riesgo que estaba dormido por el mismo bug, la edad resuelta se valida contra `14..100` antes de usarla: si no cuadra, se descarta y cae a `req.age` en vez de persistir una edad absurda. |
+| AUD-20 | **`rateLimited` sin banda muerta**: en `light` con el ritmo por defecto el recorte es de −0,750 % a −0,747 % y aun así dispara el aviso falso de AUD-2. Un clip numéricamente irrelevante produce un mensaje alarmante y falso. | ✅ Ya resuelto en el Bloque A (`RATE_LIMIT_DEADBAND_KCAL`). |
+| AUD-21 | **Textos que contradicen el diseño**: `OnboardingScreen.kt:417` y `:432` prometen que la pulsera suma *"en tiempo real"* y *"automáticamente cada día"*, cuando §1.3 cierra con *"la interfaz **no debe prometer tiempo real**"* y el diseño hace lo contrario a propósito (media de días completos). Y la caja etiquetada **"BMR"** con subtítulo "base sin actividad" (`OnboardingScreen.kt:394-400`, `ProfileScreen.kt:660-663`) muestra `targets.tdee`: **2166 para un BMR de 1805**. El campo `TargetResult.bmr` existe, está en el payload y en el modelo cliente, y no se usa. | ✅ "Tiempo real" ya se quitó en el Bloque A. La caja "BMR" ahora muestra `result.bmr`/`targets.bmr` en vez de `tdee` en ambas pantallas, con `sub` ajustado a "sin actividad". |
+| AUD-22 | `defaultRateFor(GOAL_GAIN) = 0.375` **fuera de la rejilla del deslizador**: `steps = ((0.5−0.05)/0.05).roundToInt() − 1 = 8` → 10 posiciones de 0,05 en 0,05. Al tocar el deslizador el valor salta a 0,35 o 0,40 y ya no se puede recuperar (±20 kcal/d). Solo falla `gain`; −0,75 y −0,15 sí están en rejilla. | ✅ Ya resuelto en el Bloque A (el valor se encaja en la rejilla con `roundToInt()` sobre el paso). |
+| AUD-23 | `formatOneDecimal`/`formatTwoDecimals` **pierden el signo para \|valor\| < 1**: `(-0.4 * 10).roundToInt() = -4`, y la división entera trunca hacia cero → `-4 / 10 == 0` → `"0.4"`. Funciona para `\|valor\| ≥ 1`, así que falla justo en el tramo donde viven todos los ritmos. Latente: todos los llamadores pasan `abs()` y ponen el signo a mano, pero el KDoc no advierte nada y el test solo usa positivos. | ✅ Reescrito para trabajar con la magnitud y anteponer el signo aparte. Tests con `-0.4`, `-0.05`, y los casos `|valor| ≥ 1` que ya funcionaban, para no perder cobertura. |
+| AUD-24 | **`GET /profile/adaptive` escribe en BBDD sin transacción** (y es un GET con efectos secundarios): la secuencia `getProfile → cooldown → reconcile → saveAdaptiveTdee` no es atómica, así que dos llamadas concurrentes pueden aplicar la mezcla dos veces — justo contra lo que avisa el comentario de `ProfileService.kt:266-273`, y el disparador es automático al entrar en la pantalla. Y `upsertProfile` tampoco es atómico: `INSERT OR REPLACE` borra `adaptive_tdee` y una **segunda** llamada lo restaura; si esa segunda falla, se pierde sin rastro después de haber escrito ya el perfil. | ✅ Tres piezas: (1) la ruta pasa de `GET` a `POST`, cliente y servidor; (2) `runAdaptiveAdjustment` serializado con un `Mutex` por usuario; (3) `upsertProfile` combina el `INSERT OR REPLACE` y la restauración del autoajuste en un único `executeBatch` envuelto en `BEGIN IMMEDIATE`/`COMMIT` — verificado que Turso acepta `BEGIN`/`COMMIT` dentro del pipeline con una llamada de prueba real (solo lectura) antes de confiar en ello. |
 
 ---
 
@@ -682,11 +697,19 @@ mínima de la ventana (AUD-9/10) · `ADAPTIVE_MIN_SPAN_DAYS`/`WEIGH_INS` subidos
 `weight_history` siempre (AUD-12). Detalle en cada hallazgo más arriba. Verificado con `:shared:jvmTest`
 (43 tests), `:server:compileKotlin`, `:composeApp:compileKotlinJvm`.
 
-**Bloque D — honestidad de la interfaz**: bandas en vez de número único · etiqueta "BMR" que muestre el
-BMR (mitad pendiente de AUD-21) · aviso cuando la pulsera no tiene datos (AUD-14) · señal cuando los
-macros degeneran (AUD-17) · guardia por IMC y condición de parada (AUD-8). *El punto de `recomp` ya no
-aplica: se eliminó la opción entera el 2026-11-23 (AUD-7). Quitar "tiempo real" ya se hizo en el
-Bloque A.*
+**✅ Bloque D — honestidad de la interfaz (RESUELTO, 2026-11-23)**: `NutritionMath.targetBand` (banda de
+incertidumbre, ±150 kcal por fórmula / ±75 medido, redondeada a 25) mostrada en Onboarding y Perfil en
+vez del número exacto · etiqueta "BMR" corregida para mostrar `result.bmr`/`targets.bmr` en las dos
+pantallas (AUD-21) · aviso de pulsera sin datos en `NutritionScreen` (AUD-14) · señal de macros
+degradados (AUD-17) · guardia por IMC con condición de parada, `TargetResult.lowBmiGuard` (AUD-8).
+Verificado con `:shared:jvmTest` (49 tests), `:server:compileKotlin`, `:composeApp:compileKotlinJvm`.
 
-**Bloque E — los 🟡**: AUD-18, AUD-19, AUD-23, AUD-24 — triviales, en una sola pasada. (AUD-20/22 ya
-cerrados en A; AUD-7 resuelto el 2026-11-23.)
+**✅ Bloque E — los 🟡 (RESUELTO, 2026-11-23)**: AUD-18 (migración SQL reescrita como `clampRate`),
+AUD-19 (formato `ddMMyyyy` + validación de rango en la edad resuelta), AUD-23 (signo en
+`formatOneDecimal`/`formatTwoDecimals`), AUD-24 (ruta a `POST`, `Mutex` por usuario, `upsertProfile`
+atómico con `BEGIN`/`COMMIT` — verificado contra Turso real antes de confiar en ello). Detalle de cada
+uno en la tabla de AUD-17 a AUD-24 más arriba.
+
+**Los cinco bloques de la auditoría están completos.** Quedan solo AUD-11 (sin snapshot/`calcVersion`
+del objetivo histórico) y el ángulo del ciclo menstrual mencionado en AUD-9, que nunca entraron en el
+plan de bloques A-E — son cambios de arquitectura mayores, no arreglos puntuales, y no se han tocado.

@@ -6,9 +6,48 @@
 > [08-backlog-mejoras.md](08-backlog-mejoras.md) (cada hallazgo con su estado).
 > Este documento se actualiza cada vez que se termina algo, no solo al final de la sesión.
 
-**Última actualización**: 2026-11-23 (Bloque C de la auditoría de kcal completo, sin commitear; eliminado
-el seguimiento de cintura y la opción "recomposición", commit `3d19e2f`; bloques A y B de la auditoría
-commiteados el 2026-11-22; pendientes D/E).
+**Última actualización**: 2026-11-23 (**los 5 bloques de la auditoría de kcal están completos**: A y B
+commiteados el 2026-11-22; eliminación de cintura/recomp y Bloque C commiteados el 2026-11-23
+(`3d19e2f`, `d4a1b76`); Bloques D y E hechos, **sin commitear todavía**). Fuera de alcance de los 5
+bloques: AUD-11 (snapshot histórico).
+
+---
+
+## ✅ 2026-11-23 — Bloques D y E de la auditoría de kcal: últimos pendientes
+
+**Bloque D — honestidad de la interfaz:**
+
+1. **Banda de incertidumbre** en vez de número único: `NutritionMath.targetBand` (±150 kcal con
+   fórmula, ±75 con gasto medido, redondeada a 25), mostrada en el Onboarding y en el resumen de
+   `ProfileScreen` junto al objetivo exacto.
+2. **Etiqueta "BMR" corregida**: antes mostraba `tdee` en vez de `bmr` en modo pulsera (2166 para un
+   BMR de 1805). Ahora cada etiqueta muestra su propio número, en las dos pantallas.
+3. **Aviso de pulsera sin datos** en `NutritionScreen`: `wearableEnergy` se calculaba y se tiraba; ahora
+   si hay pulsera y no hay datos de hoy, se avisa de que el objetivo cae al respaldo sedentario.
+4. **Señal de macros degradados**: `Macros.degraded` nuevo (true cuando el reparto ideal no cupo en el
+   objetivo), propagado a `TargetResult.macrosDegraded` y a un aviso en pantalla.
+5. **Guardia por IMC y condición de parada**: `TargetResult.lowBmiGuard` — IMC < 18,5 y objetivo con más
+   déficit → el suelo pasa a ser el mantenimiento entero, con su propio aviso. No bloquea pedir ganar
+   peso estando en bajo peso. No toca el ritmo elegido en el formulario, solo deja de traducirlo en un
+   déficit real mientras el IMC siga ahí.
+
+**Bloque E — los 🟡 (AUD-18, 19, 23, 24):**
+
+6. **AUD-18**: la migración SQL del ritmo, reescrita para reproducir exactamente `NutritionMath.clampRate`
+   (`-MIN(1.0, ABS(goal_rate))` en vez de `MAX(-1.0, MIN(-0.05, goal_rate))`, que subía magnitudes
+   válidas por debajo de la banda).
+7. **AUD-19**: el formato de `resolvedAge` pasa de `"dd/MM/yyyy"` (nunca coincidía con el formato real
+   del cliente, 8 dígitos sin separadores) a `"ddMMyyyy"`. Como esto reactiva el riesgo de edad absurda
+   que estaba dormido por el mismo bug, la edad resuelta se valida contra `14..100` antes de usarla.
+8. **AUD-23**: `formatOneDecimal`/`formatTwoDecimals` ya no pierden el signo para `|valor| < 1`.
+9. **AUD-24**: `/profile/adaptive` pasa de `GET` a `POST` (cliente y servidor); `runAdaptiveAdjustment`
+   serializado con un `Mutex` por usuario; `upsertProfile` combina el `INSERT OR REPLACE` y la
+   restauración del autoajuste en un único `executeBatch` con `BEGIN IMMEDIATE`/`COMMIT`. **Verificado
+   contra la Turso real** (llamada de prueba de solo lectura: `BEGIN`/`SELECT 1`/`COMMIT` → los tres
+   `"type":"ok"`) antes de confiar en que el pipeline soporta transacciones explícitas.
+
+**49 tests en verde** (`:shared:jvmTest`), `:server:compileKotlin` y `:composeApp:compileKotlinJvm`
+también. **Nada de esto commiteado todavía.**
 
 ---
 
@@ -84,18 +123,15 @@ Verificado con `:shared:jvmTest` (40 tests), `:server:compileKotlin`, `:composeA
 
 ---
 
-## 🟡 Bloques D y E de la auditoría de kcal — pendientes
+## ✅ Los 5 bloques de la auditoría de kcal están completos
 
-Los Bloques A, B y C ya están hechos (A y B commiteados; C hecho el 2026-11-23, ver más arriba, **sin
-commitear todavía**). Quedan:
+Quedan solo dos cosas, nunca incluidas en el plan de bloques A-E porque son cambios de arquitectura
+mayores, no arreglos puntuales (detalle en [11-auditoria-kcal.md](11-auditoria-kcal.md)):
 
-- **Bloque D** (honestidad de la interfaz): bandas en vez de número único, aviso de pulsera sin datos,
-  señal cuando los macros degeneran, guardia por IMC y condición de parada. Nivel de decisión más alto.
-- **Bloque E**: AUD-18, AUD-19, AUD-23, AUD-24 — triviales (AUD-20/22 ya cerrados en A; AUD-7, AUD-9,
-  AUD-10, AUD-12 y AUD-13 ya resueltos; AUD-17 se resuelve dentro de D; la mitad de AUD-21 — la caja
-  "BMR" — sigue en D).
-
-Detalle de cada punto en [11-auditoria-kcal.md](11-auditoria-kcal.md), sección "Plan de arreglo acordado".
+- **AUD-11**: no hay snapshot/`calcVersion` del objetivo por día, así que el historial de adherencia se
+  reescribe retroactivamente al cambiar peso/objetivo/constantes.
+- El ángulo del **ciclo menstrual** mencionado en AUD-9: no hay bandera ni ventana forzada para la
+  retención premenstrual en el autoajuste.
 
 ---
 
@@ -246,10 +282,10 @@ nutrición sin cargar. Lo no numérico sí se sigue rechazando, porque eso es un
 - **✅ Bloque C — calidad del dato (hecho, 2026-11-23)**: umbral de "día válido" · cobertura mínima de
   ventana · `ADAPTIVE_MIN_SPAN_DAYS`/`WEIGH_INS` subidos a lo que exige §5.3 · mínimo de días en la
   media de la pulsera · escribir en `weight_history` siempre. Detalle arriba.
-- **Bloque D — honestidad de la interfaz**: bandas en vez de número único · etiqueta "BMR" que muestre el
-  BMR · aviso cuando la pulsera no tiene datos · señal cuando los macros degeneran · guardia por IMC y
-  condición de parada. (Quitar "tiempo real" y decidir `recomp` ya están hechos.)
-- **Bloque E — los 🟡**: AUD-17 a AUD-24.
+- **✅ Bloque D — honestidad de la interfaz (hecho, 2026-11-23)**: bandas en vez de número único ·
+  etiqueta "BMR" corregida · aviso cuando la pulsera no tiene datos · señal cuando los macros degeneran
+  · guardia por IMC y condición de parada. Detalle arriba.
+- **✅ Bloque E — los 🟡 (hecho, 2026-11-23)**: AUD-18, 19, 23, 24. Detalle arriba.
 
 **Dos avisos de encuadre para quien implemente esto**: (1) **no** añadir peso objetivo con fecha — no
 tenerlo es precisamente lo correcto, y la auditoría lo declara un retroceso conceptual; lo que falta es

@@ -1,6 +1,9 @@
 package com.gymsmart.gymsmart.services
 
 import com.gymsmart.gymsmart.nutrition.NutritionMath
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.util.concurrent.ConcurrentHashMap
 
 // ── Modelos internos del servidor ─────────────────────────────────────────────
 
@@ -47,6 +50,15 @@ typealias NutritionTargets = NutritionMath.TargetResult
 // ── Servicio ──────────────────────────────────────────────────────────────────
 
 class ProfileService(private val turso: TursoService) {
+
+    // AUD-24: `getProfile → cooldown → reconcile → saveAdaptiveTdee` no era atómico, así que dos
+    // llamadas simultáneas (doble apertura de pantalla, reintento de red) podían superar el cooldown
+    // las dos y aplicar la mezcla dos veces — justo lo que el comentario de `ADAPTIVE_COOLDOWN_MS`
+    // avisa que rompería el suavizado. Un `Mutex` por usuario serializa esa secuencia sin bloquear a
+    // otros usuarios entre sí; para una app de un solo usuario real es más que suficiente, y es mucho
+    // más simple que una transacción distribuida contra Turso.
+    private val adaptiveLocks = ConcurrentHashMap<String, Mutex>()
+    private fun adaptiveLockFor(userId: String): Mutex = adaptiveLocks.computeIfAbsent(userId) { Mutex() }
 
     suspend fun initTable() {
         turso.execute(
@@ -111,13 +123,19 @@ class ProfileService(private val turso: TursoService) {
         // 75,5 kg se convierte en -0,36 %/sem y se queda tal cual.
         // Idempotente: encajar un valor ya encajado no lo cambia, así que puede correr en cada arranque
         // y además repara cualquier valor fuera de rango escrito a mano en la base de datos.
+        // AUD-18: `MIN(-0.05, goal_rate)` no era un tope, era un mínimo encubierto — con goal_rate =
+        // -0.02 (válido, más lento que la banda), `MIN(-0.05, -0.02)` elegía -0.05 y **subía** el
+        // déficit, justo lo que el comentario de arriba dice que no debe pasar. Reescrito para
+        // reproducir exactamente `NutritionMath.clampRate`: toma la magnitud, la acota por arriba al
+        // tope del objetivo, y le devuelve el signo correcto — nunca sube una magnitud que ya era
+        // válida, y de paso corrige cualquier fila con el signo equivocado.
         runCatching {
             turso.execute(
                 """
                 UPDATE user_profiles
                 SET goal_rate = CASE goal
-                    WHEN 'lose_fat'    THEN MAX(-1.0,  MIN(-0.05, goal_rate))
-                    WHEN 'gain_muscle' THEN MIN(0.5,   MAX(0.05,  goal_rate))
+                    WHEN 'lose_fat'    THEN -MIN(1.0, ABS(goal_rate))
+                    WHEN 'gain_muscle' THEN  MIN(0.5, ABS(goal_rate))
                     ELSE 0.0
                 END
                 WHERE ABS(goal_rate) <= 10
@@ -178,28 +196,43 @@ class ProfileService(private val turso: TursoService) {
         // Obtener peso anterior
         val previous = getProfile(userId)
 
-        turso.execute(
-            """
-        INSERT OR REPLACE INTO user_profiles
-            (user_id, weight_kg, height_cm, age, sex, activity_level, goal, goal_rate, has_wearable, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """.trimIndent(),
-            listOf(
-                userId, weightKg.toString(), heightCm.toString(), age.toString(),
-                sex, activityLevel, goal, goalRate.toString(),
-                if (activityLevel == "wearable") "1" else "0", now.toString()
+        // INSERT OR REPLACE borra la fila y la reinserta, así que adaptive_tdee/adaptive_factor se
+        // perderían en cada guardado del perfil. Se restauran aparte porque los args de Turso viajan
+        // todos como texto y no admiten NULL en el propio INSERT. El factor importa más que el valor
+        // en kcal: es el que de verdad entra en el cálculo, y perderlo significaría tirar semanas de
+        // medición en cada guardado de perfil. No hace falta invalidarlo al cambiar de actividad u
+        // objetivo — un factor se reescala solo (ver AUD-3).
+        //
+        // AUD-24: antes el INSERT y la restauración eran dos llamadas HTTP separadas a Turso. Si la
+        // segunda fallaba, el perfil ya había quedado escrito sin el autoajuste, perdido sin rastro.
+        // Van en un solo `executeBatch` envuelto en BEGIN/COMMIT: si cualquiera de las dos falla, la
+        // transacción no llega a confirmarse y el perfil se queda como estaba antes de esta llamada.
+        val restoreStatement = previous?.adaptiveTdee?.let { tdee ->
+            if (previous.adaptiveFactor != null) {
+                "UPDATE user_profiles SET adaptive_tdee = ?, adaptive_updated_at = ?, adaptive_factor = ? WHERE user_id = ?" to
+                    listOf(tdee.toString(), previous.adaptiveUpdatedAt.toString(), previous.adaptiveFactor.toString(), userId)
+            } else {
+                "UPDATE user_profiles SET adaptive_tdee = ?, adaptive_updated_at = ? WHERE user_id = ?" to
+                    listOf(tdee.toString(), previous.adaptiveUpdatedAt.toString(), userId)
+            }
+        }
+
+        turso.executeBatch(
+            listOfNotNull(
+                "BEGIN IMMEDIATE" to emptyList(),
+                """
+                INSERT OR REPLACE INTO user_profiles
+                    (user_id, weight_kg, height_cm, age, sex, activity_level, goal, goal_rate, has_wearable, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """.trimIndent() to listOf(
+                    userId, weightKg.toString(), heightCm.toString(), age.toString(),
+                    sex, activityLevel, goal, goalRate.toString(),
+                    if (activityLevel == "wearable") "1" else "0", now.toString()
+                ),
+                restoreStatement,
+                "COMMIT" to emptyList()
             )
         )
-
-        // INSERT OR REPLACE borra la fila y la reinserta, así que adaptive_tdee se perdería en cada
-        // guardado del perfil. Se restaura aparte en vez de incluirla en el INSERT porque los args de
-        // Turso viajan todos como texto y no admiten NULL.
-        // El factor se restaura junto al valor medido: es el que de verdad entra en el cálculo, y
-        // perderlo significaría tirar semanas de medición en cada guardado de perfil. No hace falta
-        // invalidarlo al cambiar de actividad u objetivo — un factor se reescala solo (ver AUD-3).
-        previous?.adaptiveTdee?.let {
-            saveAdaptiveTdee(userId, it, previous.adaptiveFactor, previous.adaptiveUpdatedAt)
-        }
 
         // Se guarda historial SIEMPRE, no solo cuando cambia el peso. Antes, un pesaje que coincidía
         // con el peso ya guardado no generaba fila: los días de peso estable se eliminaban
@@ -380,6 +413,15 @@ class ProfileService(private val turso: TursoService) {
         dailyIntake:   List<Pair<String, Double>>,
         windowDays:    Int = 28,
         avgActiveKcal: Double = 0.0
+    ): NutritionMath.AdaptiveResult = adaptiveLockFor(userId).withLock {
+        runAdaptiveAdjustmentLocked(userId, dailyIntake, windowDays, avgActiveKcal)
+    }
+
+    private suspend fun runAdaptiveAdjustmentLocked(
+        userId:        String,
+        dailyIntake:   List<Pair<String, Double>>,
+        windowDays:    Int,
+        avgActiveKcal: Double
     ): NutritionMath.AdaptiveResult {
         val profile = getProfile(userId)
             ?: return NutritionMath.AdaptiveResult.NotEnoughData("Sin perfil")

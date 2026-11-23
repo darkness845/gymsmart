@@ -88,6 +88,8 @@ private fun profilePayload(profile: UserProfile, targets: NutritionMath.TargetRe
             put("energyFloor",    targets.energyFloor)
             put("appliedCarryOver", targets.appliedCarryOver)
             put("noSafeDeficit",  targets.noSafeDeficit)
+            put("lowBmiGuard",    targets.lowBmiGuard)
+            put("macrosDegraded", targets.macrosDegraded)
         }
     }
 
@@ -133,10 +135,14 @@ fun Route.profileRoutes(
             call.respond(HttpStatusCode.OK, profilePayload(profile, targets))
         }
 
-        // GET /profile/adaptive — mide el gasto real y ajusta el objetivo si hay datos suficientes
-        get("/adaptive") {
+        // POST /profile/adaptive — mide el gasto real y ajusta el objetivo si hay datos suficientes.
+        // Era GET (AUD-24): un endpoint con efecto de escritura es cacheable y reintentable por
+        // proxies/infraestructura sin que nada lo impida a nivel HTTP, y semánticamente un GET no
+        // debería mutar nada. El `Mutex` por usuario de `runAdaptiveAdjustment` ya cubre la
+        // concurrencia; esto cubre la semántica.
+        post("/adaptive") {
             val session = call.sessions.get<UserSession>()
-                ?: return@get call.respond(HttpStatusCode.Unauthorized, "Sin sesión")
+                ?: return@post call.respond(HttpStatusCode.Unauthorized, "Sin sesión")
 
             val since = java.time.LocalDate.now().minusDays(28).toString()
             val intake = nutritionService.getDailyIntake(session.userId, since)
@@ -211,13 +217,23 @@ fun Route.profileRoutes(
                     HttpStatusCode.BadRequest,
                     "Ritmo fuera del rango seguro para ese objetivo"
                 )
+            // AUD-19: el cliente guarda la fecha de nacimiento como 8 dígitos sin separadores
+            // ("01012000", ver ProfileScreen.kt), pero esto parseaba con el patrón "dd/MM/yyyy" — nunca
+            // coincidía, siempre lanzaba, y caía siempre a `req.age` sin que nadie lo notara. El
+            // mecanismo que debía mantener la edad autoritativa en el servidor nunca se ejecutaba.
+            //
+            // Al arreglar el formato se reactiva un riesgo que estaba dormido por el mismo motivo
+            // (una fecha futura o absurda escrita a mano producía una edad fuera de rango): por eso la
+            // edad resuelta se valida contra el mismo rango 14..100 que ya se exige a `req.age`, y si
+            // no cuadra se descarta en vez de persistir una edad negativa o de 126 años.
             val resolvedAge: Int = run {
                 val user = userService.findById(session.userId)
                 val bd = user?.birthDate?.takeIf { it.isNotBlank() }
                 if (bd != null) {
                     try {
-                        val formatter = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")
-                        Period.between(LocalDate.parse(bd, formatter), LocalDate.now()).years
+                        val formatter = java.time.format.DateTimeFormatter.ofPattern("ddMMyyyy")
+                        val years = Period.between(LocalDate.parse(bd, formatter), LocalDate.now()).years
+                        years.takeIf { it in 14..100 } ?: req.age
                     } catch (_: Exception) { req.age }
                 } else {
                     req.age

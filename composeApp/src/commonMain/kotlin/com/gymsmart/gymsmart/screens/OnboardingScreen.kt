@@ -388,20 +388,27 @@ private fun StepSummary(form: FormState) {
     val fatG     = result.fatG
     val carbsG   = result.carbsG
     val bmi      = result.bmi
+    // Objetivo mostrado como banda, no como cifra exacta: "1624 kcal" promete una precisión que
+    // ningún componente del cálculo tiene (±300-500 kcal a priori según §1.1/§1.2/§1.3). Ver
+    // doc/11-auditoria-kcal.md, "Dato que debería gobernar toda la comunicación de esta funcionalidad".
+    val band = NutritionMath.targetBand(target, result.tdeeIsMeasured)
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         OnboardingCard {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 CardTitle("Tu objetivo diario")
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    // Antes, en modo pulsera, esta caja decía "BMR" pero mostraba `tdee` (2166 para un
+                    // BMR de 1805): la etiqueta y el número no coincidían (AUD-21). Ahora cada
+                    // etiqueta muestra su propio número.
                     KcalBox(
                         label = if (form.hasWearable == true) "BMR" else "TDEE",
-                        value = "$tdee",
-                        sub   = if (form.hasWearable == true) "base sin actividad" else "mantenimiento",
+                        value = if (form.hasWearable == true) "${result.bmr}" else "$tdee",
+                        sub   = if (form.hasWearable == true) "sin actividad" else "mantenimiento",
                         modifier = Modifier.weight(1f),
                         highlight = false
                     )
-                    KcalBox("Objetivo", "$target", "kcal/día", Modifier.weight(1f), highlight = true)
+                    KcalBox("Objetivo", "$target", "${band.first}-${band.last} kcal/día", Modifier.weight(1f), highlight = true)
                 }
                 HorizontalDivider(color = GymSmartColors.Divider)
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
