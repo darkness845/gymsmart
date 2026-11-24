@@ -19,6 +19,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.gymsmart.gymsmart.model.*
+import com.gymsmart.gymsmart.services.rememberRestNotifier
 import com.gymsmart.gymsmart.ui.theme.GymSmartColors
 import kotlinx.coroutines.delay
 import kotlin.time.Clock
@@ -72,8 +73,21 @@ fun WorkoutLogScreen(
     // Descanso: arranca solo al guardar una serie y sigue contando en negativo pasado el tiempo.
     var restTotal by remember { mutableStateOf(0) }
     var restLeft by remember { mutableStateOf(0) }
+    // Aviso del sistema (Tarea C): se programa al guardar la serie para que llegue aunque salgas de
+    // la app o se bloquee el movil, que es lo que se hace entre series.
+    val restNotifier = rememberRestNotifier()
+    var restFinishedPopup by remember { mutableStateOf(false) }
     LaunchedEffect(restTotal) {
-        while (restTotal > 0 && restLeft > -600) { delay(1000); restLeft -= 1 }
+        while (restTotal > 0 && restLeft > -600) {
+            delay(1000)
+            restLeft -= 1
+            if (restLeft == 0) {
+                // El contador ha llegado a cero con la app delante: se avisa aqui y se cancela la
+                // notificacion del sistema, para no dar el mismo aviso dos veces.
+                restNotifier.cancel()
+                restFinishedPopup = true
+            }
+        }
     }
 
     var now by remember { mutableStateOf(Clock.System.now().toEpochMilliseconds()) }
@@ -94,6 +108,8 @@ fun WorkoutLogScreen(
         } else {
             updateSets(todaySets + rec)
             restTotal = REST_SECONDS; restLeft = REST_SECONDS
+            restFinishedPopup = false
+            restNotifier.schedule(REST_SECONDS)
             exercise.lastSession.getOrNull(todaySets.size + 1)?.let { value = it.value; reps = it.reps }
         }
     }
@@ -357,12 +373,26 @@ fun WorkoutLogScreen(
                 .padding(horizontal = 20.dp).padding(top = 10.dp, bottom = 16.dp)
         ) {
 
+            if (restFinishedPopup) {
+                RestFinishedPopup(onDismiss = { restFinishedPopup = false })
+                Spacer(Modifier.height(8.dp))
+            }
+
             if (restTotal > 0) {
                 RestBar(
                     left = restLeft,
                     total = restTotal,
-                    onAdd = { restTotal += 30; restLeft += 30 },
-                    onSkip = { restTotal = 0; restLeft = 0 }
+                    onAdd = {
+                        restTotal += 30; restLeft += 30
+                        restFinishedPopup = false
+                        // Reprograma: si no, el aviso seguiria saltando a la hora vieja.
+                        if (restLeft > 0) restNotifier.schedule(restLeft)
+                    },
+                    onSkip = {
+                        restTotal = 0; restLeft = 0
+                        restFinishedPopup = false
+                        restNotifier.cancel()
+                    }
                 )
                 Spacer(Modifier.height(8.dp))
             }
@@ -881,6 +911,48 @@ private fun NumberPadSheet(
                     modifier = Modifier.weight(1f).height(52.dp)
                 ) { Text("Hecho", color = GymSmartColors.OnPrimary, fontWeight = FontWeight.Bold) }
             }
+        }
+    }
+}
+
+/**
+ * Aviso de descanso terminado dentro de la app (Tarea C).
+ *
+ * Aparece cuando el contador llega a cero con la app delante. En ese caso la notificacion del
+ * sistema se cancela, asi que este es el unico aviso: por eso ocupa su sitio en la pantalla en vez
+ * de ser algo que se pueda pasar por alto, y se cierra tocandolo.
+ */
+@Composable
+private fun RestFinishedPopup(onDismiss: () -> Unit) {
+    Surface(
+        shape = MaterialTheme.shapes.medium,
+        color = GymSmartColors.Primary,
+        modifier = Modifier.fillMaxWidth().clickable { onDismiss() }
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text(
+                    "Descanso terminado",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = GymSmartColors.OnPrimary
+                )
+                Text(
+                    "Toca la siguiente serie",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = GymSmartColors.OnPrimary.copy(alpha = 0.85f)
+                )
+            }
+            Text(
+                "OK",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = GymSmartColors.OnPrimary
+            )
         }
     }
 }
