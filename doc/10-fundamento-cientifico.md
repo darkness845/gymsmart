@@ -613,6 +613,158 @@ nunca como dato cerrado.
 
 ---
 
+## 13. Peso en crudo vs. peso cocinado ✅
+
+Implementado en `shared/src/commonMain/.../nutrition/CookingYield.kt`, verificado en
+`CookingYieldTest.kt`. **Ningún factor de esta sección es una estimación propia**: todos salen de una
+publicación de la USDA que se cita entera, con su número de muestras cuando lo da.
+
+### 13.1 El problema
+
+Los datos de Open Food Facts son "tal como se vende": para un alimento fresco, eso es **en crudo**; para
+arroz, pasta y legumbres, **en seco**. Si el usuario pesa el alimento ya hecho y le aplica esos valores,
+el error no es marginal:
+
+| Alimento | Pesado | Lo que registraba | Lo correcto | Error |
+|---|---|---|---|---|
+| Pechuga de pollo | 150 g hechos | 180 kcal | 250 kcal | **−28 %** |
+| Arroz blanco | 200 g cocidos | 730 kcal | 260 kcal | **+181 %** |
+
+Los dos van en sentido contrario, que es lo que lo hace traicionero: la carne pierde agua al cocinarse
+y se concentra, el arroz la absorbe y se diluye.
+
+### 13.2 El método
+
+Es el que documenta la propia USDA: *"nutrient composition of a cooked food may be calculated from the
+uncooked food by applying cooking yield factors to these data to reflect changes in food weights
+resulting from moisture and fat losses during cooking"*. Los nutrientes se conservan; lo que cambia es
+el peso. Siendo `f` el rendimiento (peso cocinado ÷ peso crudo):
+
+```
+valor por 100 g en base cocinada = valor por 100 g en base cruda ÷ f
+```
+
+Lo guardado en BBDD son los gramos que el usuario pesó de verdad y los valores por 100 g **ya
+convertidos**, así que el total se sigue calculando igual que siempre y nada del autoajuste ni de los
+agregados diarios cambia.
+
+### 13.3 Cómo se obtuvieron los factores
+
+La primera versión de este catálogo tenía 11 alimentos, sacados a mano de una en una, y se quedó corta:
+sin ni un pescado, no servía para la mitad de las comidas reales. Se rehizo de forma sistemática.
+
+Se descargó el **volcado completo de USDA FoodData Central, SR Legacy** (6 MB, 7.793 alimentos). Ese
+dataset nombra los alimentos de forma regular —`"…, raw"` frente a `"…, cooked, roasted"`— así que el
+tronco del nombre identifica el mismo alimento en sus dos formas. Emparejando por ese tronco salen
+**1.261 parejas crudo/cocinado** automáticamente, de las que se seleccionaron las relevantes para una
+dieta española. El factor de cada una es `kcal/100 g en crudo ÷ kcal/100 g cocinado`.
+
+Se usa la razón de kcal y no un rendimiento de peso a propósito: así los valores por 100 g en cocinado que
+calcula la app **coinciden con los que la USDA midió** en el alimento ya cocinado, que es exactamente lo
+que se le quiere mostrar al usuario. Un rendimiento de peso puro no lo conseguiría, porque al hervir y
+escurrir se pierden nutrientes en el agua.
+
+Dos factores (ternera picada y cordero) no tienen pareja en SR Legacy y vienen de la *"USDA Table of
+Cooking Yields for Meat and Poultry"* (ARS, 2012); están marcados como tales en su `source`.
+
+### 13.4 El catálogo
+
+Factores derivados de FoodData Central salvo donde se indica. Los números entre paréntesis son los
+identificadores de FoodData Central, para poder comprobar cualquier fila.
+
+**Carnes y aves**
+
+| Alimento | Factor | Pareja |
+|---|---|---|
+| Muslo de pollo | 0,69 | thigh, meat only: 121 (173627) → roasted 176 (172853) |
+| Pechuga de pollo | 0,76 | breast, skinless boneless: 120 (171077) → roasted 157 (171140) |
+| Pechuga de pavo fresca | 0,83 | turkey breast: 157 (171093) → roasted 189 (171492) |
+| Carne picada de pavo | 0,73 | ground turkey: 148 (171505) → cooked 203 (171506) |
+| Carne picada de ternera | 0,73 | *Tabla de rendimientos 2012*: patty <12 % grasa, grilled — 73 % (n=40) |
+| Filete/solomillo de ternera | 0,79 | tenderloin roast lean: 139 (171765) → roasted 177 (174004) |
+| Lomo/solomillo de cerdo | 0,76 | pork tenderloin lean: 109 (168249) → roasted 143 (168250) |
+| Cordero | 0,74 | *Tabla de rendimientos 2012*: retail roasts — 74 % (rango 53–88 %) |
+
+**Pescado y marisco**
+
+| Alimento | Factor | Pareja |
+|---|---|---|
+| Pescado (todas las especies) | 0,78 | ver nota abajo |
+| Gambas y langostinos | 0,86 | shrimp: 85 (175179) → cooked 99 (175180) |
+
+Un único factor para todo el pescado no es una simplificación por comodidad: **es lo que dice el dato**.
+De las 72 parejas de pescado cocinado en calor seco que hay en SR Legacy, **45 dan exactamente 0,78**,
+en especies sin ninguna relación entre sí: bacalao 82→105 (171955→171956), atún 144→184
+(173706→173707), merluza 90→116 (173713→175161), salmón salvaje 142→182 (173686→171998). La USDA aplica
+ese rendimiento de forma uniforme al pescado.
+
+**Cereales y pasta**
+
+| Alimento | Factor | Pareja |
+|---|---|---|
+| Pasta | 2,35 | dry 371 (168927) → cooked sin sal 158 (168928) |
+| Arroz blanco | 2,81 | raw 365 (169756) → cooked sin sal 130 (169757) |
+| Cebada perlada | 2,86 | raw 352 (170284) → cooked 123 (170285) |
+| Arroz integral | 2,98 | raw 367 (169703) → cooked 123 (169704) |
+| Quinoa | 3,07 | uncooked 368 (168874) → cooked 120 (168917) |
+| Cuscús | 3,36 | dry 376 (169699) → cooked 112 (169700) |
+| Bulgur | 4,12 | dry 342 (170688) → cooked 83 (170287) |
+
+**Legumbres**
+
+| Alimento | Factor | Pareja |
+|---|---|---|
+| Garbanzos | 2,30 | raw 378 (173756) → boiled 164 (173799) |
+| Alubias blancas | 2,40 | raw 333 (175202) → boiled sin sal 139 (175203) |
+| Alubias negras | 2,58 | raw 341 (173734) → boiled sin sal 132 (173735) |
+| Alubias rojas | 2,62 | raw 333 (175193) → boiled sin sal 127 (173740) |
+| Lentejas | 3,03 | raw 352 (172420) → boiled sin sal 116 (172421) |
+| Habas secas | 3,10 | raw 341 (175205) → boiled sin sal 110 (173753) |
+
+**Tubérculos**
+
+| Alimento | Factor | Pareja |
+|---|---|---|
+| Patata | 0,75 | white, flesh and skin: raw 69 (170028) → baked 92 (170434) |
+
+**Lo que se dejó fuera a propósito.** Las verduras (brócoli, espinaca, zanahoria, calabacín…) tienen
+parejas en el dataset, pero sus factores se mueven entre 0,8 y 1,2 sobre alimentos de 20–35 kcal/100 g:
+el efecto en el recuento es ruido, y la dispersión entre variedades es alta (la "espinaca" del dataset
+da 1,17 o 1,38 según la especie). Añadirlas metería 10 categorías más de riesgo de falso positivo para
+no cambiar ninguna cifra. El boniato se descartó por lo mismo: 0,96 al horno, es decir, sin cambio. La
+avena no tiene pareja utilizable, porque sus kcal en cocinado dependen por completo de cuánta agua o
+leche se le eche, que es decisión de quien cocina y no una propiedad del alimento.
+
+### 13.5 Cuando la app no reconoce el alimento
+
+Un factor solo se puede aplicar si se sabe **qué** alimento es y **en qué base** están sus datos. De un
+producto cualquiera de Open Food Facts no se sabe ninguna de las dos cosas. De ahí tres reglas:
+
+- Si el nombre dice que ya viene cocinado ("arroz cocido", "pollo asado") o que es un derivado o
+  preparado ("bebida de arroz", "nuggets de pollo", "hummus", "atún en escabeche"), **no se ofrece
+  nada**: sus datos ya están en base cocinada, y convertirlos sería aplicar el factor dos veces.
+- Si el nombre coincide con el catálogo, se ofrece la conversión directamente.
+- Si no se reconoce pero nada indica que esté cocinado, **se le pregunta al usuario a qué se parece** y
+  se usa el factor del alimento que elija, que queda guardado con la comida.
+
+Esa tercera regla es la que hace que la función sirva para cualquier alimento y no solo para los que el
+catálogo identifica por el nombre. Lo que no se le pide nunca al usuario es el factor: si se le dejara
+teclear un número, la app estaría avalando cifras inventadas. El dato que falta es *qué alimento es*, y
+eso sí lo sabe él.
+
+La base por defecto sigue siendo **crudo**, el comportamiento de siempre. Nada cambia salvo que el
+usuario elija explícitamente lo contrario.
+
+### 13.6 Limitación conocida: el supuesto de la base de origen
+
+La conversión da por hecho que los valores del producto están en base cruda. Es cierto para alimentos
+frescos, que es lo que el catálogo reconoce, pero **no se puede verificar**: Open Food Facts no tiene
+ningún campo que diga en qué base está su tabla nutricional. Las exclusiones por nombre son la
+mitigación, no una garantía; un producto mal nombrado puede colarse. Queda anotado como CRU-1 en
+`doc/08-backlog-mejoras.md`.
+
+---
+
 ## 14. Invariantes verificados por tests
 
 `shared/src/commonTest/.../NutritionMathTest.kt` barre **sexo × 6 niveles de actividad × 4 objetivos ×
@@ -656,7 +808,7 @@ Cualquier cambio futuro de estas fórmulas debe mantener la tabla verde.
 
 ---
 
-## 13. Fuentes
+## 15. Fuentes
 
 **Metabolismo y gasto energético**
 - [Accuracy of Resting Metabolic Rate Prediction Equations in Athletes: A Systematic Review with Meta-analysis (*Sports Medicine*, 2023)](https://link.springer.com/article/10.1007/s40279-023-01896-z)

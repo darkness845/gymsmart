@@ -582,8 +582,16 @@ private fun AddExerciseSheet(onDismiss: () -> Unit, onAdd: (WorkoutExercise) -> 
     var kindId by remember { mutableStateOf(WorkoutKind.BARRA) }
     var bar by remember { mutableStateOf(20.0) }
     val name = custom.trim().ifBlank { picked }
+    // Igual que en el teclado numérico de WorkoutLogScreen: sin esto la hoja puede quedarse
+    // parcialmente expandida. El scroll de la Column ya mitigaba parte del problema, pero el tope de
+    // la hoja debe subir del todo igualmente (mismo patrón que la hoja de comidas en NutritionScreen).
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = GymSmartColors.SurfaceCard) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = GymSmartColors.SurfaceCard
+    ) {
         Column(
             Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 28.dp)
         ) {
@@ -657,7 +665,13 @@ internal fun KindSheet(
     onDismiss: () -> Unit,
     onChange: (WorkoutExercise) -> Unit
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = GymSmartColors.SurfaceCard) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = GymSmartColors.SurfaceCard
+    ) {
         Column(
             Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 28.dp)
         ) {

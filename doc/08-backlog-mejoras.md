@@ -160,8 +160,8 @@ el uso real lo justifica. Verificado con `:server:compileKotlin`. | `BodyAnalysi
   limpia caducadas primero y si no basta se vacía entera (no es LRU real, innecesario a esta escala).
   **Sigue sin arreglar** la segunda mitad del hallazgo: cada búsqueda sin caché previa puede seguir
   disparando 2 peticiones (español + fallback global), porque son casos distintos (no se investigó si
-  son idénticas de verdad); y `search.pl` sigue siendo el endpoint legacy que OFF está retirando — ambos
-  quedan en 🟡 Bajos, de menor impacto ahora que existe la caché. Verificado con
+  son idénticas de verdad); y `search.pl` sigue siendo el endpoint legacy (ver OFF-2) — ambos quedan en
+  🟡 Bajos, de menor impacto ahora que existe la caché. Verificado con
   `:server:compileKotlin`. | `FoodService.kt`
 
 ### Exactitud de los datos
@@ -344,11 +344,53 @@ el uso real lo justifica. Verificado con `:server:compileKotlin`. | `BodyAnalysi
   maestra no se respalda, así que tras restaurar en otro móvil cae al almacenamiento sin cifrar; conviene
   excluir esas preferencias del backup) · `e.message` crudo de OpenAI expuesto al cliente · el email va
   sin codificar en un segmento de path (`NavGraph.kt:32`).
+- **Crudo/cocido (CRU-1, CRU-2)** — abiertos a propósito tras la Tarea G, ver
+  `doc/10-fundamento-cientifico.md` §13.4 y §13.6:
+  - **CRU-1 — el supuesto de la base de origen no se puede verificar.** La conversión da por hecho que
+    los valores del producto están en base cruda. Es cierto para alimentos frescos, pero Open Food Facts
+    **no tiene ningún campo** que diga en qué base está su tabla nutricional, así que no hay forma de
+    comprobarlo. La mitigación es la lista de exclusiones (`GLOBAL_EXCLUDES`): si el nombre delata que ya
+    viene cocinado o que es un preparado, no se ofrece conversión. Es una heurística sobre texto libre,
+    no una garantía: un producto mal nombrado puede colarse. El riesgo está acotado porque la base por
+    defecto es cruda y el usuario tiene que elegir "cocinado" a mano.
+  - **CRU-2 — verduras y avena fuera del catálogo, por decisión.** No es un hueco por falta de datos:
+    las parejas existen en FoodData Central, pero los factores de verdura se mueven entre 0,8 y 1,2
+    sobre alimentos de 20–35 kcal/100 g (ruido en el recuento, con dispersión alta entre variedades) y
+    la avena cocinada depende por completo del agua o leche que se le eche, que no es propiedad del
+    alimento. Si alguna vez se añaden, el sitio es `CookingYield.kt` + §13.4, y conviene medir antes si
+    el falso positivo que meten en el emparejado por nombre compensa.
 - **Datos de alimentos**: sin paginación (`page_size=20` fijo, lo que esté en el puesto 25 es
   inalcanzable) · sin `lc=es`, así que los nombres llegan en el idioma en que se dio de alta el producto ·
-  sin mensaje de "sin resultados" (un error de red se ve igual que una búsqueda vacía) · `search.pl` es el
-  endpoint legacy que OFF está retirando en favor de `/api/v2/search` · escanear algo que no es un código
-  de producto (QR, ISBN) no produce ninguna reacción, y no hay linterna ni opción de teclear el código.
+  sin mensaje de "sin resultados" (un error de red se ve igual que una búsqueda vacía) · escanear algo
+  que no es un código de producto (QR, ISBN) no produce ninguna reacción, y no hay linterna ni opción de
+  teclear el código. Lo de `search.pl` se separa en **OFF-2** más abajo, porque la versión que había
+  aquí escrita era incorrecta.
+
+- **OFF-2 — `search.pl` es legacy, pero la nota anterior de este backlog era incorrecta** (verificado el
+  2026-11-24 contra la documentación oficial de OFF y probando los endpoints). Lo que decía antes: *"es
+  el endpoint legacy que OFF está retirando en favor de `/api/v2/search`"*. Eso junta dos errores:
+  - **OFF no ha anunciado la retirada de `search.pl`.** La documentación lo llama *"legacy"*, nunca
+    "deprecated", y no da ninguna fecha de apagado. Lo que sí está marcado como deprecada es **la API v2
+    entera** (*"v2 — ⚠ Deprecated, still supported for backward compatibility"*). El endpoint responde
+    con normalidad a día de hoy.
+  - **`/api/v2/search` no es su sustituto para lo que hacemos.** La doc dice que *"full-text search is
+    **not** available in the v2 server-side API"* y que la búsqueda por texto es *"Legacy `/cgi/search.pl`
+    only"*. v2 solo hace búsqueda estructurada por filtros. Migrar ahí rompería la búsqueda.
+  - **El sustituto real es Search-a-licious**, un servicio aparte en `search.openfoodfacts.org`. La doc
+    habla de él en futuro ("will be available"), pero está en pie: una petición de prueba a
+    `/search?q=pechuga de pollo` devolvió 2.271 resultados con marcas. Está en beta.
+
+  **Riesgo real, y es otro**: el límite documentado es **10 peticiones/minuto por IP** para *todas* las
+  búsquedas (`search.pl` y `/api/v*/search` por igual), y todas las nuestras salen de la única IP de
+  Render. La doc avisa expresamente de no usarlo para buscar al teclear. Comprobado que **no buscamos al
+  teclear** (la búsqueda se dispara solo al pulsar el botón, `NutritionScreen.kt`), y la caché de OFF-1
+  absorbe repeticiones, así que hoy no hay incendio. Menor: el `User-Agent` sigue el formato pedido
+  (`AppName/Version (ContactEmail)`) pero con `contact@gymsmart.com`, que no es un correo real y OFF pide
+  que lo sea.
+
+  **Decisión**: no migrar ahora. Si alguna vez se migra, el destino es Search-a-licious, no v2. Esto
+  refuerza la tarea H (tabla local de alimentos genéricos): con los básicos en local, OFF quedaría solo
+  para marcas y una caída suya dejaría la app degradada en vez de muda.
 - **Análisis IA**: el resultado **no se persiste en ningún sitio** (es un `remember`), así que se pierde
   al salir: no hay histórico de composición corporal ni comparación en el tiempo. Siendo la única función
   premium y la más caro por uso, una tabla `body_analyses` es la mejora de producto más evidente ·

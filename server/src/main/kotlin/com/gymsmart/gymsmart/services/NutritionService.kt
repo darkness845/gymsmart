@@ -1,9 +1,13 @@
 package com.gymsmart.gymsmart.services
 
+import com.gymsmart.gymsmart.model.FoodCollections
 import com.gymsmart.gymsmart.model.MealEntryRequest
+import kotlinx.serialization.json.Json
 import java.util.UUID
 
 class NutritionService(private val turso: TursoService) {
+
+    private val json = Json { ignoreUnknownKeys = true }
 
     suspend fun initTable() {
         turso.execute("""
@@ -19,9 +23,19 @@ class NutritionService(private val turso: TursoService) {
                 meal_type TEXT NOT NULL,
                 date TEXT,
                 created_at INTEGER NOT NULL,
+                basis TEXT,
+                yield_id TEXT,
                 FOREIGN KEY(user_id) REFERENCES users(id)
             )
         """.trimIndent())
+
+        // Base de pesaje de la comida ("raw"/"cooked") y alimento del catálogo con el que se convirtió
+        // (Tarea G). Vacío o NULL es lo que tendrán todas las comidas registradas antes de esta
+        // función, y significa "no se preguntó": se muestran sin etiqueta, como siempre. Mismo ALTER
+        // idempotente que en ProfileService — SQLite no soporta "ADD COLUMN IF NOT EXISTS", así que a
+        // partir del segundo arranque el error por columna duplicada se ignora a propósito.
+        runCatching { turso.execute("ALTER TABLE meals ADD COLUMN basis TEXT") }
+        runCatching { turso.execute("ALTER TABLE meals ADD COLUMN yield_id TEXT") }
 
         // Tabla de favoritos
         turso.execute("""
@@ -37,23 +51,51 @@ class NutritionService(private val turso: TursoService) {
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
             )
         """.trimIndent())
+
+        // Colecciones (Tarea B): documento único por usuario, igual que `workout_plans` — el
+        // servidor no necesita consultar dentro de él, solo guardarlo y devolverlo entero.
+        turso.execute("""
+            CREATE TABLE IF NOT EXISTS food_collections (
+                user_id    TEXT PRIMARY KEY,
+                data       TEXT NOT NULL,
+                updated_at INTEGER NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        """.trimIndent())
+    }
+
+    suspend fun getCollections(userId: String): FoodCollections {
+        val result = turso.execute("SELECT data FROM food_collections WHERE user_id = ?", listOf(userId))
+        val raw = turso.extractRows(result).firstOrNull()?.firstOrNull() ?: return FoodCollections()
+        return runCatching { json.decodeFromString<FoodCollections>(raw) }.getOrElse { FoodCollections() }
+    }
+
+    suspend fun saveCollections(userId: String, collections: FoodCollections) {
+        turso.execute(
+            """INSERT INTO food_collections (user_id, data, updated_at) VALUES (?, ?, ?)
+               ON CONFLICT(user_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at""",
+            listOf(userId, json.encodeToString(collections), System.currentTimeMillis().toString())
+        )
     }
 
     suspend fun addMeal(userId: String, req: MealEntryRequest): String {
         val id = UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
         turso.execute(
-            "INSERT INTO meals (id, user_id, name, grams, kcal_per_100, proteins_per_100, carbs_per_100, fat_per_100, meal_type, date, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO meals (id, user_id, name, grams, kcal_per_100, proteins_per_100, carbs_per_100, fat_per_100, meal_type, date, created_at, basis, yield_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             listOf(id, userId, req.name, req.grams.toString(), req.kcalPer100.toString(),
                 req.proteinsPer100.toString(), req.carbsPer100.toString(),
-                req.fatPer100.toString(), req.mealType, req.date, now.toString())
+                req.fatPer100.toString(), req.mealType, req.date, now.toString(),
+                // TursoService.execute solo acepta List<String>; la ausencia de estos dos se guarda
+                // como cadena vacía y se vuelve a leer como null en la ruta.
+                req.basis ?: "", req.yieldId ?: "")
         )
         return id
     }
 
     suspend fun getUserMeals(userId: String, date: String): List<List<String?>> {
         val result = turso.execute(
-            "SELECT name, grams, kcal_per_100, proteins_per_100, carbs_per_100, fat_per_100, meal_type, id FROM meals WHERE user_id = ? AND date = ? ORDER BY created_at ASC",
+            "SELECT name, grams, kcal_per_100, proteins_per_100, carbs_per_100, fat_per_100, meal_type, id, basis, yield_id FROM meals WHERE user_id = ? AND date = ? ORDER BY created_at ASC",
             listOf(userId, date)
         )
         return turso.extractRows(result)
@@ -87,7 +129,7 @@ class NutritionService(private val turso: TursoService) {
     suspend fun getFoodHistory(userId: String): List<List<String?>> {
         val result = turso.execute(
             """
-            SELECT name, kcal_per_100, proteins_per_100, carbs_per_100, fat_per_100
+            SELECT name, kcal_per_100, proteins_per_100, carbs_per_100, fat_per_100, basis, yield_id
             FROM meals
             WHERE user_id = ? AND id IN (
                 SELECT id FROM meals WHERE user_id = ?
@@ -108,10 +150,10 @@ class NutritionService(private val turso: TursoService) {
 
     suspend fun updateMeal(id: String, userId: String, req: MealEntryRequest) {
         turso.execute(
-            "UPDATE meals SET grams = ?, kcal_per_100 = ?, proteins_per_100 = ?, carbs_per_100 = ?, fat_per_100 = ? WHERE id = ? AND user_id = ?",
+            "UPDATE meals SET grams = ?, kcal_per_100 = ?, proteins_per_100 = ?, carbs_per_100 = ?, fat_per_100 = ?, basis = ?, yield_id = ? WHERE id = ? AND user_id = ?",
             listOf(req.grams.toString(), req.kcalPer100.toString(),
                 req.proteinsPer100.toString(), req.carbsPer100.toString(),
-                req.fatPer100.toString(), id, userId)
+                req.fatPer100.toString(), req.basis ?: "", req.yieldId ?: "", id, userId)
         )
     }
 

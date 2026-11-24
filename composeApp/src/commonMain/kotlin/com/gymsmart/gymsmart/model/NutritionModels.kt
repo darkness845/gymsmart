@@ -39,3 +39,21 @@ fun Nutriments?.estimatedKcalPer100(): Double {
 
 @Serializable
 data class FoodSearchResponse(val products: List<Product> = emptyList())
+
+/**
+ * Colección de alimentos con su cantidad ya fijada, para añadirlos todos de una vez a una comida en
+ * vez de buscarlos uno por uno. Reutiliza `MealEntry` para cada ítem: ya tiene exactamente los
+ * campos que hacen falta (nombre, gramos, kcal y macros por 100g), sin un segundo modelo paralelo.
+ */
+@Serializable
+data class FoodCollection(
+    val id: String,
+    val name: String,
+    val items: List<MealEntry> = emptyList()
+)
+
+/** Documento único por usuario, espejo exacto del que guarda y devuelve el servidor. */
+@Serializable
+data class FoodCollections(
+    val collections: List<FoodCollection> = emptyList()
+)

@@ -775,8 +775,17 @@ private fun NumberPadSheet(
     val kind = WorkoutKind.of(exercise.kind)
     var buffer by remember { mutableStateOf("") }
     var asTotal by remember { mutableStateOf(false) }
+    // Sin esto, la hoja podía quedarse en el estado "parcialmente expandida" de Material3 con el
+    // botón "Hecho" cortado y sin ninguna forma de llegar a él salvo arrastrar el tope a mano — este
+    // Column no tiene scroll, al contrario que el de añadir ejercicio. Mismo patrón que ya usa bien
+    // la hoja de comidas en NutritionScreen.
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = GymSmartColors.SurfaceCard) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = GymSmartColors.SurfaceCard
+    ) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 28.dp),
             horizontalAlignment = Alignment.CenterHorizontally) {
 

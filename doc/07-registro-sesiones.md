@@ -4,6 +4,75 @@ Bitácora corta por sesión de trabajo sobre el endurecimiento del proyecto. Ent
 
 ---
 
+## 2026-11-24 — Nueva lista de mejoras A-G: hechas A, D, B y G
+
+Sesión de funcionalidades, no de endurecimiento. El usuario pidió 7 mejoras (luego 8) y, antes de tocar
+código, una clasificación por complejidad y nivel de modelo, con una regla explícita: **no investigar
+nada que no se esté haciendo en ese momento**. Se dio la tabla, se acordó el orden (A+D → B+G → F → E →
+C) y se fue ejecutando por tandas con permiso explícito en cada una. Detalle de cada tarea en
+`doc/CONTINUAR.md`.
+
+**A** (la búsqueda de comida se borraba al volver atrás) y **D** (la hoja de peso de un ejercicio no se
+desplegaba entera) eran arreglos cortos: estado hoisteado fuera del `when` de hojas en el primer caso,
+`skipPartiallyExpanded = true` en tres `ModalBottomSheet` en el segundo.
+
+**B — colecciones de comida.** Cuarta pestaña en el buscador; una colección es un grupo de alimentos con
+cantidad fijada que se añade de golpe. Decisión de diseño: los `SheetMode` nuevos van **en paralelo** a
+los del flujo real de comidas, sin tocar esas ramas, para no arriesgar la función más crítica de la app
+por una secundaria; los composables de búsqueda y de ración se reutilizaron tal cual porque ya eran
+genéricos.
+
+**G — pesar en crudo o en cocido.** La más delicada, y la que el usuario marcó como "muy muy crucial,
+porque la app se basa en medir comidas". El error previo era grande y en los dos sentidos (−28 % en
+pollo pesado hecho, +181 % en arroz cocido). Lo relevante del enfoque:
+
+- **La primera pasada estuvo mal planteada y el usuario la cortó bien.** Se entregó un catálogo de 11
+  alimentos sacados a mano de uno en uno, sin ni un pescado, y la respuesta fue la pregunta correcta:
+  *"si para la mitad de alimentos no puedo poner cocido, de qué sirve?"*. El problema no era la calidad
+  de cada factor sino que el método de obtenerlos no escalaba. Lección aplicable más allá de esta
+  tarea: cuando hace falta un catálogo de datos, buscar el volcado completo de la fuente antes de
+  empezar a extraer entradas a mano.
+- **Rehecho de forma sistemática.** Se descargó el volcado de **FoodData Central SR Legacy** (6 MB) y
+  se emparejaron automáticamente sus **1.261 parejas crudo/cocinado** aprovechando que el dataset nombra
+  los alimentos de forma regular. El catálogo pasó de 11 a 24 alimentos, con pescado incluido. De
+  rebote mejoró un dato: la pechuga de pollo pasó de 0,72 (tabla de 1975, pechuga *con piel*) a 0,76
+  (SR Legacy, sin piel ni hueso, que es lo que se compra). Todo citado con identificador en
+  `doc/10-fundamento-cientifico.md` §13.4.
+- **Lo que de verdad cierra el hueco no es el tamaño del catálogo.** Emparejar nombres libres de Open
+  Food Facts en español siempre va a fallar en algunos, tenga el catálogo 24 entradas o 200. Así que
+  cuando no hay coincidencia automática se le pregunta al usuario a qué alimento se parece. El factor
+  sigue saliendo del catálogo con su fuente; lo que se le pide es *qué alimento es*, que es el dato que
+  faltaba. No se le deja teclear un factor, que sería avalar cifras inventadas.
+- **La respuesta a la pregunta del usuario sobre la API fue que no hacía falta cambiarla.** Open Food
+  Facts no da datos de conversión, pero tampoco los necesitaba: el factor es del alimento, no del
+  producto, así que vive en un catálogo propio y se aplica sobre los valores que OFF ya devuelve.
+- **El catálogo no adivina**: 11 categorías reconocidas y una lista de exclusiones que descarta lo que ya
+  viene cocinado o es un preparado. Sin coincidencia, no hay selector y nada cambia.
+- **Se encontró y se cerró un agujero por el camino**: el historial de alimentos devuelve los valores ya
+  convertidos, así que reutilizar desde ahí un alimento pesado en cocido habría aplicado el factor dos
+  veces. Ahora el historial devuelve también la base y el cliente deshace la conversión al leerla.
+- **Se dejó fuera lo que no aporta, con el motivo escrito**: verduras y avena. No por falta de datos,
+  sino porque los factores de verdura son ruido sobre alimentos de 20–35 kcal/100 g y la avena cocinada
+  depende del agua que se le eche, que no es propiedad del alimento (CRU-2).
+
+**Corrección de una afirmación falsa del propio backlog (OFF-2).** Al hablar con el usuario de las
+limitaciones frente a una app de macros, se repitió una nota que ya estaba escrita en
+`08-backlog-mejoras.md`: que OFF estaba retirando `search.pl` en favor de `/api/v2/search`. El usuario
+preguntó por ella y, al verificarla contra la documentación oficial, resultó incorrecta por partida
+doble: OFF **no** ha anunciado retirada alguna de `search.pl` (lo llama "legacy", nunca "deprecated", y
+no da fecha), y `/api/v2/search` **no es su sustituto** porque no hace búsqueda por texto — migrar ahí
+habría roto la búsqueda. El sustituto real es Search-a-licious (`search.openfoodfacts.org`), que se
+probó y funciona. De paso apareció el riesgo que sí importa: **10 peticiones/minuto por IP** para todas
+las búsquedas, saliendo todas de la única IP de Render; se comprobó que la app no busca al teclear, que
+es lo que la doc avisa expresamente de no hacer. Corregido en el backlog como OFF-2, con la nota vieja
+citada para que no vuelva a colarse. Lección: una afirmación heredada de la documentación del propio
+proyecto no es una fuente verificada, y repetirla sin comprobarla es propagar el error.
+
+72 tests en verde en `shared`, servidor y cliente compilando. Nada commiteado. La UI de G y D no se pudo
+probar en dispositivo (sin Android SDK en este entorno).
+
+---
+
 ## 2026-11-23 (continuación) — Bloques D y E: los 5 bloques de la auditoría de kcal quedan completos
 
 Último tramo del plan de `doc/11-auditoria-kcal.md`, sin pasar por delegación a otro modelo (se había

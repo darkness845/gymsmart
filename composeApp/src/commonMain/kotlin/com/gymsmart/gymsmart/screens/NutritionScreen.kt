@@ -19,6 +19,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
@@ -37,14 +38,26 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import com.gymsmart.gymsmart.BarcodeScannerSheet
 import com.gymsmart.gymsmart.config.AppConfig
+import com.gymsmart.gymsmart.model.FoodCollection
+import com.gymsmart.gymsmart.model.FoodCollections
 import com.gymsmart.gymsmart.model.FoodSearchResponse
 import com.gymsmart.gymsmart.model.MealEntry
 import com.gymsmart.gymsmart.model.NutritionTargets
 import com.gymsmart.gymsmart.model.Nutriments
 import com.gymsmart.gymsmart.model.Product
 import com.gymsmart.gymsmart.model.estimatedKcalPer100
+import com.gymsmart.gymsmart.nutrition.COOKING_YIELD_FAMILIES
+import com.gymsmart.gymsmart.nutrition.CookingYield
+import com.gymsmart.gymsmart.nutrition.cookingYieldById
+import com.gymsmart.gymsmart.nutrition.isExcludedFromCooking
+import com.gymsmart.gymsmart.nutrition.WeighBasis
+import com.gymsmart.gymsmart.nutrition.findCookingYield
+import com.gymsmart.gymsmart.nutrition.per100For
+import com.gymsmart.gymsmart.nutrition.rawWeightFor
 import com.gymsmart.gymsmart.services.HealthDataProvider
 import com.gymsmart.gymsmart.services.NutritionService
 import com.gymsmart.gymsmart.services.ProfileService
@@ -74,6 +87,36 @@ private sealed class SheetMode {
     data class Scanner(val meal: MealType) : SheetMode()
     data class PortionPicker(val meal: MealType, val product: Product, val existingEntry: MealEntry? = null) : SheetMode()
     data class EditEntry(val meal: MealType, val entry: MealEntry) : SheetMode()
+
+    // Colecciones (Tarea B): un grupo de alimentos con su cantidad ya fijada, para añadirlos todos de
+    // una vez. Reutilizan FoodSearchSheet/PortionPickerSheet (los mismos composables que el flujo de
+    // arriba) con sus propias variantes y su propio `returnMeal`, sin tocar ni una línea de las ramas
+    // de arriba: el flujo real de registrar comidas es lo más crítico de la app y no debía arriesgarse
+    // por una función secundaria.
+    data class CollectionEditor(val draft: FoodCollection, val returnMeal: MealType) : SheetMode()
+    data class CollectionSearch(val draft: FoodCollection, val returnMeal: MealType) : SheetMode()
+    data class CollectionPortionPicker(val draft: FoodCollection, val returnMeal: MealType, val product: Product) : SheetMode()
+}
+
+/** Id corto y único de sobra para una colección de uso personal; mismo patrón que `newId()` en
+ *  WorkoutScreen.kt (no se puede reutilizar directamente: es `private` en ese otro archivo). */
+private fun newCollectionId(): String =
+    Clock.System.now().toEpochMilliseconds().toString(36) + (0..999999).random().toString(36)
+
+/**
+ * Estado del buscador de alimentos, hoisteado fuera de `FoodSearchSheet` (ver el comentario junto a
+ * su `remember` en `NutritionScreen`). Una sola instancia por pantalla, reseteada solo al pulsar
+ * "Añadir" desde una comida, nunca al volver atrás desde el selector de ración.
+ */
+private class FoodSearchState {
+    var tab         by mutableStateOf(0)
+    var query       by mutableStateOf("")
+    var results     by mutableStateOf<List<Product>>(emptyList())
+    var hasSearched by mutableStateOf(false)
+
+    fun reset() {
+        tab = 0; query = ""; results = emptyList(); hasSearched = false
+    }
 }
 
 private val httpClient = HttpClient {
@@ -107,7 +150,29 @@ fun NutritionScreen(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
 
+    // Vive a este nivel (no dentro de FoodSearchSheet) a propósito: el buscador se cierra y se vuelve
+    // a abrir constantemente (entrar al selector de ración, volver atrás porque no era ese producto).
+    // Antes la búsqueda estaba en un `remember` dentro de FoodSearchSheet, y como esa rama del `when`
+    // de abajo deja de componerse mientras se ve el selector de ración, Compose la recreaba desde cero
+    // al volver: la query y los resultados se perdían aunque la pantalla pareciera "la misma". Se
+    // resetea explícitamente solo al pulsar "Añadir" desde una comida nueva, nunca al volver atrás.
+    val foodSearchState = remember { FoodSearchState() }
+    // Búsqueda independiente para cuando se está construyendo/editando una colección: si compartiera
+    // `foodSearchState` con la de arriba, salir de "añadir alimento a la colección" te dejaría la
+    // búsqueda normal del día contaminada con lo último que buscaste para la colección.
+    val collectionSearchState = remember { FoodSearchState() }
+
     fun closeSheet() { scope.launch { sheetState.hide() }.invokeOnCompletion { sheetMode = null } }
+
+    // Colecciones (Tarea B): se cargan una vez al entrar y se guardan completas cada vez que cambian,
+    // igual que el plan de entrenamiento en WorkoutScreen. Es una biblioteca personal pequeña, no algo
+    // que el servidor necesite consultar por dentro.
+    var collections by remember { mutableStateOf(FoodCollections()) }
+    LaunchedEffect(Unit) { collections = nutritionService.getCollections() }
+    fun persistCollections(next: FoodCollections) {
+        collections = next
+        scope.launch { nutritionService.saveCollections(next) }
+    }
 
     var activeCalories    by remember { mutableStateOf(0.0) }
     var wearableRefreshing by remember { mutableStateOf(false) }
@@ -205,26 +270,54 @@ fun NutritionScreen(
                 is SheetMode.Search -> FoodSearchSheet(
                     mealLabel = mode.meal.label,
                     nutritionService = nutritionService,
+                    state = foodSearchState,
                     onProductSelected = { product -> sheetMode = SheetMode.PortionPicker(mode.meal, product) },
-                    onClose = ::closeSheet
+                    onClose = ::closeSheet,
+                    collectionsTab = CollectionsTabConfig(
+                        collections = collections,
+                        onApply = { collection ->
+                            val list = meals[mode.meal]
+                            if (list != null) {
+                                scope.launch {
+                                    var anyFailed = false
+                                    for (item in collection.items) {
+                                        val newId = nutritionService.saveMealRemote(item, mode.meal.name, selectedDate.toString())
+                                        if (newId != null) list.add(item.copy(id = newId)) else anyFailed = true
+                                    }
+                                    if (anyFailed) {
+                                        snackbarHostState.showSnackbar(
+                                            "Algunos alimentos de «${collection.name}» no se pudieron guardar.",
+                                            duration = SnackbarDuration.Short
+                                        )
+                                    }
+                                    closeSheet()
+                                }
+                            }
+                        },
+                        onCreate = {
+                            collectionSearchState.reset()
+                            sheetMode = SheetMode.CollectionEditor(
+                                FoodCollection(id = newCollectionId(), name = ""), mode.meal
+                            )
+                        },
+                        onEdit = { collection -> sheetMode = SheetMode.CollectionEditor(collection, mode.meal) },
+                        onDelete = { collection ->
+                            persistCollections(collections.copy(
+                                collections = collections.collections.filterNot { it.id == collection.id }
+                            ))
+                        }
+                    )
                 )
                 is SheetMode.PortionPicker -> PortionPickerSheet(
                     mealLabel = mode.meal.label,
                     product = mode.product,
                     initialGrams = mode.existingEntry?.grams ?: 100.0,
                     nutritionService = nutritionService,
-                    onConfirm = { grams ->
+                    initialBasis = mode.existingEntry?.basis,
+                    initialYieldId = mode.existingEntry?.yieldId,
+                    onConfirm = { built ->
                         val list = meals[mode.meal] ?: return@PortionPickerSheet
-                        val n = mode.product.nutriments
-                        val entry = MealEntry(
-                            id = mode.existingEntry?.id ?: "",
-                            name = mode.product.product_name ?: "Sin nombre",
-                            grams = grams,
-                            kcalPer100 = n.estimatedKcalPer100(),
-                            proteinsPer100 = n?.proteins_100g ?: 0.0,
-                            carbsPer100 = n?.carbohydrates_100g ?: 0.0,
-                            fatPer100 = n?.fat_100g ?: 0.0
-                        )
+                        val entry = built.copy(id = mode.existingEntry?.id ?: "")
                         scope.launch {
                             val newId = nutritionService.saveMealRemote(entry, mode.meal.name, selectedDate.toString())
                             if (newId != null) {
@@ -264,6 +357,57 @@ fun NutritionScreen(
                             else snackbarHostState.showSnackbar("Error al eliminar.", duration = SnackbarDuration.Short)
                         }
                     },
+                    onClose = ::closeSheet
+                )
+
+                // ── Colecciones (Tarea B) ───────────────────────────────────────────
+                is SheetMode.CollectionEditor -> CollectionEditorSheet(
+                    draft = mode.draft,
+                    onNameChange = { name ->
+                        sheetMode = SheetMode.CollectionEditor(mode.draft.copy(name = name), mode.returnMeal)
+                    },
+                    onRemoveItem = { index ->
+                        val next = mode.draft.copy(items = mode.draft.items.filterIndexed { i, _ -> i != index })
+                        sheetMode = SheetMode.CollectionEditor(next, mode.returnMeal)
+                    },
+                    onAddFoodClick = {
+                        collectionSearchState.reset()
+                        sheetMode = SheetMode.CollectionSearch(mode.draft, mode.returnMeal)
+                    },
+                    onSave = {
+                        if (mode.draft.name.isNotBlank() && mode.draft.items.isNotEmpty()) {
+                            val existingIdx = collections.collections.indexOfFirst { it.id == mode.draft.id }
+                            val nextList = if (existingIdx >= 0) {
+                                collections.collections.toMutableList().also { it[existingIdx] = mode.draft }
+                            } else {
+                                collections.collections + mode.draft
+                            }
+                            persistCollections(collections.copy(collections = nextList))
+                            sheetMode = SheetMode.Search(mode.returnMeal)
+                        }
+                    },
+                    onClose = ::closeSheet
+                )
+                is SheetMode.CollectionSearch -> FoodSearchSheet(
+                    mealLabel = "«${mode.draft.name.ifBlank { "Nueva colección" }}»",
+                    nutritionService = nutritionService,
+                    state = collectionSearchState,
+                    onProductSelected = { product ->
+                        sheetMode = SheetMode.CollectionPortionPicker(mode.draft, mode.returnMeal, product)
+                    },
+                    onClose = ::closeSheet,
+                    collectionsTab = null // no tiene sentido anidar colecciones dentro de una colección
+                )
+                is SheetMode.CollectionPortionPicker -> PortionPickerSheet(
+                    mealLabel = "«${mode.draft.name.ifBlank { "Nueva colección" }}»",
+                    product = mode.product,
+                    initialGrams = 100.0,
+                    nutritionService = nutritionService,
+                    onConfirm = { item ->
+                        val next = mode.draft.copy(items = mode.draft.items + item)
+                        sheetMode = SheetMode.CollectionEditor(next, mode.returnMeal)
+                    },
+                    onBack = { sheetMode = SheetMode.CollectionSearch(mode.draft, mode.returnMeal) },
                     onClose = ::closeSheet
                 )
             }
@@ -481,7 +625,10 @@ fun NutritionScreen(
                 MealSection(
                     meal = meal,
                     entries = meals[meal] ?: emptyList(),
-                    onAddClick = { sheetMode = SheetMode.Search(meal) },
+                    // Pulsar "Añadir" es una sesión de búsqueda nueva: se resetea a propósito. El
+                    // "volver" desde el selector de ración (más abajo) NO resetea, para conservar lo
+                    // que ya se había buscado.
+                    onAddClick = { foodSearchState.reset(); sheetMode = SheetMode.Search(meal) },
                     onScanClick = {
                         onRequestCameraPermission { granted ->
                             if (granted) sheetMode = SheetMode.Scanner(meal)
@@ -658,7 +805,7 @@ private fun MealSection(
                     Column(modifier = Modifier.weight(1f)) {
                         Text(entry.name, style = MaterialTheme.typography.bodyMedium, color = GymSmartColors.TextPrimary, fontWeight = FontWeight.Medium)
                         Text(
-                            "${entry.grams.toInt()}g · P: ${entry.proteins.toInt()}g · C: ${entry.carbs.toInt()}g · G: ${entry.fat.toInt()}g",
+                            "${entry.grams.toInt()}g${basisSuffix(entry)} · P: ${entry.proteins.toInt()}g · C: ${entry.carbs.toInt()}g · G: ${entry.fat.toInt()}g",
                             style = MaterialTheme.typography.bodySmall, color = GymSmartColors.TextSecondary
                         )
                     }
@@ -675,19 +822,29 @@ private fun MealSection(
 private fun FoodSearchSheet(
     mealLabel: String,
     nutritionService: NutritionService,
+    // Query, resultados, pestaña y si ya se buscó viven en `state`, hoisteado a NutritionScreen: esta
+    // hoja se destruye y se recrea cada vez que se entra al selector de ración y se vuelve, y un
+    // `remember` normal aquí dentro no sobrevive a eso (ver el comentario junto al `remember` de
+    // `foodSearchState`). History/favoritos/loading/error sí se quedan locales: se recargan sin coste
+    // cada vez y no son "dónde estabas", así que no hace falta conservarlos.
+    state: FoodSearchState,
     onProductSelected: (Product) -> Unit,
-    onClose: () -> Unit
+    onClose: () -> Unit,
+    // null = no mostrar la pestaña de colecciones. Se usa así cuando esta misma hoja se reutiliza
+    // para buscar alimentos DENTRO de una colección (Tarea B): no tiene sentido anidar colecciones.
+    collectionsTab: CollectionsTabConfig? = null
 ) {
     val scope = rememberCoroutineScope()
-    var selectedTab by remember { mutableStateOf(0) }
-    val tabs = listOf("Buscar", "Historial", "Favoritos")
-    var query     by remember { mutableStateOf("") }
-    var results   by remember { mutableStateOf<List<Product>>(emptyList()) }
+    var selectedTab by state::tab
+    val tabs = if (collectionsTab != null) listOf("Buscar", "Historial", "Favoritos", "Colecciones")
+               else listOf("Buscar", "Historial", "Favoritos")
+    var query     by state::query
+    var results   by state::results
     var history   by remember { mutableStateOf<List<Product>>(emptyList()) }
     var favorites by remember { mutableStateOf<List<Product>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
     var errorMsg  by remember { mutableStateOf<String?>(null) }
-    var hasSearched by remember { mutableStateOf(false) }
+    var hasSearched by state::hasSearched
 
     LaunchedEffect(Unit) {
         history   = nutritionService.getFoodHistory()
@@ -799,6 +956,199 @@ private fun FoodSearchSheet(
                 if (favorites.isEmpty()) EmptySheetState("No tienes favoritos. Pulsa ❤️ en un alimento para añadirlo.")
                 else ProductList(products = favorites, onProductSelected = onProductSelected)
             }
+            3 -> if (collectionsTab != null) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedButton(
+                        onClick = collectionsTab.onCreate,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.small
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null)
+                        Spacer(Modifier.width(6.dp))
+                        Text("Nueva colección")
+                    }
+                    if (collectionsTab.collections.collections.isEmpty()) {
+                        EmptySheetState(
+                            "Crea una colección con los alimentos que sueles repetir (p. ej. tu " +
+                                "desayuno) para añadirlos todos de una vez."
+                        )
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            collectionsTab.collections.collections.forEach { collection ->
+                                CollectionCard(
+                                    collection = collection,
+                                    onApply = { collectionsTab.onApply(collection) },
+                                    onEdit = { collectionsTab.onEdit(collection) },
+                                    onDelete = { collectionsTab.onDelete(collection) }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Agrupa lo que necesita la pestaña "Colecciones" de [FoodSearchSheet]: pasarlo como un solo
+ *  parámetro nulable es más claro que cinco parámetros sueltos, y `null` deshabilita la pestaña. */
+private class CollectionsTabConfig(
+    val collections: FoodCollections,
+    val onApply: (FoodCollection) -> Unit,
+    val onCreate: () -> Unit,
+    val onEdit: (FoodCollection) -> Unit,
+    val onDelete: (FoodCollection) -> Unit
+)
+
+@Composable
+private fun CollectionCard(
+    collection: FoodCollection,
+    onApply: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
+    var confirmDelete by remember { mutableStateOf(false) }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onApply),
+        shape = MaterialTheme.shapes.small,
+        color = GymSmartColors.SurfaceElevated
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    collection.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = GymSmartColors.TextPrimary
+                )
+                val totalKcal = collection.items.sumOf { it.kcal }
+                val count = collection.items.size
+                Text(
+                    "$count ${if (count == 1) "alimento" else "alimentos"} · ${totalKcal.toInt()} kcal",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = GymSmartColors.TextSecondary
+                )
+            }
+            IconButton(onClick = onEdit) {
+                Icon(Icons.Default.Edit, contentDescription = "Editar colección", tint = GymSmartColors.TextSecondary)
+            }
+            IconButton(onClick = { confirmDelete = true }) {
+                Icon(Icons.Default.Delete, contentDescription = "Eliminar colección", tint = GymSmartColors.Error)
+            }
+        }
+    }
+
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("¿Eliminar «${collection.name}»?") },
+            text = { Text("Esto no borra las comidas que ya hayas añadido con ella, solo la colección.") },
+            confirmButton = {
+                TextButton(onClick = { confirmDelete = false; onDelete() }) {
+                    Text("Eliminar", color = GymSmartColors.Error)
+                }
+            },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancelar") } }
+        )
+    }
+}
+
+// ── Sheet: Editor de colección ────────────────────────────────────────────────
+
+@Composable
+private fun CollectionEditorSheet(
+    draft: FoodCollection,
+    onNameChange: (String) -> Unit,
+    onRemoveItem: (Int) -> Unit,
+    onAddFoodClick: () -> Unit,
+    onSave: () -> Unit,
+    onClose: () -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 32.dp)) {
+        SheetHandle()
+        SheetHeader(
+            title = "Colección",
+            subtitle = "Los alimentos que quieras añadir todos de una vez",
+            onClose = onClose
+        )
+        Spacer(Modifier.height(12.dp))
+
+        OutlinedTextField(
+            value = draft.name,
+            onValueChange = { onNameChange(it.take(40)) },
+            label = { Text("Nombre (ej. Desayuno)") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            colors = sheetFieldColors()
+        )
+
+        Spacer(Modifier.height(16.dp))
+
+        if (draft.items.isEmpty()) {
+            EmptySheetState("Todavía no tiene alimentos. Pulsa «Añadir alimento».")
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                draft.items.forEachIndexed { index, item ->
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.small,
+                        color = GymSmartColors.SurfaceElevated
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    item.name,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = GymSmartColors.TextPrimary
+                                )
+                                Text(
+                                    "${item.grams.toInt()} g${basisSuffix(item)} · ${item.kcal.toInt()} kcal",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = GymSmartColors.TextSecondary
+                                )
+                            }
+                            IconButton(onClick = { onRemoveItem(index) }) {
+                                Icon(Icons.Default.Delete, contentDescription = "Quitar", tint = GymSmartColors.Error)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+        OutlinedButton(
+            onClick = onAddFoodClick,
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.small
+        ) {
+            Icon(Icons.Default.Add, contentDescription = null)
+            Spacer(Modifier.width(6.dp))
+            Text("Añadir alimento")
+        }
+
+        Spacer(Modifier.height(16.dp))
+        Button(
+            onClick = onSave,
+            enabled = draft.name.isNotBlank() && draft.items.isNotEmpty(),
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+            shape = MaterialTheme.shapes.medium,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = GymSmartColors.Primary,
+                disabledContainerColor = GymSmartColors.Outline
+            )
+        ) {
+            Text("Guardar colección", color = GymSmartColors.OnPrimary, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -844,20 +1194,56 @@ private fun ProductList(products: List<Product>, onProductSelected: (Product) ->
 
 // ── Sheet: Selector de porción ────────────────────────────────────────────────
 
+/**
+ * Selector de cantidad. Construye él mismo la [MealEntry] en vez de devolver solo los gramos: es el
+ * único sitio que conoce la base de pesaje elegida y los valores por 100 g ya convertidos a ella
+ * (Tarea G), así que dejar que cada sitio que lo llama los recalculase sería la forma de que acabaran
+ * divergiendo. Quien lo llama solo decide qué hacer con la entrada (guardarla, o meterla en una
+ * colección) y le pone el id si hace falta.
+ */
 @Composable
 private fun PortionPickerSheet(
     mealLabel: String, product: Product, initialGrams: Double,
     nutritionService: NutritionService,
-    onConfirm: (Double) -> Unit, onBack: () -> Unit, onClose: () -> Unit
+    initialBasis: String? = null,
+    initialYieldId: String? = null,
+    onConfirm: (MealEntry) -> Unit, onBack: () -> Unit, onClose: () -> Unit
 ) {
     var gramsText by remember { mutableStateOf(initialGrams.toInt().toString()) }
     val grams = gramsText.toDoubleOrNull() ?: 0.0
+
+    // Factor crudo→cocinado. Primero se intenta reconocer el alimento por su nombre; si no se
+    // reconoce, el usuario puede elegirlo a mano, que es justo el dato que faltaba. Lo elegido a mano
+    // manda sobre lo automático.
+    val autoYield = remember(product.product_name) { findCookingYield(product.product_name) }
+    var manualYieldId by remember(product.product_name) { mutableStateOf(initialYieldId) }
+    val cookingYield = cookingYieldById(manualYieldId) ?: autoYield
+
+    // Si el nombre delata que el producto ya viene cocinado o es un preparado, no se ofrece nada: ni
+    // automático ni a mano. Sus datos ya están en base cocinada.
+    val alreadyCooked = remember(product.product_name) { isExcludedFromCooking(product.product_name) }
+    var showYieldPicker by remember { mutableStateOf(false) }
+
+    var basis by remember(product.product_name) {
+        mutableStateOf(if (initialBasis == "cooked") WeighBasis.COOKED else WeighBasis.RAW)
+    }
+    // Si se deselecciona el alimento de referencia, la base tiene que volver a crudo: quedarse en
+    // "cocinado" sin factor mostraría los valores crudos etiquetados como cocinados.
+    if (cookingYield == null && basis == WeighBasis.COOKED) basis = WeighBasis.RAW
+
     val n = product.nutriments
-    val kcalPer100 = n.estimatedKcalPer100()
-    val kcal     = kcalPer100               / 100.0 * grams
-    val proteins = (n?.proteins_100g ?: 0.0)        / 100.0 * grams
-    val carbs    = (n?.carbohydrates_100g ?: 0.0)   / 100.0 * grams
-    val fat      = (n?.fat_100g ?: 0.0)             / 100.0 * grams
+    // Los datos de origen están en base cruda (o en seco); se convierten a la base que haya elegido
+    // el usuario antes de calcular cualquier total.
+    fun per100(valueRaw: Double): Double = cookingYield?.per100For(valueRaw, basis) ?: valueRaw
+    val kcalPer100     = per100(n.estimatedKcalPer100())
+    val proteinsPer100 = per100(n?.proteins_100g ?: 0.0)
+    val carbsPer100    = per100(n?.carbohydrates_100g ?: 0.0)
+    val fatPer100      = per100(n?.fat_100g ?: 0.0)
+
+    val kcal     = kcalPer100     / 100.0 * grams
+    val proteins = proteinsPer100 / 100.0 * grams
+    val carbs    = carbsPer100    / 100.0 * grams
+    val fat      = fatPer100      / 100.0 * grams
 
     val scope = rememberCoroutineScope()
     var isFavorite by remember { mutableStateOf(false) }
@@ -894,10 +1280,53 @@ private fun PortionPickerSheet(
 
         Spacer(Modifier.height(20.dp))
 
+        if (cookingYield != null) {
+            BasisSelector(
+                cookingYield = cookingYield,
+                basis = basis,
+                grams = grams,
+                chosenByHand = manualYieldId != null,
+                onBasisChange = { basis = it },
+                onChangeFood = { showYieldPicker = true },
+                onClearFood = { manualYieldId = null }
+            )
+            Spacer(Modifier.height(16.dp))
+        } else if (!alreadyCooked) {
+            // No se reconoció el alimento, pero tampoco hay motivo para descartarlo: en vez de dejar
+            // al usuario sin opción (que era la queja real de la primera versión), se le deja decir a
+            // qué se parece. El factor sigue saliendo del catálogo, no de una estimación inventada.
+            OutlinedButton(
+                onClick = { showYieldPicker = true },
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.small,
+                border = BorderStroke(1.dp, GymSmartColors.Outline),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = GymSmartColors.TextSecondary)
+            ) { Text("¿Lo has pesado ya cocinado?", style = MaterialTheme.typography.labelMedium) }
+            Spacer(Modifier.height(16.dp))
+        }
+
+        if (showYieldPicker) {
+            CookingYieldPickerDialog(
+                onDismiss = { showYieldPicker = false },
+                onSelected = {
+                    manualYieldId = it.id
+                    basis = WeighBasis.COOKED
+                    showYieldPicker = false
+                }
+            )
+        }
+
         OutlinedTextField(
             value = gramsText,
             onValueChange = { if (it.length <= 5) gramsText = it.filter { c -> c.isDigit() } },
-            label = { Text("Cantidad (g)") },
+            label = {
+                Text(
+                    if (cookingYield == null) "Cantidad (g)"
+                    else "Cantidad (g) · ${
+                        if (basis == WeighBasis.RAW) cookingYield.rawLabel else cookingYield.cookedLabel
+                    }"
+                )
+            },
             suffix = { Text("g", color = GymSmartColors.TextSecondary, fontWeight = FontWeight.Bold) },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             modifier = Modifier.fillMaxWidth(),
@@ -947,12 +1376,198 @@ private fun PortionPickerSheet(
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = GymSmartColors.TextSecondary)
             ) { Text("← Volver") }
             Button(
-                onClick = { if (grams > 0) onConfirm(grams) },
+                onClick = {
+                    if (grams > 0) onConfirm(
+                        MealEntry(
+                            name = product.product_name ?: "Sin nombre",
+                            grams = grams,
+                            kcalPer100 = kcalPer100,
+                            proteinsPer100 = proteinsPer100,
+                            carbsPer100 = carbsPer100,
+                            fatPer100 = fatPer100,
+                            // Solo se guardan cuando de verdad se pudo elegir: si el alimento no tiene
+                            // factor, decir "crudo" sería afirmar algo que no se sabe.
+                            basis = cookingYield?.let { if (basis == WeighBasis.COOKED) "cooked" else "raw" },
+                            yieldId = cookingYield?.id
+                        )
+                    )
+                },
                 enabled = grams > 0, modifier = Modifier.weight(2f), shape = MaterialTheme.shapes.small,
                 colors = ButtonDefaults.buttonColors(containerColor = GymSmartColors.Primary, contentColor = GymSmartColors.OnPrimary, disabledContainerColor = GymSmartColors.Outline)
             ) { Text("Añadir a $mealLabel", fontWeight = FontWeight.Bold) }
         }
     }
+}
+
+/**
+ * Sufijo con la base de pesaje para mostrar junto a los gramos: " en seco", " cocido"... Cadena vacía
+ * si la comida no tiene base registrada, que es el caso de todo lo que se registró antes de la Tarea G
+ * y de los alimentos sin factor. Los nombres los da el catálogo, para que diga "en seco" en el arroz y
+ * "crudo" en el pollo.
+ */
+private fun basisSuffix(entry: MealEntry): String {
+    val basis = entry.basis ?: return ""
+    // El id guardado manda sobre el nombre: el alimento de referencia pudo elegirse a mano, y entonces
+    // el nombre del producto no lo encuentra en el catálogo.
+    val cookingYield = cookingYieldById(entry.yieldId) ?: findCookingYield(entry.name) ?: return ""
+    return " " + (if (basis == "cooked") cookingYield.cookedLabel else cookingYield.rawLabel).lowercase()
+}
+
+/**
+ * Selector de base de pesaje (Tarea G). Solo aparece para los alimentos del catálogo de factores.
+ *
+ * Muestra el peso equivalente en la otra base y de dónde sale el factor. Las dos cosas son
+ * deliberadas: la equivalencia porque es el dato con el que se compra y se congela ("esto son 208 g
+ * de pollo crudo"), y la fuente porque un factor de cocinado es una media, no una medida de este
+ * pollo concreto, y el usuario merece saberlo en vez de ver un número caído del cielo.
+ */
+@Composable
+private fun BasisSelector(
+    cookingYield: CookingYield,
+    basis: WeighBasis,
+    grams: Double,
+    chosenByHand: Boolean,
+    onBasisChange: (WeighBasis) -> Unit,
+    onChangeFood: () -> Unit,
+    onClearFood: () -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "¿Cómo lo has pesado?",
+                style = MaterialTheme.typography.bodySmall,
+                color = GymSmartColors.TextSecondary
+            )
+            Text(
+                if (chosenByHand) "Quitar" else "Cambiar",
+                style = MaterialTheme.typography.labelSmall,
+                color = GymSmartColors.Primary,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.clickable { if (chosenByHand) onClearFood() else onChangeFood() }
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(
+                WeighBasis.RAW to cookingYield.rawLabel,
+                WeighBasis.COOKED to cookingYield.cookedLabel
+            ).forEach { (option, label) ->
+                val isSelected = basis == option
+                OutlinedButton(
+                    onClick = { onBasisChange(option) },
+                    modifier = Modifier.weight(1f),
+                    shape = MaterialTheme.shapes.extraSmall,
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = if (isSelected) GymSmartColors.Primary else GymSmartColors.TextSecondary,
+                        containerColor = if (isSelected) GymSmartColors.Primary.copy(alpha = 0.1f)
+                        else androidx.compose.ui.graphics.Color.Transparent
+                    ),
+                    border = BorderStroke(1.dp, if (isSelected) GymSmartColors.Primary else GymSmartColors.Outline)
+                ) {
+                    Text(
+                        label,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                    )
+                }
+            }
+        }
+
+        if (basis == WeighBasis.COOKED && grams > 0) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "≈ ${cookingYield.rawWeightFor(grams, basis).toInt()} g ${cookingYield.rawLabel.lowercase()}",
+                style = MaterialTheme.typography.bodySmall,
+                color = GymSmartColors.Primary,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        Spacer(Modifier.height(6.dp))
+        Text(
+            buildString {
+                if (chosenByHand) append("Usando la referencia de ")
+                append(cookingYield.label)
+                append(' ')
+                append(cookingYield.method)
+                append(" · factor ")
+                append(cookingYield.factor)
+                append(" (")
+                append(cookingYield.source)
+                append(')')
+            },
+            style = MaterialTheme.typography.labelSmall,
+            color = GymSmartColors.TextSecondary
+        )
+    }
+}
+
+/**
+ * Deja al usuario elegir a mano el alimento de referencia cuando la app no reconoce el producto.
+ *
+ * Esto es lo que hace que la función sirva para cualquier alimento y no solo para los que el catálogo
+ * identifica por el nombre: el dato que faltaba era *qué alimento es*, y el usuario lo sabe. Lo que no
+ * se le pide nunca es el factor, que sigue saliendo del catálogo con su fuente — si se le dejara
+ * teclear un número, la app estaría avalando cifras inventadas.
+ */
+@Composable
+private fun CookingYieldPickerDialog(
+    onDismiss: () -> Unit,
+    onSelected: (CookingYield) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = GymSmartColors.SurfaceElevated,
+        title = { Text("¿A qué se parece?", color = GymSmartColors.TextPrimary) },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
+                Text(
+                    "Elige el alimento más parecido para convertir su peso cocinado. El factor sale de " +
+                        "datos de la USDA, no de una estimación.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = GymSmartColors.TextSecondary
+                )
+                Spacer(Modifier.height(12.dp))
+                COOKING_YIELD_FAMILIES.forEach { (family, foods) ->
+                    Text(
+                        family,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = GymSmartColors.Primary,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    foods.forEach { food ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth()
+                                .clickable { onSelected(food) }
+                                .padding(vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                food.label,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = GymSmartColors.TextPrimary,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text(
+                                "×${food.factor}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = GymSmartColors.TextSecondary
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(10.dp))
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Cancelar", color = GymSmartColors.TextSecondary) }
+        }
+    )
 }
 
 // ── Sheet: Editar entrada ─────────────────────────────────────────────────────
@@ -1003,7 +1618,7 @@ private fun EditEntrySheet(
 
         Surface(shape = MaterialTheme.shapes.medium, color = GymSmartColors.SurfaceElevated, modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Valores para ${grams.toInt()}g", style = MaterialTheme.typography.bodySmall, color = GymSmartColors.TextSecondary)
+                Text("Valores para ${grams.toInt()}g${basisSuffix(entry)}", style = MaterialTheme.typography.bodySmall, color = GymSmartColors.TextSecondary)
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
                     NutrientPreview("Calorías",  "${kcal.toInt()}",     "kcal", GymSmartColors.Primary)
                     NutrientPreview("Proteínas", "${proteins.toInt()}", "g",    GymSmartColors.MacroProtein)

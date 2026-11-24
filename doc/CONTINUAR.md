@@ -6,10 +6,169 @@
 > [08-backlog-mejoras.md](08-backlog-mejoras.md) (cada hallazgo con su estado).
 > Este documento se actualiza cada vez que se termina algo, no solo al final de la sesión.
 
-**Última actualización**: 2026-11-23 (**los 5 bloques de la auditoría de kcal están completos**: A y B
-commiteados el 2026-11-22; eliminación de cintura/recomp y Bloque C commiteados el 2026-11-23
-(`3d19e2f`, `d4a1b76`); Bloques D y E hechos, **sin commitear todavía**). Fuera de alcance de los 5
-bloques: AUD-11 (snapshot histórico).
+**Última actualización**: 2026-11-24 (nueva lista de mejoras A-G pedida por el usuario; hechas A, D, B
+y G, sin commitear; ver sección de abajo. Antes de eso: los 5 bloques de la auditoría de kcal están
+completos — detalle más abajo en este mismo documento).
+
+---
+
+## 🟡 Nueva lista de mejoras (2026-11-24) — tareas A-G
+
+El usuario pidió 7 mejoras sueltas (luego ampliadas a 8 con la G) y, antes de tocar nada, se le dio una
+clasificación por complejidad/nivel de modelo y un orden de ejecución acordado. **Regla explícita del
+usuario: no se investiga ni se implementa nada que no se esté haciendo en ese momento.**
+
+| ID | Tarea | Nivel | Estado |
+|---|---|---|---|
+| A | La búsqueda de comida se borraba al volver atrás del selector de ración | Sonnet, medio | ✅ Hecho |
+| D | La hoja de "añadir peso" de un ejercicio no se desplegaba del todo | Sonnet, bajo | ✅ Hecho |
+| B | Colecciones de comida para añadir varios alimentos de golpe | Sonnet, alto | ✅ Hecho |
+| G | Peso crudo vs cocido para alimentos genéricos (como Fitia) | Opus, alto | ✅ Hecho |
+| F | Baremos reales bajo cada nivel de actividad (pasos/kcal) | Opus, medio | ⬜ Pendiente |
+| E | Pestaña "Progreso" con calendario de entrenos | Opus, alto | ⬜ Pendiente |
+| C | Notificación de fin de descanso (sistema + popup in-app) | Opus, alto | ⬜ Pendiente |
+| H | Tabla local de alimentos genéricos, mostrados antes que las marcas | Opus, alto | 💡 Propuesta, **sin aprobar** |
+
+**Orden acordado**: A+D juntas → B+G juntas (mismo modelo de datos de comidas) → F → E → C. B y G se
+agruparon porque las dos tocan el flujo de añadir alimentos. **Lo siguiente es la tarea F.**
+
+**Tarea H (propuesta, el usuario NO la ha aprobado).** Surgió al comparar la app con Fitia: al buscar
+"pechuga de pollo" el genérico no aparece arriba. Se comprobó que **Open Food Facts no tiene alimentos
+genéricos** — es una base de productos envasados, y los 12 primeros resultados reales de una búsqueda
+son todos marcas (Hacendado, Mercadona, Carrefour…). Fitia resuelve esto teniendo *dos* fuentes: una
+base propia de genéricos y, encima, los productos de marca (que son los mismos que los nuestros: su
+"Arroz Largo Hacendado 347 kcal" coincide exacto con lo que devuelve OFF). La propuesta es replicar esa
+estructura con datos que **ya están descargados y validados** de la Tarea G: el volcado de USDA SR
+Legacy tiene 7.793 alimentos genéricos, 4.221 en categorías relevantes; con 200-300 curados se cubre una
+dieta española. **No añadiría una segunda API**: igual que los factores de la Tarea G, se procesaría
+aquí y viajaría como datos estáticos, así que en ejecución seguiría habiendo una sola API de alimentos
+(OFF). El coste real es traducir y curar los nombres al español, que es manual. No sirve para productos
+españoles (jamón serrano, chorizo, manchego): esos seguirían saliendo solo de marcas. Un paso intermedio
+mucho más barato: **mostrar la marca en cada resultado**, que hoy ni siquiera se pinta.
+
+### ✅ Tarea A — La búsqueda ya no se borra al volver atrás
+
+`FoodSearchSheet` guardaba `query`/`results`/`tab`/`hasSearched` en un `remember` interno. El `when`
+de `NutritionScreen` que decide qué hoja mostrar hace que esa rama deje de componerse mientras se ve el
+selector de ración (`PortionPickerSheet`), así que al volver Compose recreaba `FoodSearchSheet` desde
+cero y el `remember` se perdía. Arreglo: ese estado se sacó a una clase `FoodSearchState` hoisteada en
+`NutritionScreen`, que sobrevive a los cambios de `sheetMode`. Se resetea explícitamente solo al pulsar
+"Añadir" desde una comida nueva — nunca al volver atrás.
+
+### ✅ Tarea D — La hoja de peso de un ejercicio ya se despliega entera
+
+Faltaba `sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)` en el
+`ModalBottomSheet` del teclado numérico (`NumberPadSheet` en `WorkoutLogScreen.kt`), así que Material3
+podía dejarla "parcialmente expandida" con el botón "Hecho" cortado y sin scroll para llegar a él. El
+usuario pidió revisar si había más hojas con el mismo problema: las otras dos de `WorkoutScreen.kt`
+(`AddExerciseSheet`, `KindSheet`) tenían el mismo hueco (mitigado a medias por tener scroll, pero sin
+garantía de desplegarse del todo). Las tres arregladas con el mismo patrón que ya usa bien la hoja de
+comidas en `NutritionScreen`.
+
+### ✅ Tarea B — Colecciones de comida ("añadir desayuno de una vez")
+
+Nueva 4ª pestaña "Colecciones" en el buscador de alimentos (junto a Buscar/Historial/Favoritos). Una
+colección es un grupo de alimentos con su cantidad ya fijada (reutiliza `MealEntry` tal cual para cada
+ítem); tocar la tarjeta de una colección añade todos sus alimentos de golpe a la comida que se estaba
+editando, sin pasar por el buscador uno por uno.
+
+**Servidor**: `FoodCollection`/`FoodCollections` en `NutritionModels.kt`, tabla `food_collections`
+(documento JSON único por usuario, mismo patrón que `workout_plans` — no hace falta consultar dentro
+de él desde el servidor), `GET`/`PUT /nutrition/collections` con validación de cordura (máx. 40
+colecciones, 30 alimentos por colección, nombre ≤40 caracteres, gramos en (0, 5000]).
+
+**Cliente**: mismo modelo espejo + `getCollections()`/`saveCollections()` en `NutritionService`. En
+`NutritionScreen.kt`, tres `SheetMode` nuevos (`CollectionEditor`/`CollectionSearch`/
+`CollectionPortionPicker`), **completamente separados** de los `SheetMode` del flujo real de comidas
+(`Search`/`Scanner`/`PortionPicker`/`EditEntry`, sin tocar ni una línea de esas ramas) — decisión
+deliberada para no arriesgar el flujo más crítico de la app por una función secundaria. Reutilizan los
+mismos composables `FoodSearchSheet`/`PortionPickerSheet` del flujo normal (son genéricos: solo
+necesitan una etiqueta y un par de callbacks), así que no hubo que escribir una búsqueda ni un selector
+de ración nuevos. El editor de una colección (`CollectionEditorSheet`, nuevo) tiene nombre, lista de
+alimentos con botón de quitar, "Añadir alimento" (abre la búsqueda en modo colección) y "Guardar".
+
+Verificado con `:shared:jvmTest`, `:server:compileKotlin`, `:composeApp:compileKotlinJvm`, los tres en
+verde. **Nada de esto commiteado todavía.**
+
+### ✅ Tarea G — Pesar en crudo o en cocido
+
+El usuario avisó de que esto es "muy muy crucial, porque la app se basa en medir comidas". El error que
+había era grande y en los dos sentidos: 150 g de pechuga pesados ya hechos se registraban como 180 kcal
+en vez de 237 (−24 %), y 200 g de arroz cocido como 730 kcal en vez de 260 (+181 %). La carne pierde
+agua y se concentra; el arroz la absorbe y se diluye.
+
+**Se hizo en dos pasadas, y la primera estaba mal planteada.** La versión inicial tenía 11 alimentos
+sacados a mano de uno en uno, sin ni un pescado. El usuario lo cortó con la pregunta correcta: *"si para
+la mitad de alimentos no puedo poner cocido, de qué sirve?"*. Tenía razón: el problema no era la calidad
+de cada factor, era que el método de obtenerlos no escalaba. Se rehízo:
+
+1. **Extracción sistemática en vez de a mano.** Se descargó el volcado completo de **USDA FoodData
+   Central SR Legacy** (6 MB, 7.793 alimentos). Ese dataset nombra los alimentos de forma regular
+   ("…, raw" / "…, cooked, roasted"), así que emparejando por el tronco del nombre salen **1.261 parejas
+   crudo/cocinado** de golpe. De ahí se seleccionaron las relevantes para una dieta española: el
+   catálogo pasó de 11 a **24 alimentos**, con pescado, marisco, quinoa, cuscús, bulgur, cebada, cuatro
+   tipos de alubia, habas, pavo y patata. El factor de cada uno es `kcal crudo ÷ kcal cocinado`.
+2. **Y lo que de verdad cierra el hueco: si no reconoce el alimento, pregunta.** Aunque el catálogo
+   tuviera 200 entradas, emparejar nombres libres de Open Food Facts en español siempre fallaría en
+   algunos. Así que cuando no hay coincidencia automática (y nada indica que el producto venga ya
+   cocinado), aparece "¿Lo has pesado ya cocinado?" y el usuario elige a qué alimento se parece, de una
+   lista agrupada por familias. **El factor sigue saliendo del catálogo, con su fuente**; lo que se le
+   pregunta es *qué alimento es*, que era el dato que faltaba y que él sí sabe. Nunca se le deja teclear
+   un factor: eso sería que la app avalase cifras inventadas.
+
+**Mejoras de dato que trajo la segunda pasada**: la pechuga de pollo pasó de 0,72 a **0,76**, porque el
+0,72 de la tabla de 1975 era de pechuga *con piel* y SR Legacy tiene la entrada de pechuga sin piel ni
+hueso, que es lo que se compra. Y el pescado salió mejor de lo esperado: **45 de las 72 parejas de
+pescado en calor seco dan exactamente 0,78**, en especies sin relación entre sí, así que un único factor
+para todo el pescado no es una simplificación cómoda sino lo que dice el dato.
+
+**Nada inventado.** Todo citado con su identificador de FoodData Central en
+`doc/10-fundamento-cientifico.md` §13.4, fila por fila. Dos factores (ternera picada y cordero) no
+tienen pareja en el dataset y vienen de la *"USDA Table of Cooking Yields for Meat and Poultry"* (ARS,
+2012), marcados como tales.
+
+**Respuesta a la duda del usuario sobre la API: no hacía falta cambiarla.** Open Food Facts no da ningún
+dato de conversión crudo/cocido, pero tampoco lo necesitaba — el factor es del *alimento*, no del
+producto, así que vive en un catálogo propio y se aplica sobre los valores que OFF ya devuelve.
+
+**Dónde está:**
+- `shared/.../nutrition/CookingYield.kt` (nuevo): catálogo de 24 alimentos con su fuente y su familia,
+  más `findCookingYield`, `cookingYieldById`, `isExcludedFromCooking`, `per100For` y `rawWeightFor`. En
+  `shared` para que sea testable y para que la conversión no se duplique (la usan cliente y servidor).
+- `shared/src/commonTest/.../CookingYieldTest.kt` (nuevo): 22 tests. Comprueban que el factor no está
+  invertido (cocinar carne sube las kcal/100 g, cocer arroz las baja), que la ración total sale igual se
+  pese antes o después de cocinar, que **cada factor reproduce el valor cocinado medido por la USDA**
+  (16 alimentos comprobados uno a uno), que "repollo" no se confunde con "pollo" y que el atún en lata
+  no se convierte.
+- **BBDD**: dos columnas nuevas en `meals`, `basis` ("raw"/"cooked") y `yield_id` (qué alimento del
+  catálogo se usó), con el mismo `ALTER TABLE` dentro de `runCatching` que ya usa `ProfileService`. Las
+  comidas antiguas quedan sin base y se muestran como siempre. Validadas en la ruta contra el catálogo
+  real, porque las manda el cliente. `yield_id` hace falta además de `basis` porque si el alimento de
+  referencia se eligió a mano, su nombre no basta para volver a encontrarlo.
+- **Lo guardado** son los gramos que el usuario pesó de verdad y los valores por 100 g **ya convertidos**,
+  así que el total se calcula igual que siempre y **ni el autoajuste ni los agregados diarios cambian**.
+- **UI**: selector "¿Cómo lo has pesado?" en el selector de ración, con la equivalencia ("≈ 197 g crudo")
+  y el factor con su fuente debajo; botón "¿Lo has pesado ya cocinado?" + diálogo de elección por
+  familias cuando no se reconoce; y la base visible en la lista de comidas y en el editor ("150 g
+  cocido"), con los nombres que da el catálogo ("en seco" para el arroz, "crudo" para el pollo).
+
+**Un agujero que se encontró y se cerró por el camino**: el historial de alimentos sale de la tabla
+`meals`, donde los valores ya están convertidos. Reutilizar desde el historial un alimento registrado en
+cocido y volver a marcarlo como cocido habría aplicado el factor **dos veces** (158 → 208 kcal/100 g en
+pollo). Arreglado haciendo que `/nutrition/history` devuelva también `basis` y `yieldId`, y que el
+cliente deshaga la conversión al leerla, manteniendo la invariante de que los `nutriments` de un
+`Product` están siempre en base cruda. Hay un test que fija que multiplicar por el factor es el inverso
+exacto de la conversión.
+
+**Lo que se dejó fuera, y por qué** (CRU-2): verduras y avena. No es falta de datos — las parejas están
+en el dataset — sino que los factores de verdura se mueven entre 0,8 y 1,2 sobre alimentos de 20–35
+kcal/100 g (ruido en el recuento, con dispersión alta entre variedades: la "espinaca" del dataset da
+1,17 o 1,38 según especie) y la avena cocinada depende del agua o leche que se le eche, que no es una
+propiedad del alimento. El boniato se descartó por dar 0,96, o sea sin cambio.
+
+Verificado con `:shared:jvmTest` (72 tests, 0 fallos), `:server:compileKotlin` y
+`:composeApp:compileKotlinJvm`, los tres en verde. **Sin commitear.** Sin probar en dispositivo real
+(este entorno no tiene Android SDK): la parte de UI necesita que el usuario la vea en el móvil.
 
 ---
 
