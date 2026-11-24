@@ -29,9 +29,13 @@ mejora de funcionalidades) repartido en fases, trabajado a lo largo de muchas se
 - Nunca se hacen cambios destructivos (borrar módulos, resetear la BBDD, rotar claves) sin confirmación
   explícita del usuario, aunque el proyecto sea de uso personal.
 - Nunca se hace commit ni push sin que el usuario lo pida explícitamente.
-- Este entorno de desarrollo **no tiene Android SDK instalado** — no se puede compilar el target Android
-  (`:composeApp:compileDebugKotlinAndroid`). Cualquier cambio en código `androidMain` queda marcado como
-  "sin verificar con build real" en la documentación, y el usuario debe compilarlo/probarlo en su propia
-  máquina (IntelliJ, con el SDK instalado) antes de confiar en él al 100%.
-- Verificar siempre con `./gradlew :server:compileKotlin` y/o `:composeApp:compileKotlinJvm` (que no
-  necesitan Android SDK) tras cada cambio relevante.
+- **El Android SDK sí está instalado** (comprobado el 2026-11-24: `local.properties` apunta al SDK del
+  usuario, con `android-36`, y `./gradlew :composeApp:compileDebugKotlinAndroid --rerun-tasks` termina
+  en BUILD SUCCESSFUL). Esta nota decía antes justo lo contrario y era **falsa**: por culpa de ella
+  varias sesiones dieron por imposible compilar `androidMain` y dejaron código sin verificar.
+  **Compilar el target Android es obligatorio tras tocar `androidMain`.**
+  Lo que sigue sin poder hacerse aquí es *ejecutar* la app en un dispositivo o emulador: el
+  comportamiento en tiempo de ejecución (notificaciones, permisos, servicios en segundo plano) lo tiene
+  que probar el usuario en su móvil, y eso sí se marca como "sin verificar en dispositivo".
+- Verificar siempre con `./gradlew :shared:jvmTest :server:compileKotlin :composeApp:compileKotlinJvm`
+  tras cada cambio relevante, añadiendo `:composeApp:compileDebugKotlinAndroid` si se tocó `androidMain`.

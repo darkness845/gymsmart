@@ -24,9 +24,9 @@ usuario: no se investiga ni se implementa nada que no se esté haciendo en ese m
 | D | La hoja de "añadir peso" de un ejercicio no se desplegaba del todo | Sonnet, bajo | ✅ Hecho |
 | B | Colecciones de comida para añadir varios alimentos de golpe | Sonnet, alto | ✅ Hecho |
 | G | Peso crudo vs cocido para alimentos genéricos (como Fitia) | Opus, alto | ✅ Hecho |
-| F | Baremos reales bajo cada nivel de actividad (pasos/kcal) | Opus, medio | ⬜ Pendiente |
-| E | Pestaña "Progreso" con calendario de entrenos | Opus, alto | ⬜ Pendiente |
-| C | Notificación de fin de descanso (sistema + popup in-app) | Opus, alto | ⬜ Pendiente |
+| F | Baremos reales bajo cada nivel de actividad (pasos/kcal) | Opus, medio | ✅ Hecho |
+| E | Pestaña "Progreso" con calendario de entrenos | Opus, alto | ✅ Hecho |
+| C | Notificación de fin de descanso (sistema + popup in-app) | Opus, alto | ✅ Hecho |
 | H | Tabla local de alimentos genéricos, mostrados antes que las marcas | Opus, alto | ✅ Hecho |
 
 **Orden acordado**: A+D juntas → B+G juntas (mismo modelo de datos de comidas) → F → E → C. B y G se
@@ -159,6 +159,88 @@ pollo). Arreglado haciendo que `/nutrition/history` devuelva también `basis` y 
 cliente deshaga la conversión al leerla, manteniendo la invariante de que los `nutriments` de un
 `Product` están siempre en base cruda. Hay un test que fija que multiplicar por el factor es el inverso
 exacto de la conversión.
+
+### ✅ Tarea C — Aviso de fin de descanso
+
+El temporizador de descanso ya existía (90 s, arranca al guardar una serie y sigue contando en
+negativo), pero **no avisaba de nada**: vivía en un `LaunchedEffect` de la tarjeta del ejercicio, y
+entre series es justo cuando sales de la app o se bloquea el móvil, momento en el que el sistema puede
+congelar el proceso.
+
+**Cómo se resolvió.** El aviso se programa en el sistema operativo al guardar la serie, en vez de
+depender de que la app siga viva:
+- `RestNotifier` (`expect`/`actual`, mismo patrón que `BackgroundTrackingController`): no-op en
+  escritorio, web e iOS; en Android usa `AlarmManager` con `ELAPSED_REALTIME_WAKEUP` — inmune a cambios
+  de hora, y despierta la pantalla, porque un aviso de descanso que espera a que enciendas el móvil no
+  sirve.
+- `RestAlarmReceiver`: un `BroadcastReceiver` (no exportado) que lanza la notificación en un canal de
+  importancia alta. Al sistema lo despierta él, así que llega con la app congelada.
+- **Sin aviso doble**: siempre se programa la alarma; si el contador llega a cero con la app delante,
+  la pantalla cancela la alarma y muestra el aviso dentro de la app. Si estaba en segundo plano no se
+  cancela nada y salta la notificación.
+- Ampliar el descanso reprograma la alarma y saltarlo la cancela, para que no avise a destiempo.
+- Permiso `SCHEDULE_EXACT_ALARM` declarado. Desde Android 12 lo concede el usuario a mano, así que si
+  no está concedido se cae a una alarma inexacta en vez de fallar — puede retrasarse, pero avisa. Se
+  comprueba en cada llamada, porque el permiso se puede revocar con la app abierta.
+
+**Hallazgo colateral importante: `CLAUDE.md` mentía.** Decía que este entorno no tiene Android SDK y
+que `androidMain` no se podía compilar. Es falso: el SDK está instalado (android-36) y
+`:composeApp:compileDebugKotlinAndroid --rerun-tasks` termina en BUILD SUCCESSFUL. Varias sesiones
+anteriores dieron código de Android por "no verificable" por culpa de esa nota. **Corregido en
+CLAUDE.md**, y el código de esta tarea sí está compilado contra el target Android de verdad.
+
+Lo que sigue sin poder comprobarse aquí es el comportamiento en ejecución: que la notificación salte
+con el móvil bloqueado, el permiso de alarma exacta y el canal hay que verlos en el móvil.
+
+### ✅ Tarea F — Baremo de pasos bajo cada nivel de actividad
+
+Elegir entre "ligero" y "moderado" a ojo es la mayor fuente de error del cálculo (250-350 kcal/día
+entre escalones contiguos) y las descripciones de siempre ("1-3 días de ejercicio por semana") no
+dicen nada de lo que uno hace el resto del día. Ahora bajo cada nivel aparecen sus pasos diarios,
+que sí se pueden comprobar con el móvil.
+
+Rangos de la clasificación por podómetro de **Tudor-Locke y Bassett, Sports Medicine 2004; 34(1):1-8**:
+<5.000 sedentario, 5.000-7.499 ligero, 7.500-9.999 moderado, 10.000-12.499 activo, >12.500 muy activo.
+En `shared/.../nutrition/ActivityBenchmarks.kt`, mostrado en el onboarding y en el perfil.
+
+**Dos avisos de honestidad que van escritos en el código y en §14 del fundamento científico:**
+1. El texto original **no se pudo leer**: el PDF y las versiones de PubMed están tras verificación
+   anti-robot. Los cortes vienen de varias fuentes secundarias independientes que coinciden; la
+   frontera superior varía en la literatura posterior (la revisión de 2008 la mueve a 12.000).
+2. **La correspondencia entre esas bandas y los multiplicadores 1,2-1,9 es nuestra, no está
+   publicada.** Son dos escalas ordinales de cinco niveles del mismo concepto y alinearlas es
+   razonable, pero ningún trabajo dice que "7.500-9.999 pasos" sea 1,55. Por eso se presenta como
+   orientación para elegir, nunca como el dato del que sale el gasto.
+
+### ✅ Tarea E — Pestaña "Progreso" con calendario
+
+**Lo primero que apareció al abrirlo: el histórico no existía.** Al terminar un entrenamiento, las
+series sobrescribían `lastSession` de cada ejercicio (que es de donde sale el peso que la app propone)
+y la sesión se descartaba. No había nada que mostrar en un calendario porque nunca se guardó nada.
+Así que la tarea fue sobre todo crear la persistencia:
+
+- **Tabla nueva `workout_sessions`**, con una fila por sesión y no un documento único por usuario como
+  el plan: crecen sin límite y el calendario pide un mes, así que conviene filtrar por fecha en la
+  consulta. Lleva índice por `(user_id, date)`.
+- **`WorkoutSession` guarda una copia**, no referencias: el nombre y el tipo de cada ejercicio van
+  dentro del registro. Si mañana se renombra o se borra un ejercicio del plan, lo que pasó aquel día
+  se sigue leyendo igual. Un histórico que cambia al editar el plan no es un histórico.
+- Rutas `GET/POST/DELETE /workouts/sessions` con validación de rango de fechas y de límites.
+- Al terminar el entreno se guarda la sesión **además** de actualizar `lastSession`, que se mantiene
+  intacto porque es lo que alimenta la propuesta de peso.
+
+La pantalla (`ProgressScreen.kt`) tiene cabecera de mes con flechas, resumen del mes (días, series y
+volumen total en kg o toneladas), rejilla de calendario empezando en lunes con los días entrenados
+marcados y con punto, y al tocar un día marcado se despliega el detalle: cada ejercicio con sus series,
+peso apuntado, repeticiones, RIR y el peso total entre paréntesis solo cuando difiere de lo apuntado
+(en máquina serían el mismo número dos veces). Se entra desde "📅 Ver mi progreso" en la pantalla de
+entrenamientos.
+
+**Limitación ineludible**: los entrenamientos anteriores a este cambio **no se pueden recuperar**,
+porque nunca llegaron a guardarse. El calendario empieza a llenarse desde el primer entreno que se
+termine con esta versión.
+
+93 tests en verde, servidor y cliente compilando. Sin probar en dispositivo.
 
 ### ✅ Tarea H — Alimentos genéricos y búsqueda por relevancia
 
