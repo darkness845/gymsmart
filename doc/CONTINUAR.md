@@ -27,7 +27,7 @@ usuario: no se investiga ni se implementa nada que no se esté haciendo en ese m
 | F | Baremos reales bajo cada nivel de actividad (pasos/kcal) | Opus, medio | ⬜ Pendiente |
 | E | Pestaña "Progreso" con calendario de entrenos | Opus, alto | ⬜ Pendiente |
 | C | Notificación de fin de descanso (sistema + popup in-app) | Opus, alto | ⬜ Pendiente |
-| H | Tabla local de alimentos genéricos, mostrados antes que las marcas | Opus, alto | 💡 Propuesta, **sin aprobar** |
+| H | Tabla local de alimentos genéricos, mostrados antes que las marcas | Opus, alto | ✅ Hecho |
 
 **Orden acordado**: A+D juntas → B+G juntas (mismo modelo de datos de comidas) → F → E → C. B y G se
 agruparon porque las dos tocan el flujo de añadir alimentos. **Lo siguiente es la tarea F.**
@@ -160,6 +160,41 @@ cliente deshaga la conversión al leerla, manteniendo la invariante de que los `
 `Product` están siempre en base cruda. Hay un test que fija que multiplicar por el factor es el inverso
 exacto de la conversión.
 
+### ✅ Tarea H — Alimentos genéricos y búsqueda por relevancia
+
+**El problema, confirmado con datos**: Open Food Facts es una base de productos **envasados de marca**
+y el concepto de alimento genérico no existe en su modelo — una búsqueda real de "arroz largo" devolvió
+12 resultados, los 12 de marca. Además su orden no tiene en cuenta la intención: buscando "arroz"
+salían "Tortitas de arroz y legumbres", "Bebida de Coco & Arroz" y "Galletas de arroz inflado", y el
+arroz no aparecía.
+
+**Lo implementado:**
+- `shared/.../nutrition/GenericFoods.kt` (nuevo, generado): **89 alimentos genéricos** resueltos uno a
+  uno contra el volcado de USDA FoodData Central SR Legacy, cada uno con su `fdcId` para poder
+  verificarlo. Nombres en español curados a mano; los números no se tocan. Carnes, pescado y marisco,
+  huevos y lácteos, cereales, legumbres, verduras, frutas, frutos secos y grasas.
+- **No es una segunda API**: viaja dentro de la app, se consulta en memoria, sin red ni límite de
+  peticiones. En ejecución sigue habiendo una sola API de alimentos (OFF, para las marcas).
+- `shared/.../nutrition/FoodSearchRanking.kt` (nuevo): puntúa cada resultado por su parecido con lo
+  buscado — coincidencia exacta (1000) > empieza por (700) > contiene la palabra (400) > contiene
+  todas las palabras sueltas (200) > dentro de otra palabra (50) — y penaliza los nombres largos, que
+  son los productos compuestos. Los genéricos llevan un empujón de 250, calibrado para que adelanten a
+  una marca que solo contiene el término pero **no** a una que coincide exactamente: buscar
+  "hacendado" sigue devolviendo Hacendado primero.
+- **La fila de resultado se rediseñó** como Fitia: nombre, debajo la marca (o "Generico" en color de
+  acento), y a la derecha los gramos por defecto y sus kcal. Fuera los cuatro chips de macros.
+
+**Por qué esto también es fiabilidad y no solo comodidad**: de un genérico **se sabe la base** (cruda o
+en seco) por construcción, mientras que de un producto de marca de OFF es una suposición que no se
+puede verificar (CRU-1). Así que cuantas más comidas salgan de la tabla, menos veces hay que adivinar
+para la conversión crudo/cocinado.
+
+**Lo que no cubre**: productos españoles sin equivalente en la USDA (jamón serrano, chorizo, manchego,
+morcilla) siguen saliendo solo de marcas. Ampliar la tabla es añadir filas a la lista curada del
+generador y volver a ejecutarlo.
+
+89 tests en verde, servidor y cliente compilando. Sin probar en dispositivo.
+
 ### ✅ Tarea G (2ª corrección) — El freno: productos que ya vienen cocinados
 
 Tras una junta de cuatro agentes (competencia, datos, arquitectura y red team), la conclusión fue que
@@ -204,6 +239,12 @@ limpia. Consecuencia asumida: cuando el suelo de cordura bloquea un producto, el
 aparece**, sin explicar por qué; y los alimentos que el catálogo no reconoce por el nombre ya no se
 pueden convertir eligiendo referencia a mano. La información de la fuente sigue en
 doc/10-fundamento-cientifico.md §13.
+
+**Disposición final del selector de ración (boceto del usuario, 2026-11-24)**: bajo el nombre del
+producto va "Datos por {g} g - peso {cocido|crudo}" como en Fitia; debajo, una fila con dos elementos
+al 50 % — a la izquierda el campo "Cantidad" y a la derecha "Tipo de peso", que **no es un desplegable
+sino un botón** con el mismo aspecto que el campo: se pulsa y alterna crudo/cocinado, recalculando al
+instante. Si el alimento no tiene factor, el botón no aparece y la cantidad ocupa todo el ancho.
 
 78 tests en verde, servidor y cliente compilando. Sin probar en dispositivo.
 

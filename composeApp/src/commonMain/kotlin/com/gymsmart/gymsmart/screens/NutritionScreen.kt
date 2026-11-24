@@ -54,6 +54,9 @@ import com.gymsmart.gymsmart.nutrition.CookingYield
 import com.gymsmart.gymsmart.nutrition.cookingYieldById
 import com.gymsmart.gymsmart.nutrition.isExcludedFromCooking
 import com.gymsmart.gymsmart.nutrition.looksAlreadyCooked
+import com.gymsmart.gymsmart.nutrition.GENERIC_BRAND
+import com.gymsmart.gymsmart.nutrition.matchingGenerics
+import com.gymsmart.gymsmart.nutrition.rankFoodResults
 import com.gymsmart.gymsmart.nutrition.WeighBasis
 import com.gymsmart.gymsmart.nutrition.findCookingYield
 import com.gymsmart.gymsmart.nutrition.per100For
@@ -917,7 +920,27 @@ private fun FoodSearchSheet(
                                             .decodeFromString<FoodSearchResponse>(response.bodyAsText()).products
                                         // Sin kcal/100g ni macros no hay nada que registrar: se filtran para
                                         // no poder guardar una comida de 0 kcal (ver NUT-4 en el backlog).
-                                        results = products.filter { it.nutriments.estimatedKcalPer100() > 0.0 }
+                                        val branded = products.filter { it.nutriments.estimatedKcalPer100() > 0.0 }
+                                        // Los genéricos de la USDA se mezclan con los productos de marca y
+                                        // todo se ordena por lo que se parece a lo buscado: Open Food Facts
+                                        // devolvía "tortitas de arroz" antes que el arroz (tarea H).
+                                        results = rankFoodResults(
+                                            query = query,
+                                            generics = matchingGenerics(query),
+                                            branded = branded.map { it.product_name to it },
+                                            toGeneric = { g ->
+                                                Product(
+                                                    product_name = g.name,
+                                                    brands = GENERIC_BRAND,
+                                                    nutriments = Nutriments(
+                                                        energy_kcal_100g = g.kcalPer100,
+                                                        proteins_100g = g.proteinsPer100,
+                                                        carbohydrates_100g = g.carbsPer100,
+                                                        fat_100g = g.fatPer100
+                                                    )
+                                                )
+                                            }
+                                        )
                                     }
                                 } catch (e: Exception) {
                                     errorMsg = "No se pudo buscar. Comprueba tu conexión."
@@ -1160,32 +1183,57 @@ private fun EmptySheetState(text: String) {
     }
 }
 
+/** Gramos que se muestran por defecto en la lista y con los que se abre el selector. */
+private const val DEFAULT_GRAMS = 100
+
 @Composable
 private fun ProductList(products: List<Product>, onProductSelected: (Product) -> Unit) {
     androidx.compose.foundation.lazy.LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         items(products) { product ->
-            val kcal = product.nutriments.estimatedKcalPer100()
+            // Las kcal se muestran para la cantidad por defecto, no por 100 g: es el número que el
+            // usuario va a registrar si lo toca, y así la lista se lee de un vistazo.
+            val kcal = product.nutriments.estimatedKcalPer100() / 100.0 * DEFAULT_GRAMS
+            val brand = product.brands?.takeIf { it.isNotBlank() }
             Surface(
                 modifier = Modifier.fillMaxWidth().clickable { onProductSelected(product) },
                 shape = MaterialTheme.shapes.small,
                 color = GymSmartColors.SurfaceElevated
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(12.dp),
+                    modifier = Modifier.fillMaxWidth().padding(14.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(product.product_name ?: "Sin nombre", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = GymSmartColors.TextPrimary)
-                        Spacer(Modifier.height(4.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            MacroChip("⚡ ${kcal.toInt()} kcal", GymSmartColors.Primary)
-                            MacroChip("🥩 ${(product.nutriments?.proteins_100g ?: 0.0).toInt()}g", GymSmartColors.MacroProtein)
-                            MacroChip("🍞 ${(product.nutriments?.carbohydrates_100g ?: 0.0).toInt()}g", GymSmartColors.MacroCarbs)
-                            MacroChip("🧈 ${(product.nutriments?.fat_100g ?: 0.0).toInt()}g", GymSmartColors.MacroFat)
+                        Text(
+                            product.product_name ?: "Sin nombre",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = GymSmartColors.TextPrimary
+                        )
+                        if (brand != null) {
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                brand,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (brand == GENERIC_BRAND) GymSmartColors.Primary
+                                        else GymSmartColors.TextSecondary
+                            )
                         }
                     }
-                    Icon(Icons.Default.Add, contentDescription = null, tint = GymSmartColors.Primary, modifier = Modifier.size(24.dp))
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            "$DEFAULT_GRAMS g",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = GymSmartColors.TextPrimary
+                        )
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            "${kcal.toInt()} kcal",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = GymSmartColors.TextSecondary
+                        )
+                    }
                 }
             }
         }
@@ -1254,6 +1302,10 @@ private fun PortionPickerSheet(
     val carbsPer100    = per100(n?.carbohydrates_100g ?: 0.0)
     val fatPer100      = per100(n?.fat_100g ?: 0.0)
 
+    val basisLabel = cookingYield?.let {
+        if (basis == WeighBasis.RAW) it.rawLabel else it.cookedLabel
+    } ?: ""
+
     val kcal     = kcalPer100     / 100.0 * grams
     val proteins = proteinsPer100 / 100.0 * grams
     val carbs    = carbsPer100    / 100.0 * grams
@@ -1272,7 +1324,12 @@ private fun PortionPickerSheet(
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(product.product_name ?: "Sin nombre", style = MaterialTheme.typography.titleLarge, color = GymSmartColors.TextPrimary)
-                Text("Ajusta la cantidad", style = MaterialTheme.typography.bodySmall, color = GymSmartColors.TextSecondary)
+                Text(
+                    if (cookingYield == null) "Datos por ${grams.toInt()} g"
+                    else "Datos por ${grams.toInt()} g - peso ${basisLabel.lowercase()}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = GymSmartColors.TextSecondary
+                )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 IconButton(
@@ -1294,39 +1351,73 @@ private fun PortionPickerSheet(
 
         Spacer(Modifier.height(20.dp))
 
-        if (cookingYield != null) {
-            BasisSelector(
-                cookingYield = cookingYield,
-                basis = basis,
-                onBasisChange = { basis = it }
-            )
-            Spacer(Modifier.height(16.dp))
-        }
-
-        OutlinedTextField(
-            value = gramsText,
-            onValueChange = { if (it.length <= 5) gramsText = it.filter { c -> c.isDigit() } },
-            label = {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    if (cookingYield == null) "Cantidad (g)"
-                    else "Cantidad (g) · ${
-                        if (basis == WeighBasis.RAW) cookingYield.rawLabel else cookingYield.cookedLabel
-                    }"
+                    "Cantidad",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = GymSmartColors.TextSecondary,
+                    fontWeight = FontWeight.Bold
                 )
-            },
-            suffix = { Text("g", color = GymSmartColors.TextSecondary, fontWeight = FontWeight.Bold) },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.small,
-            colors = sheetFieldColors(),
-            textStyle = LocalTextStyle.current.copy(color = GymSmartColors.TextPrimary, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-        )
+                Spacer(Modifier.height(6.dp))
+                OutlinedTextField(
+                    value = gramsText,
+                    onValueChange = { if (it.length <= 5) gramsText = it.filter { c -> c.isDigit() } },
+                    placeholder = { Text("Cantidad", color = GymSmartColors.TextSecondary) },
+                    suffix = { Text("g", color = GymSmartColors.TextSecondary, fontWeight = FontWeight.Bold) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth().height(58.dp),
+                    shape = MaterialTheme.shapes.small,
+                    colors = sheetFieldColors(),
+                    textStyle = LocalTextStyle.current.copy(color = GymSmartColors.TextPrimary, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                )
+            }
+
+            // Mismo aspecto que el campo de al lado, pero es un boton: se pulsa y alterna la base.
+            // Solo aparece cuando el alimento tiene factor; si no, la cantidad ocupa todo el ancho.
+            if (cookingYield != null) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "Tipo de peso",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = GymSmartColors.TextSecondary,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(58.dp)
+                            .clip(MaterialTheme.shapes.small)
+                            .border(1.dp, GymSmartColors.Outline, MaterialTheme.shapes.small)
+                            .clickable {
+                                basis = if (basis == WeighBasis.RAW) WeighBasis.COOKED else WeighBasis.RAW
+                            }
+                            .padding(horizontal = 16.dp),
+                        contentAlignment = Alignment.CenterStart
+                    ) {
+                        Text(
+                            basisLabel,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = GymSmartColors.TextPrimary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
 
         Spacer(Modifier.height(16.dp))
 
         Surface(shape = MaterialTheme.shapes.medium, color = GymSmartColors.SurfaceElevated, modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Valores nutricionales para ${grams.toInt()}g", style = MaterialTheme.typography.bodySmall, color = GymSmartColors.TextSecondary)
+                Text(
+                    if (cookingYield == null) "Valores nutricionales por ${grams.toInt()} g"
+                    else "Valores nutricionales por ${grams.toInt()} g (${basisLabel.lowercase()})",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = GymSmartColors.TextSecondary
+                )
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
                     NutrientPreview("Calorías",  "${kcal.toInt()}",     "kcal", GymSmartColors.Primary)
                     NutrientPreview("Proteínas", "${proteins.toInt()}", "g",    GymSmartColors.MacroProtein)
@@ -1398,44 +1489,6 @@ private fun basisSuffix(entry: MealEntry): String {
     // el nombre del producto no lo encuentra en el catálogo.
     val cookingYield = cookingYieldById(entry.yieldId) ?: findCookingYield(entry.name) ?: return ""
     return " " + (if (basis == "cooked") cookingYield.cookedLabel else cookingYield.rawLabel).lowercase()
-}
-
-/**
- * Selector de base de pesaje (Tarea G). Solo aparece para los alimentos del catálogo de factores.
- *
- * Muestra el peso equivalente en la otra base y de dónde sale el factor. Las dos cosas son
- * deliberadas: la equivalencia porque es el dato con el que se compra y se congela ("esto son 208 g
- * de pollo crudo"), y la fuente porque un factor de cocinado es una media, no una medida de este
- * pollo concreto, y el usuario merece saberlo en vez de ver un número caído del cielo.
- */
-@Composable
-private fun BasisSelector(
-    cookingYield: CookingYield,
-    basis: WeighBasis,
-    onBasisChange: (WeighBasis) -> Unit
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text("Tipo de peso", style = MaterialTheme.typography.bodySmall, color = GymSmartColors.TextSecondary)
-        Surface(
-            shape = MaterialTheme.shapes.extraSmall,
-            color = GymSmartColors.Primary.copy(alpha = 0.12f),
-            modifier = Modifier.clickable {
-                onBasisChange(if (basis == WeighBasis.RAW) WeighBasis.COOKED else WeighBasis.RAW)
-            }
-        ) {
-            Text(
-                if (basis == WeighBasis.RAW) cookingYield.rawLabel else cookingYield.cookedLabel,
-                style = MaterialTheme.typography.labelMedium,
-                color = GymSmartColors.Primary,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
-            )
-        }
-    }
 }
 
 // ── Sheet: Editar entrada ─────────────────────────────────────────────────────
@@ -1547,13 +1600,6 @@ private fun NutrientPreview(label: String, value: String, unit: String, color: a
         Text(value, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = color)
         Text(unit, style = MaterialTheme.typography.labelSmall, color = GymSmartColors.TextSecondary)
         Text(label, style = MaterialTheme.typography.labelSmall, color = GymSmartColors.TextSecondary)
-    }
-}
-
-@Composable
-private fun MacroChip(text: String, color: androidx.compose.ui.graphics.Color) {
-    Box(modifier = Modifier.clip(MaterialTheme.shapes.extraSmall).background(color.copy(alpha = 0.12f)).padding(horizontal = 6.dp, vertical = 3.dp)) {
-        Text(text, style = MaterialTheme.typography.labelSmall, color = color, fontWeight = FontWeight.Medium)
     }
 }
 
