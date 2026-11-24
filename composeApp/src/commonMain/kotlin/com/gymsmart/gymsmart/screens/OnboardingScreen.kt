@@ -22,6 +22,7 @@ import com.gymsmart.gymsmart.ui.theme.GymSmartColors
 import com.gymsmart.gymsmart.validation.validateAge
 import com.gymsmart.gymsmart.validation.validateGoalRate
 import com.gymsmart.gymsmart.components.RateSlider
+import com.gymsmart.gymsmart.nutrition.ActivityBenchmarks
 import com.gymsmart.gymsmart.nutrition.NutritionMath
 import com.gymsmart.gymsmart.validation.parseDecimal
 import com.gymsmart.gymsmart.validation.validateHeightCm
@@ -291,7 +292,12 @@ private fun StepActivity(form: FormState, onChange: (FormState) -> Unit) {
                 Triple("active",      "🏋️", "Activo\n6–7 días de ejercicio intenso"),
                 Triple("very_active", "⚡", "Muy activo\nAtleta o trabajo físico intenso")
             ).forEach { (value, emoji, desc) ->
-                SelectableRow(emoji, desc, form.activityLevel == value) { onChange(form.copy(activityLevel = value)) }
+                // Bajo cada nivel, los pasos diarios que le corresponden (Tudor-Locke 2004, ver
+                // ActivityBenchmarks): elegir entre "ligero" y "moderado" a ojo es la mayor fuente de
+                // error del calculo, y un numero de pasos si se puede comprobar con el movil.
+                val pasos = ActivityBenchmarks.stepsFor(value)
+                val texto = if (pasos == null) desc else desc + "\n≈ " + pasos
+                SelectableRow(emoji, texto, form.activityLevel == value) { onChange(form.copy(activityLevel = value)) }
             }
         }
     }

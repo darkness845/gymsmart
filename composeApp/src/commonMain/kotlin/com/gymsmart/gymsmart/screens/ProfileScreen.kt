@@ -37,6 +37,7 @@ import com.gymsmart.gymsmart.ui.theme.GymSmartColors
 import com.gymsmart.gymsmart.validation.validateAge
 import com.gymsmart.gymsmart.components.RateSlider
 import com.gymsmart.gymsmart.model.AdaptiveResponse
+import com.gymsmart.gymsmart.nutrition.ActivityBenchmarks
 import com.gymsmart.gymsmart.nutrition.NutritionMath
 import com.gymsmart.gymsmart.validation.validateGoalRate
 import com.gymsmart.gymsmart.validation.parseDecimal
@@ -423,11 +424,11 @@ fun ProfileScreen(
                     label = "Nivel de actividad", selected = activityLevel,
                     options = buildList {
                         if (steps != null) add("wearable" to "🏃 Pulsera (automático)")
-                        add("sedentary"   to "Sedentario")
-                        add("light"       to "Ligero")
-                        add("moderate"    to "Moderado")
-                        add("active"      to "Activo")
-                        add("very_active" to "Muy activo")
+                        add("sedentary"   to "Sedentario · ${ActivityBenchmarks.stepsFor("sedentary")}")
+                        add("light"       to "Ligero · ${ActivityBenchmarks.stepsFor("light")}")
+                        add("moderate"    to "Moderado · ${ActivityBenchmarks.stepsFor("moderate")}")
+                        add("active"      to "Activo · ${ActivityBenchmarks.stepsFor("active")}")
+                        add("very_active" to "Muy activo · ${ActivityBenchmarks.stepsFor("very_active")}")
                     },
                     onSelect = { activityLevel = it }
                 )
