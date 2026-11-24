@@ -52,6 +52,12 @@ enum class WeighBasis { RAW, COOKED }
  *   aparecen como palabra completa en el nombre del producto.
  * @param excludes frases que descartan esta categoría aunque alguna de [keywords] coincida (p. ej.
  *   "atún en escabeche" lleva atún, pero su lata no se pesa en crudo).
+ * @param minRawKcalPer100 suelo de cordura: por debajo de estas kcal/100 g, el producto **no puede**
+ *   estar en base cruda y se bloquea la conversión (ver [looksAlreadyCooked]). `null` significa que
+ *   para este alimento no hay un suelo defendible y no se comprueba nada.
+ * @param defaultBasis base que se preselecciona. Las carnes se pesan casi siempre en crudo y los
+ *   cereales y legumbres casi siempre ya cocidos, así que el valor por defecto sigue al uso real en
+ *   vez de ser el mismo para todo.
  */
 data class CookingYield(
     val id: String,
@@ -63,8 +69,26 @@ data class CookingYield(
     val method: String,
     val source: String,
     val keywords: List<String>,
-    val excludes: List<String> = emptyList()
+    val excludes: List<String> = emptyList(),
+    val minRawKcalPer100: Double? = null,
+    val defaultBasis: WeighBasis = WeighBasis.RAW
 )
+
+/**
+ * Suelo de cordura para cereales y legumbres en seco, en kcal/100 g.
+ *
+ * No es un umbral afinado a ojo, es una franja vacía: un árido en seco está entre 333 (alubia blanca)
+ * y 378 (garbanzo) kcal/100 g, porque es almidón casi sin agua; el mismo alimento ya cocido está entre
+ * 83 (bulgur) y 164 (garbanzo), porque ha absorbido dos o tres veces su peso en agua. Entre 165 y 333
+ * no hay productos de esta familia, así que 250 parte esa franja por la mitad y deja ~85 kcal de
+ * margen a cada lado. Un "arroz" que marque 158 kcal/100 g no es arroz en seco: es un vasito ya
+ * cocido, y convertirlo daría 56 kcal/100 g.
+ *
+ * Solo se aplica a áridos. En carne y pescado se midió que no hay señal aprovechable (la variación
+ * entre marcas supera la diferencia entre crudo y cocinado), así que ahí no se comprueba nada — ver
+ * doc/10-fundamento-cientifico.md §13.6.
+ */
+const val DRY_FLOOR_KCAL = 250.0
 
 const val FAMILY_MEAT = "Carnes y aves"
 const val FAMILY_FISH = "Pescado y marisco"
@@ -102,6 +126,12 @@ private val GLOBAL_EXCLUDES = listOf(
     "albondigas", "empanado", "empanada", "empanados", "empanadas",
     "rebozado", "rebozada", "rebozados", "rebozadas",
     "nuggets", "fingers", "san jacobo", "canelones", "escabeche", "salmuera", "relleno", "rellena",
+    // Verificadas una a una como agujeros reales del emparejado (2026-11-24): todas estas pasaban el
+    // filtro y acababan convertidas. "prefritas" es el ejemplo de por qué la comparación por palabra
+    // completa no basta sola: no coincide con "fritas".
+    "prefrito", "prefrita", "prefritos", "prefritas", "bravas", "deluxe",
+    "tarro", "vasito", "vasitos", "microondas", "vaporizado", "vaporizada",
+    "glaseado", "glaseada", "glaseados", "glaseadas", "solucion anadida", "solucion",
     // Embutidos y fiambres (ya curados o cocidos)
     "fiambre", "loncheado", "loncheada", "lonchas", "pate", "jamon", "chorizo", "salchichon",
     "salchicha", "salchichas", "mortadela", "bacon", "panceta", "embutido", "surimi", "palitos",
@@ -272,7 +302,9 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
         cookedLabel = "Cocido",
         method = "hervido en agua",
         source = "FoodData Central SR Legacy: \"Rice, brown, long-grain, raw\" 367 kcal (169703) ÷ \"cooked\" 123 kcal (169704)",
-        keywords = listOf("arroz integral", "arroz basmati integral")
+        keywords = listOf("arroz integral", "arroz basmati integral"),
+        minRawKcalPer100 = DRY_FLOOR_KCAL,
+        defaultBasis = WeighBasis.COOKED
     ),
     CookingYield(
         id = "arroz_blanco",
@@ -283,7 +315,9 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
         cookedLabel = "Cocido",
         method = "hervido en agua",
         source = "FoodData Central SR Legacy: \"Rice, white, long-grain, regular, raw, unenriched\" 365 kcal (169756) ÷ \"cooked without salt\" 130 kcal (169757)",
-        keywords = listOf("arroz")
+        keywords = listOf("arroz"),
+        minRawKcalPer100 = DRY_FLOOR_KCAL,
+        defaultBasis = WeighBasis.COOKED
     ),
     CookingYield(
         id = "pasta",
@@ -299,7 +333,9 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
             "tallarines", "penne", "fusilli", "lazos", "helices", "tiburones", "plumas",
             "coditos", "farfalle", "tagliatelle", "noodles"
         ),
-        excludes = listOf("dientes", "dental", "fresca", "fresco")
+        excludes = listOf("dientes", "dental", "fresca", "fresco"),
+        minRawKcalPer100 = DRY_FLOOR_KCAL,
+        defaultBasis = WeighBasis.COOKED
     ),
     CookingYield(
         id = "quinoa",
@@ -310,7 +346,9 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
         cookedLabel = "Cocida",
         method = "hervida en agua",
         source = "FoodData Central SR Legacy: \"Quinoa, uncooked\" 368 kcal (168874) ÷ \"Quinoa, cooked\" 120 kcal (168917)",
-        keywords = listOf("quinoa", "quinua")
+        keywords = listOf("quinoa", "quinua"),
+        minRawKcalPer100 = DRY_FLOOR_KCAL,
+        defaultBasis = WeighBasis.COOKED
     ),
     CookingYield(
         id = "couscous",
@@ -321,7 +359,9 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
         cookedLabel = "Cocido",
         method = "hidratado en agua",
         source = "FoodData Central SR Legacy: \"Couscous, dry\" 376 kcal (169699) ÷ \"Couscous, cooked\" 112 kcal (169700)",
-        keywords = listOf("cuscus", "couscous", "cous cous")
+        keywords = listOf("cuscus", "couscous", "cous cous"),
+        minRawKcalPer100 = DRY_FLOOR_KCAL,
+        defaultBasis = WeighBasis.COOKED
     ),
     CookingYield(
         id = "bulgur",
@@ -332,7 +372,9 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
         cookedLabel = "Cocido",
         method = "hervido en agua",
         source = "FoodData Central SR Legacy: \"Bulgur, dry\" 342 kcal (170688) ÷ \"Bulgur, cooked\" 83 kcal (170287)",
-        keywords = listOf("bulgur", "burgol")
+        keywords = listOf("bulgur", "burgol"),
+        minRawKcalPer100 = DRY_FLOOR_KCAL,
+        defaultBasis = WeighBasis.COOKED
     ),
     CookingYield(
         id = "cebada",
@@ -343,7 +385,9 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
         cookedLabel = "Cocida",
         method = "hervida en agua",
         source = "FoodData Central SR Legacy: \"Barley, pearled, raw\" 352 kcal (170284) ÷ \"Barley, pearled, cooked\" 123 kcal (170285)",
-        keywords = listOf("cebada", "cebada perlada")
+        keywords = listOf("cebada", "cebada perlada"),
+        minRawKcalPer100 = DRY_FLOOR_KCAL,
+        defaultBasis = WeighBasis.COOKED
     ),
 
     // ── Legumbres ─────────────────────────────────────────────────────────────
@@ -357,7 +401,9 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
         cookedLabel = "Cocidas",
         method = "hervidas en agua",
         source = "FoodData Central SR Legacy: \"Lentils, raw\" 352 kcal (172420) ÷ \"Lentils, mature seeds, cooked, boiled, without salt\" 116 kcal (172421)",
-        keywords = listOf("lenteja", "lentejas")
+        keywords = listOf("lenteja", "lentejas"),
+        minRawKcalPer100 = DRY_FLOOR_KCAL,
+        defaultBasis = WeighBasis.COOKED
     ),
     CookingYield(
         id = "garbanzos",
@@ -368,7 +414,9 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
         cookedLabel = "Cocidos",
         method = "hervidos en agua",
         source = "FoodData Central SR Legacy: \"Chickpeas, mature seeds, raw\" 378 kcal (173756) ÷ \"cooked, boiled\" 164 kcal (173799)",
-        keywords = listOf("garbanzo", "garbanzos")
+        keywords = listOf("garbanzo", "garbanzos"),
+        minRawKcalPer100 = DRY_FLOOR_KCAL,
+        defaultBasis = WeighBasis.COOKED
     ),
     CookingYield(
         id = "alubia_blanca",
@@ -379,7 +427,9 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
         cookedLabel = "Cocidas",
         method = "hervidas en agua",
         source = "FoodData Central SR Legacy: \"Beans, white, mature seeds, raw\" 333 kcal (175202) ÷ \"cooked, boiled, without salt\" 139 kcal (175203)",
-        keywords = listOf("alubia blanca", "alubias blancas", "judia blanca", "judias blancas", "fabada seca", "pocha", "pochas")
+        keywords = listOf("alubia blanca", "alubias blancas", "judia blanca", "judias blancas", "fabada seca", "pocha", "pochas"),
+        minRawKcalPer100 = DRY_FLOOR_KCAL,
+        defaultBasis = WeighBasis.COOKED
     ),
     CookingYield(
         id = "alubia_roja",
@@ -390,7 +440,9 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
         cookedLabel = "Cocidas",
         method = "hervidas en agua",
         source = "FoodData Central SR Legacy: \"Beans, kidney, all types, mature seeds, raw\" 333 kcal (175193) ÷ \"cooked, boiled, without salt\" 127 kcal (173740)",
-        keywords = listOf("alubia roja", "alubias rojas", "judia roja", "judias rojas", "frijol rojo", "kidney")
+        keywords = listOf("alubia roja", "alubias rojas", "judia roja", "judias rojas", "frijol rojo", "kidney"),
+        minRawKcalPer100 = DRY_FLOOR_KCAL,
+        defaultBasis = WeighBasis.COOKED
     ),
     CookingYield(
         id = "alubia_negra",
@@ -401,7 +453,9 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
         cookedLabel = "Cocidas",
         method = "hervidas en agua",
         source = "FoodData Central SR Legacy: \"Beans, black, mature seeds, raw\" 341 kcal (173734) ÷ \"cooked, boiled, without salt\" 132 kcal (173735)",
-        keywords = listOf("alubia negra", "alubias negras", "frijol negro", "frijoles negros", "judia negra")
+        keywords = listOf("alubia negra", "alubias negras", "frijol negro", "frijoles negros", "judia negra"),
+        minRawKcalPer100 = DRY_FLOOR_KCAL,
+        defaultBasis = WeighBasis.COOKED
     ),
     CookingYield(
         id = "habas",
@@ -412,7 +466,9 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
         cookedLabel = "Cocidas",
         method = "hervidas en agua",
         source = "FoodData Central SR Legacy: \"Broadbeans (fava beans), mature seeds, raw\" 341 kcal (175205) ÷ \"cooked, boiled, without salt\" 110 kcal (173753)",
-        keywords = listOf("haba", "habas")
+        keywords = listOf("haba", "habas"),
+        minRawKcalPer100 = DRY_FLOOR_KCAL,
+        defaultBasis = WeighBasis.COOKED
     ),
 
     // ── Tubérculos ────────────────────────────────────────────────────────────
@@ -493,6 +549,25 @@ fun findCookingYield(productName: String?): CookingYield? {
         cookingYield.keywords.any { phraseMatches(normalized, it) } &&
             cookingYield.excludes.none { phraseMatches(normalized, it) }
     }
+}
+
+/**
+ * true si las kcal del producto son imposibles para este alimento en base cruda, es decir, si el
+ * producto **ya viene cocinado** aunque su nombre no lo diga.
+ *
+ * Esta es la comprobación que atrapa lo que el nombre no atrapa: el vasito de arroz de microondas
+ * llamado solo "Arroz basmati" (158 kcal/100 g) o los garbanzos de tarro llamados solo "Garbanzos"
+ * (~140). Se verificó que la lista de exclusiones por nombre no puede cubrir estos casos — siempre
+ * falta una palabra ("prefritas", "tarro", "vasito", "vaporizado"…) — mientras que el número no
+ * engaña.
+ *
+ * Cuando salta, la conversión se bloquea y se avisa; **nunca se corrige el número en silencio**. Y
+ * cuando no hay suelo definido ([CookingYield.minRawKcalPer100] nulo) devuelve false: no saber no es
+ * lo mismo que saber que está bien, pero bloquear sin fundamento sería peor que no bloquear.
+ */
+fun CookingYield.looksAlreadyCooked(productKcalPer100: Double): Boolean {
+    val floor = minRawKcalPer100 ?: return false
+    return productKcalPer100 > 0.0 && productKcalPer100 < floor
 }
 
 /** Busca un alimento del catálogo por su [CookingYield.id]. Para recuperar el que se eligió a mano. */

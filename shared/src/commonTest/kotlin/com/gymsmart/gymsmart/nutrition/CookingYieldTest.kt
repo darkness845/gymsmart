@@ -221,6 +221,83 @@ class CookingYieldTest {
         }
     }
 
+    // ── El suelo de cordura (productos que ya vienen cocinados) ───────────────
+
+    @Test
+    fun detecta_el_vasito_de_arroz_por_sus_kcal() {
+        // El caso real que destapó el fallo: un vasito de microondas de Brillante llamado solo
+        // "Arroz basmati", 158 kcal/100 g. El nombre no delata nada; el número sí, porque el arroz
+        // en seco ronda 365. Sin esto, marcarlo como cocido daba 56 kcal/100 g.
+        val arroz = findCookingYield("Arroz basmati")!!
+        assertTrue(arroz.looksAlreadyCooked(158.0), "158 kcal/100 g no puede ser arroz en seco")
+        assertFalse(arroz.looksAlreadyCooked(347.0), "347 kcal/100 g sí es arroz en seco")
+    }
+
+    @Test
+    fun detecta_las_legumbres_de_tarro() {
+        assertTrue(findCookingYield("Garbanzos")!!.looksAlreadyCooked(140.0))
+        assertTrue(findCookingYield("Lentejas")!!.looksAlreadyCooked(120.0))
+        // Y no se pasa de frenada con las secas de verdad.
+        assertFalse(findCookingYield("Garbanzos")!!.looksAlreadyCooked(378.0))
+        assertFalse(findCookingYield("Lentejas")!!.looksAlreadyCooked(352.0))
+    }
+
+    @Test
+    fun el_suelo_deja_pasar_todos_los_aridos_secos_del_catalogo() {
+        // Protege de poner un suelo tan alto que bloquee alimentos legítimos. Cada árido tiene que
+        // estar holgadamente por encima de su propio suelo.
+        val secos = mapOf(
+            "Arroz blanco" to 365.0, "Arroz integral" to 367.0, "Pasta" to 371.0,
+            "Quinoa" to 368.0, "Cuscús" to 376.0, "Bulgur" to 342.0, "Cebada perlada" to 352.0,
+            "Lentejas" to 352.0, "Garbanzos" to 378.0, "Alubias blancas" to 333.0,
+            "Alubias rojas" to 333.0, "Alubias negras" to 341.0, "Habas" to 341.0
+        )
+        for ((nombre, kcalSeco) in secos) {
+            val y = assertNotNull(findCookingYield(nombre), "no reconoció $nombre")
+            assertNotNull(y.minRawKcalPer100, "${y.id} debería tener suelo")
+            assertFalse(y.looksAlreadyCooked(kcalSeco), "${y.id}: el suelo bloquea el alimento seco real")
+            // ...y el mismo alimento ya cocido tiene que quedar por debajo del suelo.
+            assertTrue(
+                y.looksAlreadyCooked(kcalSeco / y.factor),
+                "${y.id}: el suelo no detecta su propia versión cocida"
+            )
+        }
+    }
+
+    @Test
+    fun no_se_inventa_un_suelo_donde_no_hay_senal() {
+        // En carne y pescado se midió que la variación entre marcas supera la diferencia entre crudo
+        // y cocinado, así que no se comprueba nada. Mejor no bloquear que bloquear a ciegas.
+        for (id in listOf("pollo_pechuga", "pollo_muslo", "ternera_filete", "pescado", "patata")) {
+            val y = cookingYieldById(id)!!
+            assertNull(y.minRawKcalPer100, "$id no debería tener suelo: no hay señal que lo sostenga")
+            assertFalse(y.looksAlreadyCooked(50.0), "$id sin suelo nunca debe bloquear")
+        }
+    }
+
+    @Test
+    fun los_nueve_agujeros_de_nombre_verificados_estan_tapados() {
+        // Cada uno de estos pasaba el filtro y acababa convertido. Se comprobaron uno a uno contra el
+        // código real, así que quedan fijados aquí para que no vuelvan.
+        val agujeros = listOf(
+            "Patatas prefritas congeladas", "Patatas bravas", "Garbanzos en tarro",
+            "Lentejas tarro", "Arroz vaporizado", "Arroz en vasito microondas",
+            "Pechuga de pollo con solucion anadida", "Merluza congelada glaseada"
+        )
+        for (nombre in agujeros) {
+            assertNull(findCookingYield(nombre), "sigue abierto el agujero: $nombre")
+        }
+    }
+
+    @Test
+    fun la_base_por_defecto_sigue_al_uso_real() {
+        // Carne en crudo, áridos ya cocidos: es como se pesan de verdad, y es lo que hace Fitia.
+        assertEquals(WeighBasis.RAW, cookingYieldById("pollo_pechuga")!!.defaultBasis)
+        assertEquals(WeighBasis.RAW, cookingYieldById("pescado")!!.defaultBasis)
+        assertEquals(WeighBasis.COOKED, cookingYieldById("pasta")!!.defaultBasis)
+        assertEquals(WeighBasis.COOKED, cookingYieldById("lentejas")!!.defaultBasis)
+    }
+
     // ── Integridad del catálogo ───────────────────────────────────────────────
 
     @Test

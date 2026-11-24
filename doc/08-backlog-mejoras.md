@@ -345,7 +345,7 @@ el uso real lo justifica. Verificado con `:server:compileKotlin`. | `BodyAnalysi
   excluir esas preferencias del backup) · `e.message` crudo de OpenAI expuesto al cliente · el email va
   sin codificar en un segmento de path (`NavGraph.kt:32`).
 - **Crudo/cocido (CRU-1, CRU-2)** — abiertos a propósito tras la Tarea G, ver
-  `doc/10-fundamento-cientifico.md` §13.4 y §13.6:
+  `doc/10-fundamento-cientifico.md` §13.4 y §13.8:
   - **CRU-1 — el supuesto de la base de origen no se puede verificar.** La conversión da por hecho que
     los valores del producto están en base cruda. Es cierto para alimentos frescos, pero Open Food Facts
     **no tiene ningún campo** que diga en qué base está su tabla nutricional, así que no hay forma de

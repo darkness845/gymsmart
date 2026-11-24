@@ -160,6 +160,53 @@ cliente deshaga la conversión al leerla, manteniendo la invariante de que los `
 `Product` están siempre en base cruda. Hay un test que fija que multiplicar por el factor es el inverso
 exacto de la conversión.
 
+### ✅ Tarea G (2ª corrección) — El freno: productos que ya vienen cocinados
+
+Tras una junta de cuatro agentes (competencia, datos, arquitectura y red team), la conclusión fue que
+**la base de un producto de OFF no se puede deducir**: ni del nombre (se verificaron 9 agujeros reales,
+los 9 fallaban) ni de los números en general (se midieron ~500 productos y en carne/pescado no hay
+señal). Lo que sí se sostiene es un caso concreto, y es justo el que más daño hacía.
+
+**Lo implementado:**
+- **Suelo de cordura en cereales y legumbres** (`DRY_FLOOR_KCAL = 250`): un árido en seco está entre
+  333 y 378 kcal/100 g y cocido entre 83 y 164; entre medias no existe ningún producto de la familia,
+  así que por debajo de 250 el producto ya viene cocinado. Bloquea la conversión y avisa; **nunca
+  corrige el número en silencio**. Atrapa el vasito de arroz de Brillante (158 kcal) y los garbanzos
+  de tarro (~140), que el nombre no delataba. Ver §13.6.
+- **Se aplica también a la elección manual**, que era la puerta por la que se colaban estos casos.
+- **Ocho agujeros de nombre tapados y fijados en tests**: prefritas, bravas, tarro, vasito,
+  vaporizado, microondas, glaseada, solución añadida.
+- **Base por defecto según el uso real**: carnes y pescado en crudo, cereales y legumbres en cocido
+  (igual que Fitia).
+
+**Lo que NO arregla, a conciencia**: carne y pescado se quedan sin red numérica porque se midió que no
+la hay — el 79 % de los productos de pollo ya cocinados marcan *menos* kcal que el pollo crudo (son
+fiambres inyectados con agua y almidón), así que un detector de dos polos fallaría en la dirección
+peligrosa. Ahí el error máximo es ~1,3× frente a los 2,3×–4,1× de los áridos, y la carne fresca viene
+cruda casi siempre.
+
+**Confirmado por la junta**: la arquitectura ya era la de Fitia. Su centro de ayuda documenta un solo
+alimento con selector de tipo de peso, convirtiendo la masa y dejando los nutrientes por ración
+intactos — exactamente lo construido. Su ventaja no está en el cálculo sino en tener debajo una capa
+de genéricos de la USDA curada, que es la tarea H. Y Fitia **no es perfecta**: sus propias reseñas
+reportan que los genéricos de carne y verdura fresca casi nunca aparecen al buscar.
+
+**El mayor error pendiente no es de base**: el aceite de cocinar no se modela y son ±200–400 kcal/día.
+Riesgo abierto, sin decidir qué hacer.
+
+**Interfaz simplificada a petición del usuario (2026-11-24)**, copiando la pantalla de Fitia: valores
+nutricionales, cantidad, y una sola fila "Tipo de peso" con un chip que al pulsarlo alterna
+Crudo/Cocinado y recalcula al instante. **Se quitaron todos los textos explicativos** (la cita de la
+fuente y el factor, la equivalencia "≈ 197 g crudo" y el aviso de "este producto ya viene cocinado"),
+y con ellos el diálogo de elección manual del alimento de referencia, que era otra vía de mensajes.
+El usuario fue explícito: "si se puede se puede y si no nada", la interfaz de añadir tiene que estar
+limpia. Consecuencia asumida: cuando el suelo de cordura bloquea un producto, el chip simplemente **no
+aparece**, sin explicar por qué; y los alimentos que el catálogo no reconoce por el nombre ya no se
+pueden convertir eligiendo referencia a mano. La información de la fuente sigue en
+doc/10-fundamento-cientifico.md §13.
+
+78 tests en verde, servidor y cliente compilando. Sin probar en dispositivo.
+
 **Lo que se dejó fuera, y por qué** (CRU-2): verduras y avena. No es falta de datos — las parejas están
 en el dataset — sino que los factores de verdura se mueven entre 0,8 y 1,2 sobre alimentos de 20–35
 kcal/100 g (ruido en el recuento, con dispersión alta entre variedades: la "espinaca" del dataset da

@@ -68,8 +68,34 @@ es lo que la doc avisa expresamente de no hacer. Corregido en el backlog como OF
 citada para que no vuelva a colarse. Lección: una afirmación heredada de la documentación del propio
 proyecto no es una fuente verificada, y repetirla sin comprobarla es propagar el error.
 
-72 tests en verde en `shared`, servidor y cliente compilando. Nada commiteado. La UI de G y D no se pudo
-probar en dispositivo (sin Android SDK en este entorno).
+**Junta de cuatro agentes sobre la fiabilidad de crudo/cocido.** A petición del usuario se contrastaron
+cuatro ángulos en paralelo: competencia (qué hace Fitia de verdad), datos (medición empírica), una
+segunda opinión de arquitectura y un red team. Resultados que cambiaron el diseño:
+
+- **El red team denunció 9 agujeros del emparejado por nombre y los 9 se verificaron reales** en el
+  código (prefritas, bravas, tarro, vasito, vaporizado, microondas, glaseada, solución añadida, hueso).
+  Conclusión: la lista de exclusiones no estaba incompleta, estaba mal de raíz — las palabras no se
+  acaban nunca.
+- **El de datos midió ~500 productos reales y tumbó el detector numérico general** que se iba a
+  construir. Hallazgo clave: el 79 % de los productos de pollo ya cocinados marcan *menos* kcal que el
+  pollo crudo (fiambres inyectados con agua), así que un detector de dos polos los daría por crudos y
+  fallaría en la dirección peligrosa. Además señaló que el experimento que validaría el detector no se
+  puede ejecutar, porque la etiqueta contra la que habría que contrastarlo —la base del producto— es
+  justo la que no existe en OFF.
+- **El de competencia corrigió una afirmación equivocada que ya se le había dado al usuario**: Fitia no
+  duplica entradas crudo/cocido. Su ayuda documenta un solo alimento con selector de tipo de peso, que
+  convierte la masa dejando los nutrientes por ración intactos — exactamente la arquitectura ya
+  construida. Su ventaja está en la capa de genéricos de la USDA curada, no en el cálculo.
+- **El arquitecto aportó el reencuadre útil**: con un autoajuste que integra la ingesta a 28 días, un
+  sesgo constante se absorbe solo; lo letal es una discontinuidad súbita en un alimento suelto. Eso es
+  lo que define qué hay que arreglar y qué no.
+
+De ahí salió el freno implementado: suelo de cordura de 250 kcal/100 g en áridos (franja físicamente
+vacía entre el alimento seco y el cocido), aplicado también a la elección manual, que bloquea y avisa
+en vez de corregir en silencio. En carne y pescado no se pone red porque se midió que no hay señal.
+
+78 tests en verde en `shared`, servidor y cliente compilando. La UI de G y D no se pudo probar en
+dispositivo (sin Android SDK en este entorno).
 
 ---
 

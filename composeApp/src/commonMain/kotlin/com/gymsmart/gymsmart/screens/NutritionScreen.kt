@@ -50,10 +50,10 @@ import com.gymsmart.gymsmart.model.NutritionTargets
 import com.gymsmart.gymsmart.model.Nutriments
 import com.gymsmart.gymsmart.model.Product
 import com.gymsmart.gymsmart.model.estimatedKcalPer100
-import com.gymsmart.gymsmart.nutrition.COOKING_YIELD_FAMILIES
 import com.gymsmart.gymsmart.nutrition.CookingYield
 import com.gymsmart.gymsmart.nutrition.cookingYieldById
 import com.gymsmart.gymsmart.nutrition.isExcludedFromCooking
+import com.gymsmart.gymsmart.nutrition.looksAlreadyCooked
 import com.gymsmart.gymsmart.nutrition.WeighBasis
 import com.gymsmart.gymsmart.nutrition.findCookingYield
 import com.gymsmart.gymsmart.nutrition.per100For
@@ -1216,16 +1216,30 @@ private fun PortionPickerSheet(
     // reconoce, el usuario puede elegirlo a mano, que es justo el dato que faltaba. Lo elegido a mano
     // manda sobre lo automático.
     val autoYield = remember(product.product_name) { findCookingYield(product.product_name) }
-    var manualYieldId by remember(product.product_name) { mutableStateOf(initialYieldId) }
-    val cookingYield = cookingYieldById(manualYieldId) ?: autoYield
+    // El id guardado manda sobre el nombre al reabrir una comida ya registrada.
+    val pickedYield = cookingYieldById(initialYieldId) ?: autoYield
 
-    // Si el nombre delata que el producto ya viene cocinado o es un preparado, no se ofrece nada: ni
-    // automático ni a mano. Sus datos ya están en base cocinada.
-    val alreadyCooked = remember(product.product_name) { isExcludedFromCooking(product.product_name) }
-    var showYieldPicker by remember { mutableStateOf(false) }
+    // Suelo de cordura sobre las kcal del propio producto. Atrapa lo que el nombre no atrapa: un
+    // "Arroz basmati" de 158 kcal/100 g es un vasito ya cocido, no arroz en seco. Se aplica también
+    // al alimento elegido a mano, que si no sería la puerta por la que colar justo estos casos.
+    val sourceKcalPer100 = product.nutriments.estimatedKcalPer100()
+    val looksCooked = pickedYield?.looksAlreadyCooked(sourceKcalPer100) == true
+    val cookingYield = if (looksCooked) null else pickedYield
+
+    // Si el nombre delata que el producto ya viene cocinado o es un preparado, tampoco se ofrece nada.
+    val excludedByName = remember(product.product_name) { isExcludedFromCooking(product.product_name) }
+    val alreadyCooked = excludedByName || looksCooked
 
     var basis by remember(product.product_name) {
-        mutableStateOf(if (initialBasis == "cooked") WeighBasis.COOKED else WeighBasis.RAW)
+        mutableStateOf(
+            when {
+                initialBasis == "cooked" -> WeighBasis.COOKED
+                initialBasis == "raw" -> WeighBasis.RAW
+                // Sin base previa, se sigue el uso real de cada alimento: la carne se pesa en crudo,
+                // la pasta y el arroz ya cocidos.
+                else -> autoYield?.defaultBasis ?: WeighBasis.RAW
+            }
+        )
     }
     // Si se deselecciona el alimento de referencia, la base tiene que volver a crudo: quedarse en
     // "cocinado" sin factor mostraría los valores crudos etiquetados como cocinados.
@@ -1284,36 +1298,9 @@ private fun PortionPickerSheet(
             BasisSelector(
                 cookingYield = cookingYield,
                 basis = basis,
-                grams = grams,
-                chosenByHand = manualYieldId != null,
-                onBasisChange = { basis = it },
-                onChangeFood = { showYieldPicker = true },
-                onClearFood = { manualYieldId = null }
+                onBasisChange = { basis = it }
             )
             Spacer(Modifier.height(16.dp))
-        } else if (!alreadyCooked) {
-            // No se reconoció el alimento, pero tampoco hay motivo para descartarlo: en vez de dejar
-            // al usuario sin opción (que era la queja real de la primera versión), se le deja decir a
-            // qué se parece. El factor sigue saliendo del catálogo, no de una estimación inventada.
-            OutlinedButton(
-                onClick = { showYieldPicker = true },
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.small,
-                border = BorderStroke(1.dp, GymSmartColors.Outline),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = GymSmartColors.TextSecondary)
-            ) { Text("¿Lo has pesado ya cocinado?", style = MaterialTheme.typography.labelMedium) }
-            Spacer(Modifier.height(16.dp))
-        }
-
-        if (showYieldPicker) {
-            CookingYieldPickerDialog(
-                onDismiss = { showYieldPicker = false },
-                onSelected = {
-                    manualYieldId = it.id
-                    basis = WeighBasis.COOKED
-                    showYieldPicker = false
-                }
-            )
         }
 
         OutlinedTextField(
@@ -1425,149 +1412,30 @@ private fun basisSuffix(entry: MealEntry): String {
 private fun BasisSelector(
     cookingYield: CookingYield,
     basis: WeighBasis,
-    grams: Double,
-    chosenByHand: Boolean,
-    onBasisChange: (WeighBasis) -> Unit,
-    onChangeFood: () -> Unit,
-    onClearFood: () -> Unit
+    onBasisChange: (WeighBasis) -> Unit
 ) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text("Tipo de peso", style = MaterialTheme.typography.bodySmall, color = GymSmartColors.TextSecondary)
+        Surface(
+            shape = MaterialTheme.shapes.extraSmall,
+            color = GymSmartColors.Primary.copy(alpha = 0.12f),
+            modifier = Modifier.clickable {
+                onBasisChange(if (basis == WeighBasis.RAW) WeighBasis.COOKED else WeighBasis.RAW)
+            }
         ) {
             Text(
-                "¿Cómo lo has pesado?",
-                style = MaterialTheme.typography.bodySmall,
-                color = GymSmartColors.TextSecondary
-            )
-            Text(
-                if (chosenByHand) "Quitar" else "Cambiar",
-                style = MaterialTheme.typography.labelSmall,
+                if (basis == WeighBasis.RAW) cookingYield.rawLabel else cookingYield.cookedLabel,
+                style = MaterialTheme.typography.labelMedium,
                 color = GymSmartColors.Primary,
                 fontWeight = FontWeight.Bold,
-                modifier = Modifier.clickable { if (chosenByHand) onClearFood() else onChangeFood() }
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
             )
         }
-        Spacer(Modifier.height(8.dp))
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf(
-                WeighBasis.RAW to cookingYield.rawLabel,
-                WeighBasis.COOKED to cookingYield.cookedLabel
-            ).forEach { (option, label) ->
-                val isSelected = basis == option
-                OutlinedButton(
-                    onClick = { onBasisChange(option) },
-                    modifier = Modifier.weight(1f),
-                    shape = MaterialTheme.shapes.extraSmall,
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = if (isSelected) GymSmartColors.Primary else GymSmartColors.TextSecondary,
-                        containerColor = if (isSelected) GymSmartColors.Primary.copy(alpha = 0.1f)
-                        else androidx.compose.ui.graphics.Color.Transparent
-                    ),
-                    border = BorderStroke(1.dp, if (isSelected) GymSmartColors.Primary else GymSmartColors.Outline)
-                ) {
-                    Text(
-                        label,
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                    )
-                }
-            }
-        }
-
-        if (basis == WeighBasis.COOKED && grams > 0) {
-            Spacer(Modifier.height(8.dp))
-            Text(
-                "≈ ${cookingYield.rawWeightFor(grams, basis).toInt()} g ${cookingYield.rawLabel.lowercase()}",
-                style = MaterialTheme.typography.bodySmall,
-                color = GymSmartColors.Primary,
-                fontWeight = FontWeight.Bold
-            )
-        }
-
-        Spacer(Modifier.height(6.dp))
-        Text(
-            buildString {
-                if (chosenByHand) append("Usando la referencia de ")
-                append(cookingYield.label)
-                append(' ')
-                append(cookingYield.method)
-                append(" · factor ")
-                append(cookingYield.factor)
-                append(" (")
-                append(cookingYield.source)
-                append(')')
-            },
-            style = MaterialTheme.typography.labelSmall,
-            color = GymSmartColors.TextSecondary
-        )
     }
-}
-
-/**
- * Deja al usuario elegir a mano el alimento de referencia cuando la app no reconoce el producto.
- *
- * Esto es lo que hace que la función sirva para cualquier alimento y no solo para los que el catálogo
- * identifica por el nombre: el dato que faltaba era *qué alimento es*, y el usuario lo sabe. Lo que no
- * se le pide nunca es el factor, que sigue saliendo del catálogo con su fuente — si se le dejara
- * teclear un número, la app estaría avalando cifras inventadas.
- */
-@Composable
-private fun CookingYieldPickerDialog(
-    onDismiss: () -> Unit,
-    onSelected: (CookingYield) -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = GymSmartColors.SurfaceElevated,
-        title = { Text("¿A qué se parece?", color = GymSmartColors.TextPrimary) },
-        text = {
-            Column(modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
-                Text(
-                    "Elige el alimento más parecido para convertir su peso cocinado. El factor sale de " +
-                        "datos de la USDA, no de una estimación.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = GymSmartColors.TextSecondary
-                )
-                Spacer(Modifier.height(12.dp))
-                COOKING_YIELD_FAMILIES.forEach { (family, foods) ->
-                    Text(
-                        family,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = GymSmartColors.Primary,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    foods.forEach { food ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth()
-                                .clickable { onSelected(food) }
-                                .padding(vertical = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                food.label,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = GymSmartColors.TextPrimary,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Text(
-                                "×${food.factor}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = GymSmartColors.TextSecondary
-                            )
-                        }
-                    }
-                    Spacer(Modifier.height(10.dp))
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Cancelar", color = GymSmartColors.TextSecondary) }
-        }
-    )
 }
 
 // ── Sheet: Editar entrada ─────────────────────────────────────────────────────

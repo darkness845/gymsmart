@@ -755,7 +755,50 @@ eso sí lo sabe él.
 La base por defecto sigue siendo **crudo**, el comportamiento de siempre. Nada cambia salvo que el
 usuario elija explícitamente lo contrario.
 
-### 13.6 Limitación conocida: el supuesto de la base de origen
+### 13.6 El suelo de cordura: detectar productos que ya vienen cocinados
+
+**Por qué hizo falta.** La primera defensa era una lista de palabras ("cocido", "nuggets"…). Se
+comprobó una a una y tenía agujeros reales: *patatas **prefritas*** no coincide con "fritas" porque la
+comparación es por palabra completa; *garbanzos en **tarro***, *arroz en **vasito***, *arroz
+**vaporizado***, *merluza **glaseada*** y *pechuga con **solución añadida*** pasaban todas. El enfoque
+no estaba incompleto, estaba **mal de raíz**: nunca se acaban las palabras.
+
+**Qué se hace en su lugar.** Comprobar si las kcal del producto son físicamente posibles para ese
+alimento en seco. Un árido en seco está entre 333 y 378 kcal/100 g (almidón casi sin agua); el mismo
+alimento cocido, entre 83 y 164 (ha absorbido dos o tres veces su peso en agua). **Entre 165 y 333 no
+existe ningún producto de esta familia**, así que el suelo se pone en 250: parte esa franja vacía por
+la mitad y deja ~85 kcal de margen a cada lado. No es un umbral afinado a ojo, es una franja que la
+física deja libre.
+
+Por debajo del suelo, la conversión **se bloquea y se avisa**; nunca se corrige el número en silencio.
+El usuario ve que ese producto ya viene cocinado y que debe registrarlo tal cual.
+
+**Dónde no se aplica, y por qué.** Solo en cereales y legumbres. Se midieron ~500 productos reales de
+Open Food Facts y en carne, pescado y patata **no hay señal aprovechable**: la dispersión entre marcas
+supera la separación entre crudo y cocinado. Dos hallazgos concretos de esa medición:
+
+- **El 79 % de los productos de pollo ya cocinados marcan *menos* kcal que el pollo crudo** (62–86
+  frente a 120): son fiambres inyectados con agua y almidón, donde la dilución del procesado gana a la
+  concentración del cocinado. Un detector de dos polos los clasificaría como crudos — fallaría en la
+  dirección peligrosa.
+- La categoría `pescado` agrupa especies cuyo valor en crudo va de 51 a 208 kcal/100 g (4,08× de
+  dispersión) bajo una separación de 1,28×: un salmón crudo está más cerca del "bacalao cocido" que del
+  "bacalao crudo". Ningún suelo único puede significar nada ahí.
+
+Esto deja la carne sin red, y es una limitación asumida a conciencia: ahí el error máximo es de ~1,3×
+en vez de los 2,3×–4,1× de los áridos, y la carne fresca del supermercado viene cruda prácticamente
+siempre. Se prefiere no bloquear a bloquear sin fundamento.
+
+**El suelo se aplica también cuando el usuario elige el alimento a mano**, que si no sería justamente
+la puerta por la que colar un producto ya cocinado.
+
+### 13.7 Base por defecto
+
+Carnes y pescado se preseleccionan en **crudo**; cereales y legumbres, en **cocido**. Sigue al uso
+real: nadie pesa la pasta en seco después de hervirla. Coincide con lo que hace Fitia, cuyos planes
+usan peso cocido salvo en carnes y avena.
+
+### 13.8 Limitación conocida: el supuesto de la base de origen
 
 La conversión da por hecho que los valores del producto están en base cruda. Es cierto para alimentos
 frescos, que es lo que el catálogo reconoce, pero **no se puede verificar**: Open Food Facts no tiene
