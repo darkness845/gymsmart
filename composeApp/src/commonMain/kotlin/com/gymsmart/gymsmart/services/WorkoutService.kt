@@ -2,6 +2,7 @@ package com.gymsmart.gymsmart.services
 
 import com.gymsmart.gymsmart.config.AppConfig
 import com.gymsmart.gymsmart.model.WorkoutPlan
+import com.gymsmart.gymsmart.model.WorkoutSession
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.request.*
@@ -29,6 +30,31 @@ class WorkoutService(private val client: HttpClient) {
         val response = client.put("${AppConfig.BASE_URL}/workouts") {
             contentType(ContentType.Application.Json)
             setBody(plan)
+        }
+        if (response.status.isSuccess()) Result.success(Unit)
+        else Result.failure(Exception("Error ${response.status.value}"))
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
+
+    // ── Historico de entrenamientos (Tarea E) ────────────────────────────────
+
+    /** Sesiones terminadas entre dos fechas ISO, ambas incluidas. */
+    suspend fun getSessions(from: String, to: String): Result<List<WorkoutSession>> = try {
+        val response = client.get("${AppConfig.BASE_URL}/workouts/sessions") {
+            parameter("from", from)
+            parameter("to", to)
+        }
+        if (response.status.isSuccess()) Result.success(response.body())
+        else Result.failure(Exception("Error ${response.status.value}"))
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
+
+    suspend fun saveSession(session: WorkoutSession): Result<Unit> = try {
+        val response = client.post("${AppConfig.BASE_URL}/workouts/sessions") {
+            contentType(ContentType.Application.Json)
+            setBody(session)
         }
         if (response.status.isSuccess()) Result.success(Unit)
         else Result.failure(Exception("Error ${response.status.value}"))

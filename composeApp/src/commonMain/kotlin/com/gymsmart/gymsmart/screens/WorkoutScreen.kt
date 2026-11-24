@@ -21,7 +21,10 @@ import androidx.navigation.NavController
 import com.gymsmart.gymsmart.model.*
 import com.gymsmart.gymsmart.services.WorkoutService
 import com.gymsmart.gymsmart.ui.theme.GymSmartColors
+import androidx.compose.foundation.BorderStroke
+import com.gymsmart.gymsmart.navigation.Screen
 import kotlinx.coroutines.launch
+import kotlinx.datetime.*
 import kotlin.time.Clock
 
 /**
@@ -136,6 +139,31 @@ fun WorkoutScreen(
                             })
                         }
                         persist(WorkoutPlan(days = days, session = null))
+
+                        // Y ademas queda guardado como entrenamiento hecho (Tarea E). Antes esto se
+                        // perdia: solo sobrevivia "la ultima vez" de cada ejercicio, asi que no habia
+                        // forma de mirar atras. Se guarda una copia con el nombre y el tipo de cada
+                        // ejercicio dentro, para que editar el plan despues no reescriba el pasado.
+                        val hechos = liveDay.exercises.mapNotNull { ex ->
+                            val series = finished.sets[ex.id].orEmpty()
+                            if (series.isEmpty()) null
+                            else SessionExercise(ex.name, ex.kind, ex.barKg, series)
+                        }
+                        if (hechos.isNotEmpty()) {
+                            val hoy = Clock.System.now()
+                                .toLocalDateTime(TimeZone.currentSystemDefault()).date.toString()
+                            scope.launch {
+                                workoutService.saveSession(
+                                    WorkoutSession(
+                                        date = hoy,
+                                        dayName = liveDay.name,
+                                        startedAt = finished.startedAt,
+                                        exercises = hechos
+                                    )
+                                ).onFailure { saveFailed = true }
+                            }
+                        }
+
                         view = WorkoutView.DAYS
                         scope.launch {
                             val total = finished.sets.values.sumOf { it.size }
@@ -202,7 +230,8 @@ fun WorkoutScreen(
                             )))
                         }
                         view = WorkoutView.LOG
-                    }
+                    },
+                    onProgress = { navController.navigate(Screen.Progress.route) }
                 )
             }
         }
@@ -252,7 +281,8 @@ private fun DaysView(
     onBack: () -> Unit,
     onNew: () -> Unit,
     onEdit: (WorkoutDay) -> Unit,
-    onStart: (WorkoutDay) -> Unit
+    onStart: (WorkoutDay) -> Unit,
+    onProgress: () -> Unit
 ) {
     Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
         WorkoutTopBar(
@@ -262,6 +292,18 @@ private fun DaysView(
             onBack = onBack
         )
         if (saveFailed) OfflineNotice()
+
+        // Acceso al historico (Tarea E). Va aqui arriba y no dentro de la lista de dias porque el
+        // progreso no depende de tener plan: se mira igual aunque hoy no toque entrenar.
+        OutlinedButton(
+            onClick = onProgress,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+            shape = MaterialTheme.shapes.small,
+            border = BorderStroke(1.dp, GymSmartColors.Outline),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = GymSmartColors.TextPrimary)
+        ) {
+            Text("📅  Ver mi progreso", fontWeight = FontWeight.SemiBold)
+        }
 
         if (days.isEmpty()) {
             EmptyDays(onNew)

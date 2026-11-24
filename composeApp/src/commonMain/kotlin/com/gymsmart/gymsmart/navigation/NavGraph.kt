@@ -36,6 +36,7 @@ sealed class Screen(val route: String) {
     object Nutrition  : Screen("nutrition")
     object Training   : Screen("training")
     object Workout    : Screen("workout")
+    object Progress   : Screen("progress")
     object Gps        : Screen("gps")
     object Weight     : Screen("weight")
     object MyRoutes : Screen("my_routes")
@@ -184,6 +185,12 @@ fun NavGraph(
         }
         composable(Screen.Workout.route) {
             WorkoutScreen(navController = navController, workoutService = workoutService)
+        }
+        composable(Screen.Progress.route) {
+            ProgressScreen(
+                workoutService = workoutService,
+                onBack = { navController.popBackStack() }
+            )
         }
         composable(Screen.Gps.route) {
             GpsScreen(

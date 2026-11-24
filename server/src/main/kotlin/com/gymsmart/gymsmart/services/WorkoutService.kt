@@ -1,6 +1,8 @@
 package com.gymsmart.gymsmart.services
 
 import com.gymsmart.gymsmart.model.WorkoutPlan
+import com.gymsmart.gymsmart.model.WorkoutSession
+import java.util.UUID
 import kotlinx.serialization.json.Json
 
 /**
@@ -24,6 +26,24 @@ class WorkoutService(private val turso: TursoService) {
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
             )
         """)
+
+        // Historico de entrenamientos terminados (Tarea E). Aqui SI va una fila por sesion y no un
+        // documento unico por usuario como el plan: crecen sin limite con el tiempo y el calendario
+        // pide solo un mes, asi que conviene poder filtrar por fecha en la consulta en vez de
+        // traerse anos enteros para descartarlos en el movil.
+        turso.execute("""
+            CREATE TABLE IF NOT EXISTS workout_sessions (
+                id         TEXT PRIMARY KEY,
+                user_id    TEXT NOT NULL,
+                date       TEXT NOT NULL,
+                data       TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        """)
+        runCatching {
+            turso.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user_date ON workout_sessions (user_id, date)")
+        }
     }
 
     /** Un usuario sin plan todavía devuelve uno vacío, no un error: es su primera vez. */
@@ -42,5 +62,40 @@ class WorkoutService(private val turso: TursoService) {
                ON CONFLICT(user_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at""",
             listOf(userId, json.encodeToString(plan), System.currentTimeMillis().toString())
         )
+    }
+
+    // ── Historico (Tarea E) ───────────────────────────────────────────────────
+
+    /** Guarda un entrenamiento terminado y devuelve su id. */
+    suspend fun saveSession(userId: String, session: WorkoutSession): String {
+        val id = session.id.takeIf { it.isNotBlank() } ?: UUID.randomUUID().toString()
+        turso.execute(
+            """INSERT INTO workout_sessions (id, user_id, date, data, created_at) VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT(id) DO UPDATE SET data = excluded.data, date = excluded.date""",
+            listOf(id, userId, session.date, json.encodeToString(session.copy(id = id)),
+                System.currentTimeMillis().toString())
+        )
+        return id
+    }
+
+    /**
+     * Sesiones entre dos fechas ISO, ambas incluidas. El calendario pide un mes cada vez; comparar
+     * cadenas ISO funciona como comparar fechas porque el formato es de ancho fijo y ordenable.
+     */
+    suspend fun getSessions(userId: String, from: String, to: String): List<WorkoutSession> {
+        val result = turso.execute(
+            """SELECT data FROM workout_sessions
+               WHERE user_id = ? AND date >= ? AND date <= ?
+               ORDER BY date ASC, created_at ASC""",
+            listOf(userId, from, to)
+        )
+        return turso.extractRows(result).mapNotNull { row ->
+            val raw = row.firstOrNull() ?: return@mapNotNull null
+            runCatching { json.decodeFromString<WorkoutSession>(raw) }.getOrNull()
+        }
+    }
+
+    suspend fun deleteSession(userId: String, id: String) {
+        turso.execute("DELETE FROM workout_sessions WHERE id = ? AND user_id = ?", listOf(id, userId))
     }
 }

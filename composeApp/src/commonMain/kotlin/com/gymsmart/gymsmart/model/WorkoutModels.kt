@@ -147,3 +147,56 @@ fun rirLabel(rir: Int?): String = if (rir == null) "—" else "$rir" + if (rir >
 /** Volumen (kg movidos) de una lista de series de ese ejercicio. */
 fun WorkoutExercise.volume(sets: List<WorkoutSet>): Double =
     sets.sumOf { totalKg(it.value) * it.reps }
+
+// ── Histórico de entrenamientos (Tarea E) ────────────────────────────────────
+
+/**
+ * Un ejercicio tal y como se hizo un día concreto.
+ *
+ * Es una **copia**, no una referencia al ejercicio del plan: guarda su nombre y su tipo dentro del
+ * registro. Si mañana se renombra el ejercicio, se le cambia el tipo o se borra del plan, lo que
+ * pasó aquel día tiene que seguir leyéndose igual. Un histórico que cambia al editar el plan no es
+ * un histórico.
+ */
+@Serializable
+data class SessionExercise(
+    val name: String,
+    val kind: String = WorkoutKind.BARRA,
+    val barKg: Double = 20.0,
+    val sets: List<WorkoutSet> = emptyList()
+)
+
+/**
+ * Un entrenamiento terminado. [date] en formato ISO (`2026-11-24`), que es como se agrupa en el
+ * calendario y como lo consulta el servidor.
+ */
+@Serializable
+data class WorkoutSession(
+    val id: String = "",
+    val date: String,
+    val dayName: String,
+    val startedAt: Long = 0L,
+    val exercises: List<SessionExercise> = emptyList()
+) {
+    val totalSets: Int get() = exercises.sumOf { it.sets.size }
+    val totalReps: Int get() = exercises.sumOf { ex -> ex.sets.sumOf { it.reps } }
+
+    /**
+     * Volumen total en kg movidos (peso real × repeticiones, sumado). Es la cifra que resume una
+     * sesión en una sola línea y la que permite comparar un día con otro.
+     */
+    val volumeKg: Double
+        get() = exercises.sumOf { ex ->
+            ex.sets.sumOf { s -> sessionTotalKg(ex.kind, s.value, ex.barKg) * s.reps }
+        }
+}
+
+/**
+ * Mismo calculo que [totalKg], pero a partir del tipo guardado en el historico en vez de un
+ * [WorkoutExercise] vivo: una sesion pasada no depende de que el ejercicio siga existiendo.
+ */
+fun sessionTotalKg(kind: String, value: Double, barKg: Double): Double = when (kind) {
+    WorkoutKind.BARRA -> round2(barKg + 2 * value)
+    WorkoutKind.MANCUERNAS -> round2(2 * value)
+    else -> round2(value)
+}
