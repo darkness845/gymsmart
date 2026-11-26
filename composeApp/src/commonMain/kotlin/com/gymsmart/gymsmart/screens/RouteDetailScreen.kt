@@ -16,11 +16,31 @@ import com.gymsmart.gymsmart.model.RoutePoint
 import com.gymsmart.gymsmart.model.RoutePointDto
 import com.gymsmart.gymsmart.services.GpsService
 import com.gymsmart.gymsmart.services.LocationProvider
-import com.gymsmart.gymsmart.ui.theme.GymSmartColors
+import com.gymsmart.gymsmart.ui.theme.MelocotonTheme
+import com.gymsmart.gymsmart.ui.theme.Palette
+import com.gymsmart.gymsmart.ui.theme.SystemBarsAppearance
+
+/**
+ * RouteDetailScreen con el estilo Melocotón (Tarea 3). Solo cambia el aspecto: la estructura y la lógica
+ * de la pantalla son las de siempre, en [RouteDetailScreenContent].
+ */
+@Composable
+fun RouteDetailScreen(
+    navController: NavController,
+    routeId: String,
+    gpsService: GpsService,
+    locationProvider: LocationProvider
+) {
+    MelocotonTheme {
+        // Fondo crema hasta arriba: la hora y la batería tienen que ir en oscuro.
+        SystemBarsAppearance(darkStatusIcons = true)
+        RouteDetailScreenContent(navController, routeId, gpsService, locationProvider)
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RouteDetailScreen(
+private fun RouteDetailScreenContent(
     navController: NavController,
     routeId: String,
     gpsService: GpsService,
@@ -81,25 +101,25 @@ fun RouteDetailScreen(
     if (showCompletedDialog) {
         AlertDialog(
             onDismissRequest = {},
-            containerColor = GymSmartColors.SurfaceElevated,
+            containerColor = Palette.current.surface,
             shape = MaterialTheme.shapes.large,
             title = {
                 Text(
                     "🎉 ¡Ruta completada!",
                     fontWeight = FontWeight.Bold,
-                    color = GymSmartColors.TextPrimary
+                    color = Palette.current.textPrimary
                 )
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
                         "Has completado la ruta $routeName.",
-                        color = GymSmartColors.TextPrimary
+                        color = Palette.current.textPrimary
                     )
                     Text(
                         "${formatDouble(calcularDistanciaTotal(routePoints) / 1000, 2)} km recorridos",
                         style = MaterialTheme.typography.bodySmall,
-                        color = GymSmartColors.TextSecondary
+                        color = Palette.current.textSecondary
                     )
                 }
             },
@@ -109,8 +129,8 @@ fun RouteDetailScreen(
                     shape = MaterialTheme.shapes.small,
                     modifier = Modifier.fillMaxWidth().height(48.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = GymSmartColors.RouteCompleted,
-                        contentColor   = GymSmartColors.Background
+                        containerColor = Palette.current.accent,
+                        contentColor   = Palette.current.onAccent
                     )
                 ) {
                     Text("¡Genial!", fontWeight = FontWeight.Bold)
@@ -129,12 +149,12 @@ fun RouteDetailScreen(
                                 routeName,
                                 fontWeight = FontWeight.Bold,
                                 style = MaterialTheme.typography.titleMedium,
-                                color = GymSmartColors.TextPrimary
+                                color = Palette.current.textPrimary
                             )
                             Text(
                                 "Detalle de ruta",
                                 style = MaterialTheme.typography.labelMedium,
-                                color = GymSmartColors.TextSecondary
+                                color = Palette.current.textSecondary
                             )
                         }
                     },
@@ -143,17 +163,17 @@ fun RouteDetailScreen(
                             Icon(
                                 Icons.Default.ArrowBack,
                                 contentDescription = "Volver",
-                                tint = GymSmartColors.TextPrimary
+                                tint = Palette.current.textPrimary
                             )
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = GymSmartColors.Background
+                        containerColor = Palette.current.background
                     )
                 )
             }
         },
-        containerColor = GymSmartColors.Background
+        containerColor = Palette.current.background
     ) { padding ->
         Column(
             modifier = Modifier
@@ -165,19 +185,19 @@ fun RouteDetailScreen(
             when {
                 isLoading -> {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = GymSmartColors.Primary)
+                        CircularProgressIndicator(color = Palette.current.accentText)
                     }
                 }
                 errorMsg != null -> {
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        color = GymSmartColors.Error.copy(alpha = 0.12f),
+                        color = Palette.current.danger.copy(alpha = 0.12f),
                         shape = MaterialTheme.shapes.small
                     ) {
                         Text(
                             "⚠ $errorMsg",
                             modifier = Modifier.padding(12.dp),
-                            color = GymSmartColors.Error,
+                            color = Palette.current.danger,
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
@@ -186,7 +206,7 @@ fun RouteDetailScreen(
                     // ── Stats ────────────────────────────────────────────
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        color = GymSmartColors.SurfaceCard,
+                        color = Palette.current.surface,
                         shape = MaterialTheme.shapes.medium
                     ) {
                         Row(
@@ -200,13 +220,13 @@ fun RouteDetailScreen(
                                 value = "${formatDouble(distanciaTotal / 1000, 2)} km",
                                 highlight = false
                             )
-                            VerticalDivider(modifier = Modifier.height(36.dp), color = GymSmartColors.Divider)
+                            VerticalDivider(modifier = Modifier.height(36.dp), color = Palette.current.divider)
                             RouteMetricItem(
                                 label = "Completado",
                                 value = "${formatDouble(distanciaCompletada / 1000, 2)} km",
                                 highlight = true
                             )
-                            VerticalDivider(modifier = Modifier.height(36.dp), color = GymSmartColors.Divider)
+                            VerticalDivider(modifier = Modifier.height(36.dp), color = Palette.current.divider)
                             RouteMetricItem(
                                 label = "Progreso",
                                 value = "${(progress * 100).toInt()}%",
@@ -225,13 +245,13 @@ fun RouteDetailScreen(
                                 Text(
                                     "Progreso de la ruta",
                                     style = MaterialTheme.typography.labelMedium,
-                                    color = GymSmartColors.TextSecondary
+                                    color = Palette.current.textSecondary
                                 )
                                 Text(
                                     "${(progress * 100).toInt()}%",
                                     style = MaterialTheme.typography.labelMedium,
                                     fontWeight = FontWeight.Bold,
-                                    color = GymSmartColors.RouteProgress
+                                    color = Palette.current.accentText
                                 )
                             }
                             LinearProgressIndicator(
@@ -240,8 +260,8 @@ fun RouteDetailScreen(
                                     .fillMaxWidth()
                                     .height(6.dp)
                                     .clip(MaterialTheme.shapes.extraSmall),
-                                color = GymSmartColors.RouteProgress,
-                                trackColor = GymSmartColors.Outline
+                                color = Palette.current.accentText,
+                                trackColor = Palette.current.border
                             )
                         }
                     }
@@ -275,10 +295,10 @@ fun RouteDetailScreen(
                         shape = MaterialTheme.shapes.small,
                         modifier = Modifier.fillMaxWidth().height(52.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor         = if (isFollowing) GymSmartColors.Error else GymSmartColors.Primary,
-                            contentColor           = GymSmartColors.OnPrimary,
-                            disabledContainerColor = GymSmartColors.Outline,
-                            disabledContentColor   = GymSmartColors.TextDisabled
+                            containerColor         = if (isFollowing) Palette.current.danger else Palette.current.hero,
+                            contentColor           = Palette.current.onHero,
+                            disabledContainerColor = Palette.current.border,
+                            disabledContentColor   = Palette.current.chevron
                         )
                     ) {
                         Text(
@@ -301,14 +321,14 @@ private fun RouteMetricItem(label: String, value: String, highlight: Boolean) {
         Text(
             label,
             style = MaterialTheme.typography.labelSmall,
-            color = GymSmartColors.TextSecondary
+            color = Palette.current.textSecondary
         )
         Spacer(Modifier.height(2.dp))
         Text(
             value,
             fontWeight = FontWeight.Bold,
             style = MaterialTheme.typography.titleMedium,
-            color = if (highlight) GymSmartColors.RouteProgress else GymSmartColors.TextPrimary
+            color = if (highlight) Palette.current.accentText else Palette.current.textPrimary
         )
     }
 }

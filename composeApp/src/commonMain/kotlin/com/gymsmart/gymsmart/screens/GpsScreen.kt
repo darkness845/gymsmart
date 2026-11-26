@@ -21,14 +21,34 @@ import com.gymsmart.gymsmart.services.LocationProvider
 import com.gymsmart.gymsmart.services.RecoverableRoute
 import com.gymsmart.gymsmart.services.RouteRecoveryStore
 import com.gymsmart.gymsmart.services.rememberBackgroundTrackingController
-import com.gymsmart.gymsmart.ui.theme.GymSmartColors
+import com.gymsmart.gymsmart.ui.theme.MelocotonTheme
+import com.gymsmart.gymsmart.ui.theme.Palette
+import com.gymsmart.gymsmart.ui.theme.SystemBarsAppearance
 import kotlinx.coroutines.launch
 import kotlin.math.*
 import kotlin.time.Clock
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * GpsScreen con el estilo Melocotón (Tarea 3). Solo cambia el aspecto: la estructura y la lógica
+ * de la pantalla son las de siempre, en [GpsScreenContent].
+ */
 @Composable
 fun GpsScreen(
+    navController: NavController,
+    locationProvider: LocationProvider,
+    onRequestPermission: (onResult: (Boolean) -> Unit) -> Unit,
+    gpsService: GpsService
+) {
+    MelocotonTheme {
+        // Fondo crema hasta arriba: la hora y la batería tienen que ir en oscuro.
+        SystemBarsAppearance(darkStatusIcons = true)
+        GpsScreenContent(navController, locationProvider, onRequestPermission, gpsService)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun GpsScreenContent(
     navController: NavController,
     locationProvider: LocationProvider,
     onRequestPermission: (onResult: (Boolean) -> Unit) -> Unit,
@@ -108,19 +128,19 @@ fun GpsScreen(
     if (showSaveDialog) {
         AlertDialog(
             onDismissRequest = { if (!isSaving) showSaveDialog = false },
-            containerColor = GymSmartColors.SurfaceElevated,
+            containerColor = Palette.current.surface,
             shape = MaterialTheme.shapes.large,
             title = {
                 Text(
                     "Guardar ruta",
                     fontWeight = FontWeight.Bold,
-                    color = GymSmartColors.TextPrimary
+                    color = Palette.current.textPrimary
                 )
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Surface(
-                        color = GymSmartColors.SurfaceCard,
+                        color = Palette.current.surface,
                         shape = MaterialTheme.shapes.small
                     ) {
                         Row(
@@ -131,12 +151,12 @@ fun GpsScreen(
                         ) {
                             Text(
                                 "${formatDouble(activeRoute.distanceMeters / 1000, 2)} km",
-                                color = GymSmartColors.Primary,
+                                color = Palette.current.accentText,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
                                 "${activeRoute.points.size} puntos",
-                                color = GymSmartColors.TextSecondary,
+                                color = Palette.current.textSecondary,
                                 style = MaterialTheme.typography.bodySmall
                             )
                         }
@@ -150,21 +170,21 @@ fun GpsScreen(
                         modifier = Modifier.fillMaxWidth(),
                         shape = MaterialTheme.shapes.small,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = GymSmartColors.Primary,
-                            unfocusedBorderColor = GymSmartColors.Outline,
-                            focusedLabelColor = GymSmartColors.Primary,
-                            unfocusedLabelColor = GymSmartColors.TextSecondary,
-                            cursorColor = GymSmartColors.Primary,
-                            focusedTextColor = GymSmartColors.TextPrimary,
-                            unfocusedTextColor = GymSmartColors.TextPrimary,
-                            focusedContainerColor = GymSmartColors.SurfaceCard,
-                            unfocusedContainerColor = GymSmartColors.SurfaceCard,
+                            focusedBorderColor = Palette.current.accentText,
+                            unfocusedBorderColor = Palette.current.border,
+                            focusedLabelColor = Palette.current.accentText,
+                            unfocusedLabelColor = Palette.current.textSecondary,
+                            cursorColor = Palette.current.accentText,
+                            focusedTextColor = Palette.current.textPrimary,
+                            unfocusedTextColor = Palette.current.textPrimary,
+                            focusedContainerColor = Palette.current.surface,
+                            unfocusedContainerColor = Palette.current.surface,
                         )
                     )
                     if (saveSuccess) {
                         Text(
                             "✅ Ruta guardada correctamente",
-                            color = GymSmartColors.Success,
+                            color = Palette.current.success,
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
@@ -213,17 +233,17 @@ fun GpsScreen(
                     enabled = routeName.isNotBlank() && !isSaving,
                     shape = MaterialTheme.shapes.small,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = GymSmartColors.Primary,
-                        disabledContainerColor = GymSmartColors.Outline,
-                        contentColor = GymSmartColors.OnPrimary,
-                        disabledContentColor = GymSmartColors.TextDisabled
+                        containerColor = Palette.current.hero,
+                        disabledContainerColor = Palette.current.border,
+                        contentColor = Palette.current.onHero,
+                        disabledContentColor = Palette.current.chevron
                     )
                 ) {
                     if (isSaving) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(16.dp),
                             strokeWidth = 2.dp,
-                            color = GymSmartColors.OnPrimary
+                            color = Palette.current.onHero
                         )
                     } else {
                         Text("Guardar", fontWeight = FontWeight.Bold)
@@ -241,7 +261,7 @@ fun GpsScreen(
                     },
                     enabled = !isSaving
                 ) {
-                    Text("Descartar", color = GymSmartColors.TextSecondary)
+                    Text("Descartar", color = Palette.current.textSecondary)
                 }
             }
         )
@@ -251,13 +271,13 @@ fun GpsScreen(
     recoveredRoute?.let { recovered ->
         AlertDialog(
             onDismissRequest = {},
-            containerColor = GymSmartColors.SurfaceElevated,
+            containerColor = Palette.current.surface,
             shape = MaterialTheme.shapes.large,
-            title = { Text("Ruta sin guardar", fontWeight = FontWeight.Bold, color = GymSmartColors.TextPrimary) },
+            title = { Text("Ruta sin guardar", fontWeight = FontWeight.Bold, color = Palette.current.textPrimary) },
             text = {
                 Text(
                     "Encontramos una ruta de ${formatDouble(recovered.distanceMeters / 1000, 2)} km que no llegó a guardarse. ¿Quieres seguir grabándola o descartarla?",
-                    color = GymSmartColors.TextSecondary
+                    color = Palette.current.textSecondary
                 )
             },
             confirmButton = {
@@ -272,8 +292,8 @@ fun GpsScreen(
                         recoveredRoute = null
                     },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = GymSmartColors.Primary,
-                        contentColor = GymSmartColors.OnPrimary
+                        containerColor = Palette.current.hero,
+                        contentColor = Palette.current.onHero
                     )
                 ) {
                     Text("Seguir grabando", fontWeight = FontWeight.Bold)
@@ -284,7 +304,7 @@ fun GpsScreen(
                     recoveryStore.clear()
                     recoveredRoute = null
                 }) {
-                    Text("Descartar", color = GymSmartColors.TextSecondary)
+                    Text("Descartar", color = Palette.current.textSecondary)
                 }
             }
         )
@@ -298,7 +318,7 @@ fun GpsScreen(
                         Text(
                             "Ruta GPS",
                             fontWeight = FontWeight.Bold,
-                            color = GymSmartColors.TextPrimary
+                            color = Palette.current.textPrimary
                         )
                     },
                     navigationIcon = {
@@ -306,17 +326,17 @@ fun GpsScreen(
                             Icon(
                                 Icons.Default.ArrowBack,
                                 contentDescription = "Volver",
-                                tint = GymSmartColors.TextPrimary
+                                tint = Palette.current.textPrimary
                             )
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = GymSmartColors.Background
+                        containerColor = Palette.current.background
                     )
                 )
             }
         },
-        containerColor = GymSmartColors.Background
+        containerColor = Palette.current.background
     ) { padding ->
         Column(
             modifier = Modifier
@@ -329,7 +349,7 @@ fun GpsScreen(
             // --- Tarjeta de métricas ---
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = GymSmartColors.SurfaceCard,
+                color = Palette.current.surface,
                 shape = MaterialTheme.shapes.medium
             ) {
                 Column(
@@ -339,17 +359,17 @@ fun GpsScreen(
                     Text(
                         "Distancia",
                         style = MaterialTheme.typography.labelMedium,
-                        color = GymSmartColors.TextSecondary
+                        color = Palette.current.textSecondary
                     )
                     Text(
                         "${formatDouble(activeRoute.distanceMeters / 1000, 2)} km",
                         style = MaterialTheme.typography.displaySmall,
                         fontWeight = FontWeight.Bold,
-                        color = GymSmartColors.TextPrimary
+                        color = Palette.current.textPrimary
                     )
 
                     Spacer(Modifier.height(16.dp))
-                    HorizontalDivider(color = GymSmartColors.Divider)
+                    HorizontalDivider(color = Palette.current.divider)
                     Spacer(Modifier.height(16.dp))
 
                     Row(
@@ -363,7 +383,7 @@ fun GpsScreen(
                         )
                         VerticalDivider(
                             modifier = Modifier.height(40.dp),
-                            color = GymSmartColors.Divider
+                            color = Palette.current.divider
                         )
                         MetricItem(
                             label = "Altitud",
@@ -372,7 +392,7 @@ fun GpsScreen(
                         )
                         VerticalDivider(
                             modifier = Modifier.height(40.dp),
-                            color = GymSmartColors.Divider
+                            color = Palette.current.divider
                         )
                         MetricItem(
                             label = "Puntos",
@@ -402,13 +422,13 @@ fun GpsScreen(
             errorMsg?.let {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    color = GymSmartColors.Error.copy(alpha = 0.12f),
+                    color = Palette.current.danger.copy(alpha = 0.12f),
                     shape = MaterialTheme.shapes.small
                 ) {
                     Text(
                         "⚠ $it",
                         modifier = Modifier.padding(12.dp),
-                        color = GymSmartColors.Error,
+                        color = Palette.current.danger,
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
@@ -438,10 +458,10 @@ fun GpsScreen(
                     }
                 },
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = if (activeRoute.isRecording) GymSmartColors.Error else GymSmartColors.Primary,
-                    contentColor = GymSmartColors.OnPrimary,
-                    disabledContainerColor = GymSmartColors.Outline,
-                    disabledContentColor = GymSmartColors.TextDisabled
+                    containerColor = if (activeRoute.isRecording) Palette.current.danger else Palette.current.hero,
+                    contentColor = Palette.current.onHero,
+                    disabledContainerColor = Palette.current.border,
+                    disabledContentColor = Palette.current.chevron
                 ),
                 shape = MaterialTheme.shapes.small,
                 modifier = Modifier
@@ -467,7 +487,7 @@ private fun MetricItem(label: String, value: String, unit: String) {
         Text(
             label,
             style = MaterialTheme.typography.labelSmall,
-            color = GymSmartColors.TextSecondary
+            color = Palette.current.textSecondary
         )
         Spacer(Modifier.height(2.dp))
         Row(verticalAlignment = Alignment.Bottom) {
@@ -475,14 +495,14 @@ private fun MetricItem(label: String, value: String, unit: String) {
                 value,
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-                color = GymSmartColors.TextPrimary
+                color = Palette.current.textPrimary
             )
             if (unit.isNotEmpty()) {
                 Spacer(Modifier.width(2.dp))
                 Text(
                     unit,
                     style = MaterialTheme.typography.labelSmall,
-                    color = GymSmartColors.TextSecondary,
+                    color = Palette.current.textSecondary,
                     modifier = Modifier.padding(bottom = 3.dp)
                 )
             }

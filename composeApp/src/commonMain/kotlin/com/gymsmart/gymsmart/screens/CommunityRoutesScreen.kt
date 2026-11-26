@@ -16,11 +16,29 @@ import androidx.navigation.NavController
 import com.gymsmart.gymsmart.model.GpsRouteResponse
 import com.gymsmart.gymsmart.navigation.RouteDetailArgs
 import com.gymsmart.gymsmart.services.GpsService
-import com.gymsmart.gymsmart.ui.theme.GymSmartColors
+import com.gymsmart.gymsmart.ui.theme.MelocotonTheme
+import com.gymsmart.gymsmart.ui.theme.Palette
+import com.gymsmart.gymsmart.ui.theme.SystemBarsAppearance
+
+/**
+ * CommunityRoutesScreen con el estilo Melocotón (Tarea 3). Solo cambia el aspecto: la estructura y la lógica
+ * de la pantalla son las de siempre, en [CommunityRoutesScreenContent].
+ */
+@Composable
+fun CommunityRoutesScreen(
+    navController: NavController,
+    gpsService: GpsService
+) {
+    MelocotonTheme {
+        // Fondo crema hasta arriba: la hora y la batería tienen que ir en oscuro.
+        SystemBarsAppearance(darkStatusIcons = true)
+        CommunityRoutesScreenContent(navController, gpsService)
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CommunityRoutesScreen(
+private fun CommunityRoutesScreenContent(
     navController: NavController,
     gpsService: GpsService
 ) {
@@ -43,7 +61,7 @@ fun CommunityRoutesScreen(
                         Text(
                             "Rutas de la comunidad",
                             fontWeight = FontWeight.Bold,
-                            color = GymSmartColors.TextPrimary
+                            color = Palette.current.textPrimary
                         )
                     },
                     navigationIcon = {
@@ -51,17 +69,17 @@ fun CommunityRoutesScreen(
                             Icon(
                                 Icons.Default.ArrowBack,
                                 contentDescription = "Volver",
-                                tint = GymSmartColors.TextPrimary
+                                tint = Palette.current.textPrimary
                             )
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = GymSmartColors.Background
+                        containerColor = Palette.current.background
                     )
                 )
             }
         },
-        containerColor = GymSmartColors.Background
+        containerColor = Palette.current.background
     ) { padding ->
         Column(
             modifier = Modifier
@@ -72,19 +90,19 @@ fun CommunityRoutesScreen(
             when {
                 isLoading -> {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = GymSmartColors.Primary)
+                        CircularProgressIndicator(color = Palette.current.accentText)
                     }
                 }
                 errorMsg != null -> {
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        color = GymSmartColors.Error.copy(alpha = 0.12f),
+                        color = Palette.current.danger.copy(alpha = 0.12f),
                         shape = MaterialTheme.shapes.small
                     ) {
                         Text(
                             "⚠ $errorMsg",
                             modifier = Modifier.padding(12.dp),
-                            color = GymSmartColors.Error,
+                            color = Palette.current.danger,
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
@@ -95,13 +113,13 @@ fun CommunityRoutesScreen(
                             Text(
                                 "No hay rutas públicas aún",
                                 style = MaterialTheme.typography.titleMedium,
-                                color = GymSmartColors.TextSecondary
+                                color = Palette.current.textSecondary
                             )
                             Spacer(Modifier.height(8.dp))
                             Text(
                                 "¡Sé el primero en publicar una!",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = GymSmartColors.TextDisabled
+                                color = Palette.current.chevron
                             )
                         }
                     }
@@ -132,7 +150,7 @@ private fun CommunityRouteCard(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onClick() },
-        color = GymSmartColors.SurfaceCard,
+        color = Palette.current.surface,
         shape = MaterialTheme.shapes.medium
     ) {
         Column(
@@ -145,16 +163,16 @@ private fun CommunityRouteCard(
                 route.name,
                 fontWeight = FontWeight.Bold,
                 style = MaterialTheme.typography.titleMedium,
-                color = GymSmartColors.TextPrimary
+                color = Palette.current.textPrimary
             )
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 MetricChip("${formatDouble(route.distanceMeters / 1000, 2)} km")
-                Text("·", color = GymSmartColors.Divider)
+                Text("·", color = Palette.current.divider)
                 MetricChip(formatDuration(route.durationSeconds))
-                Text("·", color = GymSmartColors.Divider)
+                Text("·", color = Palette.current.divider)
                 MetricChip("${route.pointCount} pts")
             }
         }
@@ -166,6 +184,6 @@ private fun MetricChip(text: String) {
     Text(
         text,
         style = MaterialTheme.typography.bodySmall,
-        color = GymSmartColors.TextSecondary
+        color = Palette.current.textSecondary
     )
 }
