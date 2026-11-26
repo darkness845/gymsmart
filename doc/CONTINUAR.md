@@ -283,6 +283,12 @@ todo en verde. **Nada commiteado. Sin verificar en dispositivo.**
 `linkId`, `lastFrom`, `perSide` y `unilateral` de cada serie al guardar (no rompe nada, pero se pierden
 las uniones).
 
+**Arreglo tras probar en el móvil (2026-11-26)**: en un móvil bajo / con letra grande la hoja
+"Añadir ejercicio" no cabía y el botón de añadir quedaba fuera (la hoja no tiene scroll a propósito:
+solo se desplaza la lista). La lista "Ya lo haces en otro día" pasa a `weight(1f, fill = false)` con
+alto 72–262 dp: se queda con el hueco que sobra. Compilado (incl. Android), **sin commitear**,
+sin verificar en dispositivo.
+
 **Decidido por el usuario (2026-11-26, no re-preguntar)** sobre lo que el simulador no tenía
 (HTML: https://claude.ai/artifact/7niNEMs6voX2xgagjSRqdM): **se quedan** el botón atrás de la lista de
 días, "Ver mi progreso", el aviso "Entrenando · N series", "Editar" día (renombrar / eliminar), las

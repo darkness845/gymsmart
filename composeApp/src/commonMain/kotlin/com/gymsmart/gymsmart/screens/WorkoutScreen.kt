@@ -700,7 +700,11 @@ private fun AddExerciseSheet(
                 Text("${available.size} ${exercisesWord(available.size)}", fontSize = 11.sp, color = p.textSecondary)
             }
             Column(
-                Modifier.fillMaxWidth().heightIn(min = 120.dp, max = 262.dp).verticalScroll(rememberScrollState()),
+                // Solo esta lista se desplaza, y se queda con el hueco que deje el resto de la hoja
+                // (hasta 262 dp): en un móvil bajo, o con el teclado abierto, encoge ella y no se
+                // quedan fuera el nombre, el tipo ni el botón de añadir.
+                Modifier.fillMaxWidth().weight(1f, fill = false).heightIn(min = 72.dp, max = 262.dp)
+                    .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 available.forEach { (ex, fromDay) ->
