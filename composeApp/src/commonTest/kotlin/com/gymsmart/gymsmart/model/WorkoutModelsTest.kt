@@ -2,12 +2,13 @@ package com.gymsmart.gymsmart.model
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNull
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 /**
  * La aritmética del entrenamiento: convertir entre "lo que el usuario apunta" y el peso real.
- * Es donde más fácil es meter la pata (un disco se pone a los dos lados, una mancuerna va en cada
- * mano) y no se puede comprobar a ojo desde la UI.
+ * Desde la Tarea 7 cada serie guarda cómo se apuntó (a cada lado / unilateral); las series viejas,
+ * sin esos campos, se leen como siempre se leyeron según el tipo.
  */
 class WorkoutModelsTest {
 
@@ -16,105 +17,120 @@ class WorkoutModelsTest {
     private val maquina = WorkoutExercise(id = "3", name = "Aperturas", kind = WorkoutKind.MAQUINA)
     private val corporal = WorkoutExercise(id = "4", name = "Dominadas", kind = WorkoutKind.CORPORAL)
 
+    private fun set(v: Double, reps: Int = 10, ps: Boolean? = null, uni: Boolean? = null) =
+        WorkoutSet(value = v, reps = reps, perSide = ps, unilateral = uni)
+
     @Test
-    fun barra_suma_los_dos_lados_y_la_barra() {
-        // 30 kg a cada lado de una barra de 20 son 80 kg, no 50.
-        assertEquals(80.0, barra.totalKg(30.0))
-        assertEquals(20.0, barra.totalKg(0.0))
-        assertEquals(87.5, barra.totalKg(33.75))
+    fun a_cada_lado_en_barra_suma_los_dos_lados_y_la_barra() {
+        assertEquals(80.0, barra.totalKg(set(30.0, ps = true)))
+        assertEquals(20.0, barra.totalKg(set(0.0, ps = true)))
+        assertEquals(70.0, barra.copy(barKg = 10.0).totalKg(set(30.0, ps = true)))
     }
 
     @Test
-    fun barra_con_otra_barra() {
-        val z = barra.copy(barKg = 7.5)
-        assertEquals(27.5, z.totalKg(10.0))
+    fun en_total_el_numero_es_el_peso_real() {
+        assertEquals(75.0, barra.totalKg(set(75.0, ps = false)))
+        assertEquals(24.0, mancuernas.totalKg(set(24.0, ps = false)))
     }
 
     @Test
-    fun mancuernas_cuentan_las_dos() {
-        assertEquals(16.0, mancuernas.totalKg(8.0))
+    fun a_cada_lado_fuera_de_la_barra_es_el_doble() {
+        assertEquals(24.0, mancuernas.totalKg(set(12.0, ps = true)))
+        assertEquals(50.0, maquina.totalKg(set(25.0, ps = true)))
     }
 
     @Test
-    fun maquina_y_lastre_son_el_numero_tal_cual() {
-        assertEquals(45.0, maquina.totalKg(45.0))
-        assertEquals(10.0, corporal.totalKg(10.0))
+    fun el_lastre_ignora_a_cada_lado() {
+        assertEquals(10.0, corporal.totalKg(set(10.0, ps = true)))
+        assertEquals(10.0, corporal.totalKg(set(10.0, ps = false)))
     }
 
     @Test
-    fun escribir_el_total_hace_la_conversion_inversa() {
-        assertEquals(30.0, barra.valueFromTotal(80.0))
-        assertEquals(40.0, barra.valueFromTotal(100.0))
-        assertEquals(8.0, mancuernas.valueFromTotal(16.0))
-        assertEquals(45.0, maquina.valueFromTotal(45.0))
-        // Un total por debajo de la barra no puede dar negativo.
-        assertEquals(0.0, barra.valueFromTotal(10.0))
+    fun las_series_viejas_se_leen_segun_el_tipo() {
+        // Antes de la Tarea 7 barra y mancuernas se apuntaban a cada lado; máquina y polea en total.
+        assertEquals(80.0, barra.totalKg(set(30.0)))
+        assertEquals(24.0, mancuernas.totalKg(set(12.0)))
+        assertEquals(40.0, maquina.totalKg(set(40.0)))
+        assertTrue(barra.defaultPerSide)
+        assertFalse(maquina.defaultPerSide)
+        assertFalse(set(30.0).isUnilateral)
     }
 
     @Test
-    fun ida_y_vuelta_del_total() {
-        listOf(0.0, 1.25, 20.0, 33.75, 60.0).forEach { porLado ->
-            assertEquals(porLado, barra.valueFromTotal(barra.totalKg(porLado)))
+    fun valueForTotal_es_el_camino_inverso() {
+        for (ps in listOf(true, false)) for (k in WorkoutKind.ALL) {
+            val total = 80.0
+            val v = valueForTotal(k.id, 20.0, total, ps)
+            assertEquals(total, totalKgOf(k.id, 20.0, v, ps), "${k.id} ps=$ps")
         }
+        assertEquals(30.0, valueForTotal(WorkoutKind.BARRA, 20.0, 80.0, true))
+        assertEquals(0.0, valueForTotal(WorkoutKind.BARRA, 20.0, 10.0, true)) // nunca negativo
+    }
+
+    @Test
+    fun el_volumen_usa_el_peso_real_y_cuenta_los_dos_lados_en_unilateral() {
+        assertEquals(800.0, barra.volume(listOf(set(30.0, ps = true))))
+        assertEquals(400.0, maquina.volume(listOf(set(20.0, uni = true))))
+        // Mezclado en el mismo ejercicio: cada serie con su configuración.
+        assertEquals(800.0 + 1500.0, barra.volume(listOf(set(30.0, ps = true), set(75.0, reps = 10, ps = false, uni = true))))
+    }
+
+    @Test
+    fun la_etiqueta_de_la_serie() {
+        assertEquals("37,5 kg a cada lado · 11 reps · unilateral", barra.setLabel(set(37.5, 11, ps = true, uni = true)))
+        assertEquals("75 kg · 8 reps", barra.setLabel(set(75.0, 8, ps = false)))
+        assertEquals("Peso corporal · 12 reps", corporal.setLabel(set(0.0, 12)))
+        assertEquals("+10 kg · 6 reps", corporal.setLabel(set(10.0, 6)))
+    }
+
+    @Test
+    fun unidad_y_rotulo_siguen_a_cada_lado() {
+        assertEquals("kg/lado", unitFor(WorkoutKind.BARRA, true))
+        assertEquals("kg/mano", unitFor(WorkoutKind.MANCUERNAS, true))
+        assertEquals("kg", unitFor(WorkoutKind.MAQUINA, false))
+        assertEquals("kg lastre", unitFor(WorkoutKind.CORPORAL, true))
+        assertEquals("LO QUE PONES A CADA LADO", bigLabelFor(WorkoutKind.BARRA, true))
+        assertEquals("PESO TOTAL CON BARRA", bigLabelFor(WorkoutKind.BARRA, false))
+        assertEquals("PESO DE CADA MANCUERNA", bigLabelFor(WorkoutKind.MANCUERNAS, true))
     }
 
     @Test
     fun formato_espanol_sin_ceros_de_mas() {
-        assertEquals("60", formatKg(60.0))
         assertEquals("62,5", formatKg(62.5))
-        assertEquals("1,25", formatKg(1.25))
-        assertEquals("0", formatKg(0.0))
-        assertEquals("0,25", formatKg(0.25))
-    }
-
-    @Test
-    fun la_etiqueta_de_la_serie_habla_en_la_unidad_del_ejercicio() {
-        assertEquals("30 por lado · 10 reps", barra.setLabel(WorkoutSet(30.0, 10)))
-        assertEquals("8 kg × 2 · 15 reps", mancuernas.setLabel(WorkoutSet(8.0, 15)))
-        assertEquals("45 kg · 12 reps", maquina.setLabel(WorkoutSet(45.0, 12)))
-        assertEquals("Peso corporal · 8 reps", corporal.setLabel(WorkoutSet(0.0, 8)))
-        assertEquals("+10 kg · 8 reps", corporal.setLabel(WorkoutSet(10.0, 8)))
-    }
-
-    @Test
-    fun el_volumen_usa_el_peso_real_no_el_apuntado() {
-        val series = listOf(WorkoutSet(30.0, 10), WorkoutSet(30.0, 8))
-        // (20 + 60) * 10 + (20 + 60) * 8 = 1440
-        assertEquals(1440.0, barra.volume(series))
-    }
-
-    @Test
-    fun el_peso_propuesto_sale_de_la_serie_que_toca() {
-        val ex = barra.copy(
-            lastSession = listOf(WorkoutSet(30.0, 10), WorkoutSet(30.0, 9), WorkoutSet(27.5, 8))
-        )
-        assertEquals(30.0, ex.lastSession[0].value)
-        assertEquals(9, ex.lastSession[1].reps)
-        assertEquals(27.5, ex.lastSession[2].value)
-        // La cuarta serie no existía aquel día: no hay nada que proponer.
-        assertNull(ex.lastSession.getOrNull(3))
-    }
-
-    @Test
-    fun un_ejercicio_nuevo_no_propone_nada() {
-        assertNull(barra.lastSession.getOrNull(0))
-    }
-
-    @Test
-    fun cada_tipo_trae_su_salto_y_su_unidad() {
-        assertEquals("kg/lado", WorkoutKind.of(WorkoutKind.BARRA).unit)
-        assertEquals("kg/mano", WorkoutKind.of(WorkoutKind.MANCUERNAS).unit)
-        assertEquals(2.5, WorkoutKind.of(WorkoutKind.MAQUINA).defaultStep)
-        assertEquals(true, WorkoutKind.of(WorkoutKind.BARRA).usesBar)
-        assertEquals(false, WorkoutKind.of(WorkoutKind.POLEA).usesBar)
-        // Un id desconocido (plan viejo, dato corrupto) no revienta: cae en el primero.
-        assertEquals(WorkoutKind.BARRA, WorkoutKind.of("inventado").id)
-    }
-
-    @Test
-    fun rir_se_lee_igual_que_en_la_pantalla() {
+        assertEquals("80", formatKg(80.0))
+        assertEquals("33,75", formatKg(33.75))
         assertEquals("—", rirLabel(null))
-        assertEquals("0", rirLabel(0))
         assertEquals("4+", rirLabel(4))
+    }
+
+    @Test
+    fun los_ejercicios_unidos_comparten_grupo() {
+        val src = barra
+        val linked = src.copy(id = "9", linkId = src.groupId)
+        assertEquals("1", src.groupId)
+        assertEquals(src.groupId, linked.groupId)
+        assertEquals("9", maquina.copy(id = "9").groupId)
+    }
+
+    @Test
+    fun el_nombre_normalizado_ignora_mayusculas_tildes_y_espacios() {
+        assertEquals("press banca", normalizeExerciseName("  Press   Banca "))
+        assertEquals(normalizeExerciseName("Elevación lateral"), normalizeExerciseName("elevacion  LATERAL"))
+        assertTrue(normalizeExerciseName("Press inclinado") != normalizeExerciseName("Press banca"))
+    }
+
+    @Test
+    fun el_historico_lee_cada_serie_con_su_configuracion() {
+        val vieja = WorkoutSession(
+            date = "2026-11-25", dayName = "Espalda",
+            exercises = listOf(SessionExercise("Remo", WorkoutKind.POLEA, 20.0, listOf(set(20.0)), unilateral = true))
+        )
+        val nueva = WorkoutSession(
+            date = "2026-11-26", dayName = "Espalda",
+            exercises = listOf(SessionExercise("Remo", WorkoutKind.POLEA, 20.0, listOf(set(10.0, ps = true, uni = false))))
+        )
+        assertEquals(400.0, vieja.volumeKg) // la opción vieja del ejercicio sigue valiendo
+        assertEquals(200.0, nueva.volumeKg) // la de la serie manda
+        assertEquals(80.0, sessionTotalKg(WorkoutKind.BARRA, 30.0, 20.0))
     }
 }

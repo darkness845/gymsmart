@@ -11,7 +11,11 @@ import kotlinx.serialization.Serializable
 data class WorkoutSet(
     val value: Double,
     val reps: Int,
-    val rir: Int? = null
+    val rir: Int? = null,
+    /** A cada lado; null = serie anterior a la opción (se lee según el tipo, en el cliente). */
+    val perSide: Boolean? = null,
+    /** Unilateral; null = serie anterior a la opción. */
+    val unilateral: Boolean? = null
 )
 
 @Serializable
@@ -21,6 +25,16 @@ data class WorkoutExercise(
     val kind: String = "barra",
     val barKg: Double = 20.0,
     val stepKg: Double = 2.5,
+    /** Preferencia de entrada: el usuario teclea el total en vez del peso por lado o por mano. */
+    val entryTotal: Boolean = false,
+    /** Opción por defecto "Unilateral" (para cuando no hay serie anterior). */
+    val unilateral: Boolean = false,
+    /** Opción por defecto "A cada lado"; null = ejercicio antiguo. */
+    val perSide: Boolean? = null,
+    /** Grupo de unión entre días (Tarea 7). Vacío = no unido: su grupo es su propio id. */
+    val linkId: String = "",
+    /** Día en que se hizo la última sesión, para "Última vez · en …". */
+    val lastFrom: String = "",
     val lastSession: List<WorkoutSet> = emptyList()
 )
 
@@ -55,7 +69,9 @@ data class SessionExercise(
     val name: String,
     val kind: String = "barra",
     val barKg: Double = 20.0,
-    val sets: List<WorkoutSet> = emptyList()
+    val sets: List<WorkoutSet> = emptyList(),
+    /** Copia de cómo se hizo aquel día, para que el volumen pasado no cambie si hoy se edita el plan. */
+    val unilateral: Boolean = false
 )
 
 /** Un entrenamiento terminado. [date] en ISO (`2026-11-24`), que es como se consulta y se agrupa. */

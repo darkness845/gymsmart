@@ -20,9 +20,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.gymsmart.gymsmart.model.WorkoutSession
+import com.gymsmart.gymsmart.model.perSideFor
 import com.gymsmart.gymsmart.model.sessionTotalKg
 import com.gymsmart.gymsmart.services.WorkoutService
-import com.gymsmart.gymsmart.ui.theme.GymSmartColors
+import com.gymsmart.gymsmart.ui.theme.MelocotonTheme
+import com.gymsmart.gymsmart.ui.theme.Palette
+import com.gymsmart.gymsmart.ui.theme.SystemBarsAppearance
 import kotlin.time.Clock
 import kotlinx.datetime.*
 
@@ -35,9 +38,25 @@ import kotlinx.datetime.*
  * una vista nueva sobre datos viejos: **los datos empiezan a existir desde que se implementó**. Los
  * entrenamientos anteriores a eso no se pueden recuperar porque nunca llegaron a guardarse.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * ProgressScreen con el estilo Melocotón (Tarea 3). Solo cambia el aspecto: la estructura y la lógica
+ * de la pantalla son las de siempre, en [ProgressScreenContent].
+ */
 @Composable
 fun ProgressScreen(
+    workoutService: WorkoutService,
+    onBack: () -> Unit
+) {
+    MelocotonTheme {
+        // Fondo crema hasta arriba: la hora y la batería tienen que ir en oscuro.
+        SystemBarsAppearance(darkStatusIcons = true)
+        ProgressScreenContent(workoutService, onBack)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ProgressScreenContent(
     workoutService: WorkoutService,
     onBack: () -> Unit
 ) {
@@ -61,20 +80,20 @@ fun ProgressScreen(
     val porDia = remember(sesiones) { sesiones.groupBy { it.date } }
 
     Scaffold(
-        containerColor = GymSmartColors.Background,
+        containerColor = Palette.current.background,
         topBar = {
             TopAppBar(
-                title = { Text("Progreso", color = GymSmartColors.TextPrimary) },
+                title = { Text("Progreso", color = Palette.current.textPrimary) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Volver",
-                            tint = GymSmartColors.TextPrimary
+                            tint = Palette.current.textPrimary
                         )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = GymSmartColors.Background)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Palette.current.background)
             )
         }
     ) { padding ->
@@ -99,11 +118,11 @@ fun ProgressScreen(
 
             when {
                 cargando -> Box(Modifier.fillMaxWidth().padding(32.dp), Alignment.Center) {
-                    CircularProgressIndicator(color = GymSmartColors.Primary)
+                    CircularProgressIndicator(color = Palette.current.accentText)
                 }
                 error != null -> Text(
                     error!!,
-                    color = GymSmartColors.Error,
+                    color = Palette.current.danger,
                     modifier = Modifier.padding(16.dp)
                 )
                 else -> MonthGrid(
@@ -130,7 +149,7 @@ fun ProgressScreen(
                     if (sesiones.isEmpty()) "Ningún entrenamiento registrado este mes."
                     else "Toca un día marcado para ver qué hiciste.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = GymSmartColors.TextSecondary,
+                    color = Palette.current.textSecondary,
                     modifier = Modifier.fillMaxWidth().padding(8.dp),
                     textAlign = TextAlign.Center
                 )
@@ -149,16 +168,16 @@ private fun MonthHeader(mes: LocalDate, onPrev: () -> Unit, onNext: () -> Unit) 
         verticalAlignment = Alignment.CenterVertically
     ) {
         IconButton(onClick = onPrev) {
-            Icon(Icons.Default.KeyboardArrowLeft, "Mes anterior", tint = GymSmartColors.TextPrimary)
+            Icon(Icons.Default.KeyboardArrowLeft, "Mes anterior", tint = Palette.current.textPrimary)
         }
         Text(
             "${nombreMes(mes.monthNumber)} ${mes.year}",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
-            color = GymSmartColors.TextPrimary
+            color = Palette.current.textPrimary
         )
         IconButton(onClick = onNext) {
-            Icon(Icons.Default.KeyboardArrowRight, "Mes siguiente", tint = GymSmartColors.TextPrimary)
+            Icon(Icons.Default.KeyboardArrowRight, "Mes siguiente", tint = Palette.current.textPrimary)
         }
     }
 }
@@ -170,7 +189,7 @@ private fun MonthSummary(sesiones: List<WorkoutSession>) {
     val volumen = sesiones.sumOf { it.volumeKg }
     Surface(
         shape = MaterialTheme.shapes.medium,
-        color = GymSmartColors.SurfaceElevated,
+        color = Palette.current.surfaceSunken,
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
@@ -195,9 +214,9 @@ private fun SummaryItem(valor: String, etiqueta: String) {
             valor,
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
-            color = GymSmartColors.Primary
+            color = Palette.current.accentText
         )
-        Text(etiqueta, style = MaterialTheme.typography.labelSmall, color = GymSmartColors.TextSecondary)
+        Text(etiqueta, style = MaterialTheme.typography.labelSmall, color = Palette.current.textSecondary)
     }
 }
 
@@ -221,7 +240,7 @@ private fun MonthGrid(
                     modifier = Modifier.weight(1f),
                     textAlign = TextAlign.Center,
                     style = MaterialTheme.typography.labelSmall,
-                    color = GymSmartColors.TextSecondary
+                    color = Palette.current.textSecondary
                 )
             }
         }
@@ -266,9 +285,9 @@ private fun DayCell(
             .clip(MaterialTheme.shapes.small)
             .background(
                 when {
-                    elegido -> GymSmartColors.Primary
-                    entrenado -> GymSmartColors.Primary.copy(alpha = 0.18f)
-                    else -> GymSmartColors.SurfaceElevated.copy(alpha = 0.4f)
+                    elegido -> Palette.current.accentText
+                    entrenado -> Palette.current.accentText.copy(alpha = 0.18f)
+                    else -> Palette.current.surfaceSunken.copy(alpha = 0.4f)
                 }
             )
             .clickable(enabled = entrenado, onClick = onClick),
@@ -280,10 +299,10 @@ private fun DayCell(
                 style = MaterialTheme.typography.bodySmall,
                 fontWeight = if (esHoy || entrenado) FontWeight.Bold else FontWeight.Normal,
                 color = when {
-                    elegido -> GymSmartColors.OnPrimary
-                    entrenado -> GymSmartColors.Primary
-                    esHoy -> GymSmartColors.TextPrimary
-                    else -> GymSmartColors.TextSecondary
+                    elegido -> Palette.current.onHero
+                    entrenado -> Palette.current.accentText
+                    esHoy -> Palette.current.textPrimary
+                    else -> Palette.current.textSecondary
                 }
             )
             // Un punto bajo el número: el color de fondo solo ya es ambiguo en pantallas oscuras.
@@ -293,7 +312,7 @@ private fun DayCell(
                     Modifier
                         .size(4.dp)
                         .clip(CircleShape)
-                        .background(if (elegido) GymSmartColors.OnPrimary else GymSmartColors.Primary)
+                        .background(if (elegido) Palette.current.onHero else Palette.current.accentText)
                 )
             }
         }
@@ -304,21 +323,21 @@ private fun DayCell(
 private fun SessionDetail(sesion: WorkoutSession) {
     Surface(
         shape = MaterialTheme.shapes.medium,
-        color = GymSmartColors.SurfaceElevated,
+        color = Palette.current.surfaceSunken,
         modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-        border = BorderStroke(1.dp, GymSmartColors.Outline.copy(alpha = 0.5f))
+        border = BorderStroke(1.dp, Palette.current.border.copy(alpha = 0.5f))
     ) {
         Column(Modifier.padding(16.dp)) {
             Text(
                 sesion.dayName,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color = GymSmartColors.TextPrimary
+                color = Palette.current.textPrimary
             )
             Text(
                 "${sesion.totalSets} series · ${sesion.totalReps} reps · ${sesion.volumeKg.toInt()} kg movidos",
                 style = MaterialTheme.typography.labelSmall,
-                color = GymSmartColors.TextSecondary
+                color = Palette.current.textSecondary
             )
             Spacer(Modifier.height(12.dp))
 
@@ -327,11 +346,11 @@ private fun SessionDetail(sesion: WorkoutSession) {
                     ex.name,
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
-                    color = GymSmartColors.TextPrimary
+                    color = Palette.current.textPrimary
                 )
                 Spacer(Modifier.height(4.dp))
                 ex.sets.forEachIndexed { i, set ->
-                    val total = sessionTotalKg(ex.kind, set.value, ex.barKg)
+                    val total = sessionTotalKg(ex.kind, set.value, ex.barKg, set.perSideFor(ex.kind))
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
                         horizontalArrangement = Arrangement.SpaceBetween
@@ -339,7 +358,7 @@ private fun SessionDetail(sesion: WorkoutSession) {
                         Text(
                             "Serie ${i + 1}",
                             style = MaterialTheme.typography.bodySmall,
-                            color = GymSmartColors.TextSecondary
+                            color = Palette.current.textSecondary
                         )
                         Text(
                             buildString {
@@ -350,7 +369,7 @@ private fun SessionDetail(sesion: WorkoutSession) {
                                 set.rir?.let { append("  RIR $it") }
                             },
                             style = MaterialTheme.typography.bodySmall,
-                            color = GymSmartColors.TextPrimary
+                            color = Palette.current.textPrimary
                         )
                     }
                 }
