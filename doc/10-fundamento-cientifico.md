@@ -890,6 +890,12 @@ Cualquier cambio futuro de estas fórmulas debe mantener la tabla verde.
 - [How many times per week should a muscle be trained? (Schoenfeld & Grgic, 2019)](https://www.semanticscholar.org/paper/How-many-times-per-week-should-a-muscle-be-trained-Schoenfeld-Grgic/5f3b9845fdfd15200bdac0f7b9b36da457c48025)
 - [Dose-response relationship between weekly resistance training volume and increases in muscle mass (Schoenfeld et al., 2017)](https://www.semanticscholar.org/paper/Dose-response-relationship-between-weekly-training-Schoenfeld-Ogborn/0d34206f962394983054451cddd8a3b91818f732)
 
+**Nivel de actividad: pasos y calorías activas (§16)**
+- [Dietary Reference Intakes: Energy — cap. 4, "Factors Affecting Energy Expenditure and Requirements" (National Academies)](https://www.nationalacademies.org/read/26818/chapter/6)
+- [Human energy requirements (FAO/WHO/UNU, 2001)](https://openknowledge.fao.org/server/api/core/bitstreams/65875dc7-f8c5-4a70-b0e1-f429793860ae/content)
+- [A step-defined sedentary lifestyle index (*Appl Physiol Nutr Metab*)](https://cdnsciencepub.com/doi/10.1139/apnm-2012-0235)
+- [How much locomotive activity is needed for an active physical activity level (calorimetría de 24 h)](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3245484/)
+
 **Pulsera / Health Connect**
 - [ActiveCaloriesBurnedRecord — Android Developers](https://developer.android.com/reference/android/health/connect/datatypes/ActiveCaloriesBurnedRecord)
 - [TotalCaloriesBurnedRecord — Android Developers](https://developer.android.com/reference/android/health/connect/datatypes/TotalCaloriesBurnedRecord)
@@ -901,3 +907,102 @@ Cualquier cambio futuro de estas fórmulas debe mantener la tabla verde.
 > de `macrofactor.com` es un resumen divulgativo de una revisión científica, usada porque no se pudo
 > acceder al original — **marcada como secundaria**. El preprint de bioRxiv **no ha pasado revisión por
 > pares**.
+
+---
+
+## 16. Nivel de actividad: pasos y calorías activas ✅🟡
+
+Elegir entre "ligero" y "moderado" a ojo es **la mayor fuente de error de todo el cálculo**: entre dos
+escalones contiguos hay 250-350 kcal/día, y las descripciones clásicas ("1-3 días de ejercicio por
+semana") no dicen nada de lo que uno hace las otras 23 horas. Esta sección recoge las dos referencias
+comprobables que la app pone debajo de cada nivel para que la elección deje de ser una corazonada.
+
+Implementado en `shared/.../nutrition/ActivityBenchmarks.kt` y verificado en
+`ActivityBenchmarksTest.kt`.
+
+### 16.1 Pasos diarios ✅🟡
+
+Rangos de la clasificación por podómetro de **Tudor-Locke y Bassett, "How many steps/day are enough?
+Preliminary pedometer indices for public health", *Sports Medicine* 2004; 34(1):1-8**, que es la
+referencia estándar en salud pública.
+
+| Nivel en la app | Pasos/día | Banda original |
+|---|---|---|
+| Sedentario | < 5.000 | *sedentary* |
+| Ligero | 5.000–7.499 | *low active* |
+| Moderado | 7.500–9.999 | *somewhat active* |
+| Activo | 10.000–12.499 | *active* |
+| Muy activo | > 12.500 | *highly active* |
+
+**Dos advertencias de honestidad:**
+
+1. 🟡 El texto original **no se pudo leer directamente** (PDF y PubMed tras verificación anti-robot).
+   Los cortes vienen de varias fuentes secundarias independientes que coinciden entre sí. Las bandas
+   bajas son unánimes; en la frontera superior hay literatura posterior (la revisión de 2008) que
+   mueve el último corte a 12.000.
+2. 🟡 **La correspondencia entre estas bandas y los multiplicadores 1,2 / 1,375 / 1,55 / 1,725 / 1,9
+   es nuestra, no está publicada.** Son dos escalas ordinales de cinco niveles del mismo concepto y
+   alinearlas es razonable, pero ningún trabajo dice que "7.500-9.999 pasos" equivalga a 1,55.
+
+Por eso esto se presenta como **orientación para elegir**, nunca como el dato del que sale el gasto.
+
+### 16.2 Calorías activas equivalentes ✅
+
+Mucha gente no mira sus pasos: mira las **calorías activas** del final del día. Ese número además
+recoge lo que no deja pasos (fuerza, bici), así que para elegir nivel sirve incluso mejor.
+
+**No hay tabla fija y no puede haberla**: las calorías dependen del peso, la altura, la edad y el
+sexo. "Moderado = 500 kcal" sería una cifra inventada. Se derivan del BMR real de la persona.
+
+#### El ajuste que hace que la cifra sea comparable con la pulsera
+
+Esta es la parte que no es una resta trivial, y la razón de que esto esté documentado aquí:
+
+- El **PAL** se define como `gasto total ÷ BMR` (National Academies, *Dietary Reference Intakes*,
+  cap. 4), y el gasto total incluye el **efecto térmico de los alimentos** (TEF), en torno al **10 %
+  del total**. Por tanto `BMR × (PAL − 1)` **no son calorías de movimiento**: son movimiento más
+  digestión.
+- Health Connect entrega `ActiveCaloriesBurnedRecord`, que es **solo actividad**: ni basal ni
+  digestión. Es lo que `NutritionMath.tdee` suma al BMR en modo pulsera.
+
+Poner las dos cifras lado a lado sin descontar el TEF le diría al usuario que su pulsera marca
+sistemáticamente un ~10 % menos que el nivel que eligió, y la conclusión natural sería bajar de nivel
+y comer de menos. **Es la misma familia de fallo que ya llegó al usuario** (objetivo de ganar peso,
+déficit encubierto de 400-500 kcal/día; ver `07-registro-sesiones.md`). Así que se descuenta:
+
+```
+activas = gasto − BMR − TEF
+        = BMR × PAL − BMR − 0,10 × BMR × PAL
+        = BMR × (PAL × 0,90 − 1)
+```
+
+Resultado para un BMR de 1.800 kcal:
+
+| Nivel | PAL | Activas (escala pulsera) |
+|---|---|---|
+| Sedentario | 1,200 | ~145 kcal/día |
+| Ligero | 1,375 | ~430 kcal/día |
+| Moderado | 1,550 | ~710 kcal/día |
+| Activo | 1,725 | ~995 kcal/día |
+| Muy activo | 1,900 | ~1.280 kcal/día |
+
+Se muestran **redondeadas a la decena** y con un `~` delante: escribir "711 kcal" afirmaría tres
+cifras significativas sobre una estimación cuyo eslabón más débil tiene 250-350 kcal de margen.
+
+#### Comprobación cruzada por un camino independiente
+
+Andar cuesta del orden de **0,75 kcal/kg/km brutos**; con un paso de ~0,72 m eso son ~0,04 kcal por
+paso para 75-80 kg. Los ~4.000 pasos típicos de un sedentario dan **~170 kcal**, frente a las ~145
+que devuelve la fórmula. Los dos caminos, que no comparten ni una constante, coinciden en orden de
+magnitud. Hay un test que lo fija (`el_orden_de_magnitud_coincide_con_el_coste_de_andar`).
+
+#### 🟡 Limitación conocida
+
+Las fuentes **no son unánimes** sobre si el TEF está dentro del PAL: la definición académica
+(TEE/BMR, National Academies) dice que sí; varias calculadoras comerciales dicen que no. Se sigue la
+académica, que es la que define el término. Si esa decisión se revisara, el único sitio que hay que
+tocar es `ActivityBenchmarks.TEF_FRACTION`.
+
+Y todo esto hereda la incertidumbre del multiplicador, que `NutritionMath.activityMultiplier`
+documenta como *"el eslabón más débil del cálculo"*. **Es orientación para elegir nivel, no una
+medida.**
