@@ -8,6 +8,8 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -40,6 +42,8 @@ import kotlin.math.roundToInt
  *   duro, que es el comportamiento anterior: se usa en pasos del onboarding donde todavía no hay gasto.
  * @param energyFloor suelo por disponibilidad energética, que puede morder antes que el tope del 25%.
  * @param onRateChange recibe el ritmo nuevo, ya con el signo que corresponde al objetivo.
+ * @param colors colores del deslizador. Por defecto los del tema oscuro antiguo, que es el que sigue
+ *   usando el onboarding; el perfil, ya migrado al estilo Melocotón, pasa los suyos.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -49,7 +53,8 @@ fun RateSlider(
     ratePct: Double,
     onRateChange: (Double) -> Unit,
     tdee: Double? = null,
-    energyFloor: Double = 0.0
+    energyFloor: Double = 0.0,
+    colors: RateSliderColors = RateSliderColors.Legacy
 ) {
     val hardMax = NutritionMath.maxRateFor(goal) ?: return
     val band    = NutritionMath.recommendedBandFor(goal) ?: return
@@ -74,7 +79,7 @@ fun RateSlider(
         Text(
             "Con tu gasto actual no queda margen para un ajuste seguro en este objetivo. " +
                 "Para avanzar, lo que toca es aumentar el gasto, no comer menos.",
-            color = GymSmartColors.Warning,
+            color = colors.warning,
             style = MaterialTheme.typography.bodySmall
         )
         return
@@ -95,8 +100,8 @@ fun RateSlider(
             valueRange = minPct.toFloat()..maxPct.toFloat(),
             steps = steps,
             colors = SliderDefaults.colors(
-                thumbColor = GymSmartColors.Primary,
-                activeTrackColor = GymSmartColors.Primary
+                thumbColor = colors.thumb,
+                activeTrackColor = colors.thumb
             ),
             track = { state ->
                 val fraction = { v: Double -> ((v - minPct) / (maxPct - minPct)).toFloat() }
@@ -105,20 +110,20 @@ fun RateSlider(
                     val stroke = 6.dp.toPx()
                     // Toda la barra en gris: la parte lenta es válida, solo no destacada.
                     drawLine(
-                        color = GymSmartColors.Outline,
+                        color = colors.track,
                         start = Offset(0f, y), end = Offset(size.width, y),
                         strokeWidth = stroke, cap = StrokeCap.Round
                     )
                     // Banda recomendada en verde.
                     drawLine(
-                        color = GymSmartColors.Success,
+                        color = colors.band,
                         start = Offset(fraction(band.start) * size.width, y),
                         end   = Offset(fraction(band.endInclusive) * size.width, y),
                         strokeWidth = stroke, cap = StrokeCap.Round
                     )
                     // Posición actual.
                     drawCircle(
-                        color = GymSmartColors.Primary,
+                        color = colors.thumb,
                         radius = stroke,
                         center = Offset(fraction(magnitude) * size.width, y)
                     )
@@ -134,12 +139,12 @@ fun RateSlider(
             Text(
                 info.kgLabel,
                 fontWeight = FontWeight.Bold,
-                color = GymSmartColors.TextPrimary,
+                color = colors.text,
                 style = MaterialTheme.typography.bodyMedium
             )
             Text(
                 "${info.kcalLabel} · ${info.pctLabel}",
-                color = GymSmartColors.TextSecondary,
+                color = colors.textSecondary,
                 style = MaterialTheme.typography.labelSmall
             )
         }
@@ -147,9 +152,37 @@ fun RateSlider(
         if (info.isRecommended) {
             Text(
                 "✓ Zona recomendada para conservar músculo",
-                color = GymSmartColors.Success,
+                color = colors.ok,
                 style = MaterialTheme.typography.labelSmall
             )
         }
+    }
+}
+
+/**
+ * Colores de [RateSlider]. [band] es la zona recomendada para conservar músculo, y tiene que seguir
+ * leyéndose como "zona buena" en cualquier paleta: por eso es verde en las dos.
+ */
+@Immutable
+data class RateSliderColors(
+    val track: Color,
+    val band: Color,
+    val thumb: Color,
+    val text: Color,
+    val textSecondary: Color,
+    val ok: Color,
+    val warning: Color
+) {
+    companion object {
+        /** El tema oscuro antiguo. Lo usa el onboarding hasta que se migre. */
+        val Legacy = RateSliderColors(
+            track = GymSmartColors.Outline,
+            band = GymSmartColors.Success,
+            thumb = GymSmartColors.Primary,
+            text = GymSmartColors.TextPrimary,
+            textSecondary = GymSmartColors.TextSecondary,
+            ok = GymSmartColors.Success,
+            warning = GymSmartColors.Warning
+        )
     }
 }

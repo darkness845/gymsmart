@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -55,11 +56,12 @@ sealed class Screen(val route: String) {
 data class RouteDetailArgs(val routeId: String)
 
 @Composable
-private fun StartupScreen(showError: Boolean, onRetry: () -> Unit) {
+private fun StartupScreen(showError: Boolean, onRetry: () -> Unit) = com.gymsmart.gymsmart.ui.theme.MelocotonTheme {
+    com.gymsmart.gymsmart.ui.theme.SystemBarsAppearance(darkStatusIcons = true)
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(com.gymsmart.gymsmart.ui.theme.GymSmartColors.Background),
+            .background(com.gymsmart.gymsmart.ui.theme.Palette.current.background),
         contentAlignment = Alignment.Center
     ) {
         if (showError) {
@@ -69,14 +71,20 @@ private fun StartupScreen(showError: Boolean, onRetry: () -> Unit) {
             ) {
                 Text(
                     "No se pudo conectar con el servidor",
-                    color = com.gymsmart.gymsmart.ui.theme.GymSmartColors.TextPrimary
+                    color = com.gymsmart.gymsmart.ui.theme.Palette.current.textPrimary
                 )
-                Button(onClick = onRetry) {
+                Button(
+                    onClick = onRetry,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = com.gymsmart.gymsmart.ui.theme.Palette.current.hero,
+                        contentColor = com.gymsmart.gymsmart.ui.theme.Palette.current.onHero
+                    )
+                ) {
                     Text("Reintentar")
                 }
             }
         } else {
-            CircularProgressIndicator(color = com.gymsmart.gymsmart.ui.theme.GymSmartColors.Primary)
+            CircularProgressIndicator(color = com.gymsmart.gymsmart.ui.theme.Palette.current.accentText)
         }
     }
 }

@@ -1,11 +1,10 @@
 package com.gymsmart.gymsmart
 
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import com.gymsmart.gymsmart.navigation.NavGraph
 import com.gymsmart.gymsmart.services.HealthDataProvider
 import com.gymsmart.gymsmart.services.LocationProvider
-import com.gymsmart.gymsmart.ui.theme.GymSmartTheme
+import com.gymsmart.gymsmart.ui.theme.MelocotonTheme
 
 @Composable
 fun App(
@@ -14,7 +13,9 @@ fun App(
     onRequestLocationPermission: (callback: (Boolean) -> Unit) -> Unit,
     onRequestCameraPermission: (callback: (Boolean) -> Unit) -> Unit = {}
 ) {
-    GymSmartTheme {
+    // Todas las pantallas en uso van en Melocotón: la raíz también, para que entre pantalla y pantalla
+    // no asome el fondo oscuro del tema antiguo.
+    MelocotonTheme {
         NavGraph(
             locationProvider = locationProvider,
             healthDataProvider = healthDataProvider,
