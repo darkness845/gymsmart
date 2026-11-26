@@ -18,10 +18,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.gymsmart.gymsmart.model.ProfileRequest
 import com.gymsmart.gymsmart.services.ProfileService
-import com.gymsmart.gymsmart.ui.theme.GymSmartColors
+import com.gymsmart.gymsmart.ui.theme.MelocotonTheme
+import com.gymsmart.gymsmart.ui.theme.Palette
+import com.gymsmart.gymsmart.ui.theme.SystemBarsAppearance
 import com.gymsmart.gymsmart.validation.validateAge
 import com.gymsmart.gymsmart.validation.validateGoalRate
 import com.gymsmart.gymsmart.components.RateSlider
+import com.gymsmart.gymsmart.components.RateSliderColors
 import com.gymsmart.gymsmart.nutrition.ActivityBenchmarks
 import com.gymsmart.gymsmart.nutrition.NutritionMath
 import com.gymsmart.gymsmart.validation.parseDecimal
@@ -42,9 +45,25 @@ private data class FormState(
 
 private enum class Step { BODY, WEARABLE, ACTIVITY, GOAL, SUMMARY }
 
-@OptIn(ExperimentalAnimationApi::class, ExperimentalMaterial3Api::class)
+/**
+ * OnboardingScreen con el estilo Melocotón (Tarea 3). Solo cambia el aspecto: la estructura y la lógica
+ * de la pantalla son las de siempre, en [OnboardingScreenContent].
+ */
 @Composable
 fun OnboardingScreen(
+    profileService: ProfileService,
+    onComplete: () -> Unit
+) {
+    MelocotonTheme {
+        // Fondo crema hasta arriba: la hora y la batería tienen que ir en oscuro.
+        SystemBarsAppearance(darkStatusIcons = true)
+        OnboardingScreenContent(profileService, onComplete)
+    }
+}
+
+@OptIn(ExperimentalAnimationApi::class, ExperimentalMaterial3Api::class)
+@Composable
+private fun OnboardingScreenContent(
     profileService: ProfileService,
     onComplete: () -> Unit
 ) {
@@ -70,24 +89,24 @@ fun OnboardingScreen(
                             Text(
                                 "Tu perfil",
                                 style = MaterialTheme.typography.headlineLarge,
-                                color = GymSmartColors.TextPrimary,
+                                color = Palette.current.textPrimary,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
                                 "Calculamos tus calorías y macros exactos",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = GymSmartColors.TextSecondary,
+                                color = Palette.current.textSecondary,
                                 textAlign = TextAlign.Center
                             )
                         }
                     },
                     colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                        containerColor = GymSmartColors.Background
+                        containerColor = Palette.current.background
                     )
                 )
             }
         },
-        containerColor = GymSmartColors.Background
+        containerColor = Palette.current.background
     ) { padding ->
         Column(
             modifier = Modifier
@@ -111,7 +130,7 @@ fun OnboardingScreen(
                     Step.SUMMARY  -> "Resumen"
                 },
                 style = MaterialTheme.typography.labelMedium,
-                color = GymSmartColors.Primary,
+                color = Palette.current.accentText,
                 fontWeight = FontWeight.SemiBold
             )
 
@@ -135,7 +154,7 @@ fun OnboardingScreen(
 
             errorMsg?.let {
                 Spacer(Modifier.height(12.dp))
-                Text(it, color = GymSmartColors.Error, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
+                Text(it, color = Palette.current.danger, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
             }
 
             Spacer(Modifier.height(28.dp))
@@ -146,8 +165,8 @@ fun OnboardingScreen(
                         onClick = { step = visibleSteps[stepIndex - 1]; errorMsg = null },
                         modifier = Modifier.weight(1f).height(52.dp),
                         shape = MaterialTheme.shapes.small,
-                        border = BorderStroke(1.5.dp, GymSmartColors.Outline),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = GymSmartColors.TextSecondary)
+                        border = BorderStroke(1.5.dp, Palette.current.border),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Palette.current.textSecondary)
                     ) { Text("← Atrás", style = MaterialTheme.typography.labelLarge) }
                 }
 
@@ -182,14 +201,14 @@ fun OnboardingScreen(
                     modifier = Modifier.weight(1f).height(52.dp),
                     shape = MaterialTheme.shapes.small,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor         = GymSmartColors.Primary,
-                        disabledContainerColor = GymSmartColors.Outline,
-                        contentColor           = GymSmartColors.OnPrimary,
-                        disabledContentColor   = GymSmartColors.TextDisabled
+                        containerColor         = Palette.current.hero,
+                        disabledContainerColor = Palette.current.border,
+                        contentColor           = Palette.current.onHero,
+                        disabledContentColor   = Palette.current.chevron
                     )
                 ) {
                     if (isLoading) {
-                        CircularProgressIndicator(modifier = Modifier.size(20.dp), color = GymSmartColors.OnPrimary, strokeWidth = 2.dp)
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Palette.current.onHero, strokeWidth = 2.dp)
                     } else {
                         Text(
                             if (step == Step.SUMMARY) "¡Empezar! 🚀" else "Siguiente →",
@@ -214,14 +233,14 @@ private fun StepIndicator(stepIndex: Int, total: Int) {
                 modifier = Modifier
                     .size(if (i == stepIndex) 12.dp else 8.dp)
                     .clip(CircleShape)
-                    .background(if (i <= stepIndex) GymSmartColors.Primary else GymSmartColors.Outline)
+                    .background(if (i <= stepIndex) Palette.current.accentText else Palette.current.border)
             )
             if (i < total - 1) {
                 Box(
                     modifier = Modifier
                         .width(28.dp)
                         .height(2.dp)
-                        .background(if (i < stepIndex) GymSmartColors.Primary else GymSmartColors.Outline)
+                        .background(if (i < stepIndex) Palette.current.accentText else Palette.current.border)
                 )
             }
         }
@@ -244,7 +263,7 @@ private fun StepBody(form: FormState, onChange: (FormState) -> Unit) {
         OnboardingCard {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 CardTitle("Sexo biológico")
-                Text("Se usa para calcular tu metabolismo basal con precisión.", style = MaterialTheme.typography.bodySmall, color = GymSmartColors.TextSecondary)
+                Text("Se usa para calcular tu metabolismo basal con precisión.", style = MaterialTheme.typography.bodySmall, color = Palette.current.textSecondary)
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     SexChip("Hombre", "♂", form.sex == "male", Modifier.weight(1f)) { onChange(form.copy(sex = "male")) }
                     SexChip("Mujer",  "♀", form.sex == "female", Modifier.weight(1f)) { onChange(form.copy(sex = "female")) }
@@ -264,7 +283,7 @@ private fun StepWearable(form: FormState, onChange: (FormState) -> Unit) {
             CardTitle("¿Tienes pulsera o app fitness?")
             Text(
                 "Si tienes un dispositivo como Garmin, Apple Watch, Fitbit o una app como Google Fit que registra tus calorías quemadas, podemos usar esos datos para un objetivo más preciso cada día.",
-                style = MaterialTheme.typography.bodySmall, color = GymSmartColors.TextSecondary, lineHeight = 18.sp
+                style = MaterialTheme.typography.bodySmall, color = Palette.current.textSecondary, lineHeight = 18.sp
             )
             Spacer(Modifier.height(4.dp))
             SelectableRow("⌚", "Sí, tengo pulsera o app\nUsaré sus datos de calorías quemadas", form.hasWearable == true) {
@@ -283,8 +302,19 @@ private fun StepActivity(form: FormState, onChange: (FormState) -> Unit) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             CardTitle("¿Cuánto te mueves?")
             Text("Determina tu gasto total diario (TDEE = BMR × factor de actividad).",
-                style = MaterialTheme.typography.bodySmall, color = GymSmartColors.TextSecondary,
+                style = MaterialTheme.typography.bodySmall, color = Palette.current.textSecondary,
                 modifier = Modifier.padding(bottom = 4.dp))
+            // En este punto del onboarding los datos corporales ya están rellenos (el paso BODY va
+            // antes y no deja avanzar sin ellos), así que el BMR se puede calcular y cada nivel
+            // puede enseñar sus calorías. Si aun así faltara algo, `hintFor` se queda en los pasos.
+            val bmrFormulario = run {
+                val peso = parseDecimal(form.weightKg)
+                val altura = parseDecimal(form.heightCm)
+                val edad = form.age.toIntOrNull()
+                if (peso != null && altura != null && edad != null && form.sex.isNotBlank())
+                    NutritionMath.bmr(form.sex, peso, altura, edad)
+                else null
+            }
             listOf(
                 Triple("sedentary",   "🪑", "Sedentario\nSin ejercicio, trabajo de escritorio"),
                 Triple("light",       "🚶", "Ligero\n1–3 días de ejercicio por semana"),
@@ -292,11 +322,12 @@ private fun StepActivity(form: FormState, onChange: (FormState) -> Unit) {
                 Triple("active",      "🏋️", "Activo\n6–7 días de ejercicio intenso"),
                 Triple("very_active", "⚡", "Muy activo\nAtleta o trabajo físico intenso")
             ).forEach { (value, emoji, desc) ->
-                // Bajo cada nivel, los pasos diarios que le corresponden (Tudor-Locke 2004, ver
-                // ActivityBenchmarks): elegir entre "ligero" y "moderado" a ojo es la mayor fuente de
-                // error del calculo, y un numero de pasos si se puede comprobar con el movil.
-                val pasos = ActivityBenchmarks.stepsFor(value)
-                val texto = if (pasos == null) desc else desc + "\n≈ " + pasos
+                // Bajo cada nivel, los pasos diarios que le corresponden (Tudor-Locke 2004) y las
+                // calorías activas equivalentes para su BMR (ver ActivityBenchmarks): elegir entre
+                // "ligero" y "moderado" a ojo es la mayor fuente de error del cálculo, y tanto los
+                // pasos como las kcal de la pulsera sí se pueden comprobar.
+                val baremo = ActivityBenchmarks.hintFor(value, bmrFormulario)
+                val texto = if (baremo == null) desc else desc + "\n≈ " + baremo
                 SelectableRow(emoji, texto, form.activityLevel == value) { onChange(form.copy(activityLevel = value)) }
             }
         }
@@ -337,7 +368,7 @@ private fun StepGoal(form: FormState, onChange: (FormState) -> Unit) {
                             NutritionMath.GOAL_LOSE -> "Cuanto más lento, más músculo conservas."
                             else                    -> "Cuanto más lento, menos grasa acumulas."
                         },
-                        style = MaterialTheme.typography.bodySmall, color = GymSmartColors.TextSecondary,
+                        style = MaterialTheme.typography.bodySmall, color = Palette.current.textSecondary,
                         modifier = Modifier.padding(bottom = 4.dp)
                     )
                     // El deslizador necesita el gasto para que su extremo sea el tope **efectivo** y no
@@ -363,7 +394,17 @@ private fun StepGoal(form: FormState, onChange: (FormState) -> Unit) {
                         ratePct = form.goalRate,
                         onRateChange = { onChange(form.copy(goalRate = it)) },
                         tdee = gasto,
-                        energyFloor = suelo
+                        energyFloor = suelo,
+                        // Mismos colores que en el perfil, para que el deslizador sea el mismo en los dos.
+                        colors = RateSliderColors(
+                            track = Palette.current.track,
+                            band = Palette.current.success.copy(alpha = 0.55f),
+                            thumb = Palette.current.hero,
+                            text = Palette.current.textPrimary,
+                            textSecondary = Palette.current.textSecondary,
+                            ok = Palette.current.success,
+                            warning = Palette.current.accentText
+                        )
                     )
                 }
             }
@@ -416,11 +457,11 @@ private fun StepSummary(form: FormState) {
                     )
                     KcalBox("Objetivo", "$target", "${band.first}-${band.last} kcal/día", Modifier.weight(1f), highlight = true)
                 }
-                HorizontalDivider(color = GymSmartColors.Divider)
+                HorizontalDivider(color = Palette.current.divider)
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    MacroBox("Proteína", "${proteinG}g", GymSmartColors.MacroProtein, Modifier.weight(1f))
-                    MacroBox("Carbos",   "${carbsG}g",   GymSmartColors.MacroCarbs,   Modifier.weight(1f))
-                    MacroBox("Grasas",   "${fatG}g",     GymSmartColors.MacroFat,     Modifier.weight(1f))
+                    MacroBox("Proteína", "${proteinG}g", Palette.current.macroProtein, Modifier.weight(1f))
+                    MacroBox("Carbos",   "${carbsG}g",   Palette.current.macroCarbs,   Modifier.weight(1f))
+                    MacroBox("Grasas",   "${fatG}g",     Palette.current.macroFat,     Modifier.weight(1f))
                 }
             }
         }
@@ -431,7 +472,7 @@ private fun StepSummary(form: FormState) {
                     CardTitle("⌚ Modo pulsera activo")
                     Text(
                         "Tu objetivo base es tu BMR. Las calorías que quemes con tu pulsera se suman automáticamente cada día en la rueda de nutrición, haciendo tu objetivo dinámico y más preciso.",
-                        style = MaterialTheme.typography.bodySmall, color = GymSmartColors.TextSecondary, lineHeight = 18.sp
+                        style = MaterialTheme.typography.bodySmall, color = Palette.current.textSecondary, lineHeight = 18.sp
                     )
                 }
             }
@@ -457,7 +498,7 @@ private fun StepSummary(form: FormState) {
                             // El suelo del BMR se retiró en §7.3; prometerlo era falso (AUD-2).
                             "• Ajuste máximo: 25% de tu gasto\n" +
                             "• Suelo según tu masa magra estimada",
-                    style = MaterialTheme.typography.bodySmall, color = GymSmartColors.TextSecondary, lineHeight = 18.sp
+                    style = MaterialTheme.typography.bodySmall, color = Palette.current.textSecondary, lineHeight = 18.sp
                 )
             }
         }
@@ -471,7 +512,7 @@ private fun OnboardingCard(content: @Composable ColumnScope.() -> Unit) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
-        color = GymSmartColors.SurfaceCard,
+        color = Palette.current.surface,
         tonalElevation = 0.dp
     ) {
         Column(modifier = Modifier.padding(16.dp), content = content)
@@ -480,7 +521,7 @@ private fun OnboardingCard(content: @Composable ColumnScope.() -> Unit) {
 
 @Composable
 private fun CardTitle(text: String) {
-    Text(text, style = MaterialTheme.typography.titleMedium, color = GymSmartColors.TextPrimary)
+    Text(text, style = MaterialTheme.typography.titleMedium, color = Palette.current.textPrimary)
 }
 
 @Composable
@@ -491,21 +532,21 @@ private fun NumericField(
     OutlinedTextField(
         value = value, onValueChange = onValueChange,
         label = { Text(label) },
-        placeholder = { Text(placeholder, color = GymSmartColors.TextDisabled) },
+        placeholder = { Text(placeholder, color = Palette.current.chevron) },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
         singleLine = true,
         modifier = modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.small,
         colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor      = GymSmartColors.Primary,
-            unfocusedBorderColor    = GymSmartColors.Outline,
-            focusedLabelColor       = GymSmartColors.Primary,
-            unfocusedLabelColor     = GymSmartColors.TextSecondary,
-            focusedTextColor        = GymSmartColors.TextPrimary,
-            unfocusedTextColor      = GymSmartColors.TextPrimary,
-            cursorColor             = GymSmartColors.Primary,
-            focusedContainerColor   = GymSmartColors.SurfaceElevated,
-            unfocusedContainerColor = GymSmartColors.SurfaceElevated,
+            focusedBorderColor      = Palette.current.accentText,
+            unfocusedBorderColor    = Palette.current.border,
+            focusedLabelColor       = Palette.current.accentText,
+            unfocusedLabelColor     = Palette.current.textSecondary,
+            focusedTextColor        = Palette.current.textPrimary,
+            unfocusedTextColor      = Palette.current.textPrimary,
+            cursorColor             = Palette.current.accentText,
+            focusedContainerColor   = Palette.current.surfaceSunken,
+            unfocusedContainerColor = Palette.current.surfaceSunken,
         )
     )
 }
@@ -518,10 +559,10 @@ private fun SexChip(
     Box(
         modifier = modifier
             .clip(MaterialTheme.shapes.small)
-            .background(if (selected) GymSmartColors.SurfaceElevated else GymSmartColors.SurfaceCard)
+            .background(if (selected) Palette.current.surfaceSunken else Palette.current.surface)
             .border(
                 if (selected) 2.dp else 1.dp,
-                if (selected) GymSmartColors.Primary else GymSmartColors.Outline,
+                if (selected) Palette.current.accentText else Palette.current.border,
                 MaterialTheme.shapes.small
             )
             .clickable(onClick = onClick)
@@ -535,7 +576,7 @@ private fun SexChip(
                 label,
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                color = if (selected) GymSmartColors.TextPrimary else GymSmartColors.TextSecondary
+                color = if (selected) Palette.current.textPrimary else Palette.current.textSecondary
             )
         }
     }
@@ -547,10 +588,10 @@ private fun SelectableRow(emoji: String, label: String, selected: Boolean, onCli
         modifier = Modifier
             .fillMaxWidth()
             .clip(MaterialTheme.shapes.small)
-            .background(if (selected) GymSmartColors.SurfaceElevated else GymSmartColors.SurfaceCard)
+            .background(if (selected) Palette.current.surfaceSunken else Palette.current.surface)
             .border(
                 if (selected) 2.dp else 1.dp,
-                if (selected) GymSmartColors.Primary else GymSmartColors.Outline,
+                if (selected) Palette.current.accentText else Palette.current.border,
                 MaterialTheme.shapes.small
             )
             .clickable(onClick = onClick)
@@ -564,16 +605,26 @@ private fun SelectableRow(emoji: String, label: String, selected: Boolean, onCli
                 parts[0],
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold,
-                color = if (selected) GymSmartColors.TextPrimary else GymSmartColors.TextSecondary
+                color = if (selected) Palette.current.textPrimary else Palette.current.textSecondary
             )
-            if (parts.size > 1) Text(parts[1], style = MaterialTheme.typography.bodySmall, color = GymSmartColors.TextSecondary)
+            // Se pintan TODAS las líneas que vengan, no solo la segunda. Antes esto cortaba en
+            // parts[1] y descartaba el resto sin avisar, así que el baremo de pasos que se añadía
+            // como tercera línea no llegaba a verse nunca.
+            parts.drop(1).forEachIndexed { i, linea ->
+                Text(
+                    linea,
+                    style = if (i == 0) MaterialTheme.typography.bodySmall
+                            else MaterialTheme.typography.labelSmall,
+                    color = Palette.current.textSecondary
+                )
+            }
         }
         if (selected) {
             Box(
-                modifier = Modifier.size(20.dp).clip(CircleShape).background(GymSmartColors.Primary),
+                modifier = Modifier.size(20.dp).clip(CircleShape).background(Palette.current.accentText),
                 contentAlignment = Alignment.Center
             ) {
-                Text("✓", fontSize = 11.sp, color = GymSmartColors.OnPrimary, fontWeight = FontWeight.Bold)
+                Text("✓", fontSize = 11.sp, color = Palette.current.onHero, fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -583,16 +634,16 @@ private fun SelectableRow(emoji: String, label: String, selected: Boolean, onCli
 private fun BmiCard(bmi: Double) {
     val rounded = (kotlin.math.round(bmi * 10.0)) / 10.0
     val (category, color) = when {
-        bmi < 18.5 -> "Bajo peso"    to GymSmartColors.MacroCarbs
-        bmi < 25.0 -> "Normopeso"    to GymSmartColors.Success
-        bmi < 30.0 -> "Sobrepeso"    to GymSmartColors.Warning
-        bmi < 35.0 -> "Obesidad I"   to GymSmartColors.Error
-        else       -> "Obesidad II+" to GymSmartColors.Error
+        bmi < 18.5 -> "Bajo peso"    to Palette.current.macroCarbs
+        bmi < 25.0 -> "Normopeso"    to Palette.current.success
+        bmi < 30.0 -> "Sobrepeso"    to Palette.current.accentText
+        bmi < 35.0 -> "Obesidad I"   to Palette.current.danger
+        else       -> "Obesidad II+" to Palette.current.danger
     }
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
-        color = GymSmartColors.SurfaceCard
+        color = Palette.current.surface
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
@@ -604,9 +655,9 @@ private fun BmiCard(bmi: Double) {
             ) { Text("⚖️", fontSize = 20.sp) }
             Spacer(Modifier.width(14.dp))
             Column {
-                Text("Índice de Masa Corporal", style = MaterialTheme.typography.bodySmall, color = GymSmartColors.TextSecondary)
+                Text("Índice de Masa Corporal", style = MaterialTheme.typography.bodySmall, color = Palette.current.textSecondary)
                 Row(verticalAlignment = Alignment.Bottom) {
-                    Text("$rounded", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = GymSmartColors.TextPrimary)
+                    Text("$rounded", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = Palette.current.textPrimary)
                     Spacer(Modifier.width(6.dp))
                     Text(category, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = color, modifier = Modifier.padding(bottom = 3.dp))
                 }
@@ -620,16 +671,16 @@ private fun KcalBox(label: String, value: String, sub: String, modifier: Modifie
     Box(
         modifier = modifier
             .clip(MaterialTheme.shapes.small)
-            .background(if (highlight) GymSmartColors.SurfaceElevated else GymSmartColors.SurfaceCard)
-            .then(if (highlight) Modifier.border(2.dp, GymSmartColors.Primary, MaterialTheme.shapes.small) else Modifier)
+            .background(if (highlight) Palette.current.surfaceSunken else Palette.current.surface)
+            .then(if (highlight) Modifier.border(2.dp, Palette.current.accentText, MaterialTheme.shapes.small) else Modifier)
             .padding(vertical = 12.dp),
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(label, style = MaterialTheme.typography.labelSmall, color = GymSmartColors.TextSecondary)
+            Text(label, style = MaterialTheme.typography.labelSmall, color = Palette.current.textSecondary)
             Text(value, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold,
-                color = if (highlight) GymSmartColors.Primary else GymSmartColors.TextPrimary)
-            Text(sub, style = MaterialTheme.typography.labelSmall, color = GymSmartColors.TextSecondary)
+                color = if (highlight) Palette.current.accentText else Palette.current.textPrimary)
+            Text(sub, style = MaterialTheme.typography.labelSmall, color = Palette.current.textSecondary)
         }
     }
 }
@@ -645,7 +696,7 @@ private fun MacroBox(label: String, value: String, color: androidx.compose.ui.gr
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = color)
-            Text(label, style = MaterialTheme.typography.labelSmall, color = GymSmartColors.TextSecondary)
+            Text(label, style = MaterialTheme.typography.labelSmall, color = Palette.current.textSecondary)
         }
     }
 }

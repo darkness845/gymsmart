@@ -36,7 +36,9 @@ import com.gymsmart.gymsmart.services.SubscriptionService
 import com.gymsmart.gymsmart.services.WeightService
 import com.gymsmart.gymsmart.services.byteArrayToImageBitmap
 import com.gymsmart.gymsmart.services.rememberImagePicker
-import com.gymsmart.gymsmart.ui.theme.GymSmartColors
+import com.gymsmart.gymsmart.ui.theme.MelocotonTheme
+import com.gymsmart.gymsmart.ui.theme.Palette
+import com.gymsmart.gymsmart.ui.theme.SystemBarsAppearance
 import com.gymsmart.gymsmart.validation.parseDecimal
 import com.gymsmart.gymsmart.validation.validateWeightKg
 import kotlinx.coroutines.launch
@@ -45,9 +47,25 @@ import kotlinx.datetime.toLocalDateTime
 import kotlin.math.max
 import kotlin.time.Clock
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * WeightScreen con el estilo Melocotón (Tarea 3). Solo cambia el aspecto: la estructura y la lógica
+ * de la pantalla son las de siempre, en [WeightScreenContent].
+ */
 @Composable
 fun WeightScreen(
+    navController: NavHostController,
+    authService: AuthService
+) {
+    MelocotonTheme {
+        // Fondo crema hasta arriba: la hora y la batería tienen que ir en oscuro.
+        SystemBarsAppearance(darkStatusIcons = true)
+        WeightScreenContent(navController, authService)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun WeightScreenContent(
     navController: NavHostController,
     authService: AuthService
 ) {
@@ -107,7 +125,7 @@ fun WeightScreen(
                         Text(
                             "Evolución de peso",
                             fontWeight = FontWeight.Bold,
-                            color = GymSmartColors.TextPrimary
+                            color = Palette.current.textPrimary
                         )
                     },
                     navigationIcon = {
@@ -115,23 +133,23 @@ fun WeightScreen(
                             Icon(
                                 Icons.Default.ArrowBack,
                                 contentDescription = "Volver",
-                                tint = GymSmartColors.TextPrimary
+                                tint = Palette.current.textPrimary
                             )
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = GymSmartColors.Background
+                        containerColor = Palette.current.background
                     )
                 )
             }
         },
-        containerColor = GymSmartColors.Background
+        containerColor = Palette.current.background
     ) { padding ->
 
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(GymSmartColors.Background)
+                .background(Palette.current.background)
                 .verticalScroll(rememberScrollState())
                 .padding(padding)
                 .padding(horizontal = 16.dp)
@@ -143,7 +161,7 @@ fun WeightScreen(
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = MaterialTheme.shapes.large,
-                color = GymSmartColors.SurfaceCard,
+                color = Palette.current.surface,
                 tonalElevation = 0.dp
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
@@ -152,13 +170,13 @@ fun WeightScreen(
                         Icon(
                             Icons.Default.AutoAwesome,
                             contentDescription = null,
-                            tint = GymSmartColors.PremiumGold
+                            tint = Palette.current.accent
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(
                             "Analizar físico con IA",
                             fontWeight = FontWeight.Bold,
-                            color = GymSmartColors.TextPrimary
+                            color = Palette.current.textPrimary
                         )
                     }
 
@@ -173,13 +191,13 @@ fun WeightScreen(
                             launchImagePicker()
                         },
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = GymSmartColors.Primary,
-                            contentColor = GymSmartColors.OnPrimary,
-                            disabledContainerColor = GymSmartColors.Outline,
-                            disabledContentColor = GymSmartColors.TextDisabled
+                            containerColor = Palette.current.hero,
+                            contentColor = Palette.current.onHero,
+                            disabledContainerColor = Palette.current.border,
+                            disabledContentColor = Palette.current.chevron
                         )
                     ) {
-                        Icon(Icons.Default.Image, contentDescription = null, tint = GymSmartColors.OnPrimary)
+                        Icon(Icons.Default.Image, contentDescription = null, tint = Palette.current.onHero)
                         Spacer(Modifier.width(8.dp))
                         Text(if (isPremium) "Subir foto" else "🔒 Solo Premium")
                     }
@@ -209,10 +227,10 @@ fun WeightScreen(
                             },
                             modifier = Modifier.fillMaxWidth(),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = GymSmartColors.Primary,
-                                contentColor = GymSmartColors.OnPrimary,
-                                disabledContainerColor = GymSmartColors.Outline,
-                                disabledContentColor = GymSmartColors.TextDisabled
+                                containerColor = Palette.current.hero,
+                                contentColor = Palette.current.onHero,
+                                disabledContainerColor = Palette.current.border,
+                                disabledContentColor = Palette.current.chevron
                             )
                         ) {
                             Text("Analizar con IA")
@@ -221,7 +239,7 @@ fun WeightScreen(
 
                     if (isLoadingAnalysis) {
                         Spacer(Modifier.height(16.dp))
-                        CircularProgressIndicator(color = GymSmartColors.Primary)
+                        CircularProgressIndicator(color = Palette.current.accentText)
                     }
 
                     analysisError?.let { msg ->
@@ -229,13 +247,13 @@ fun WeightScreen(
                         Surface(
                             modifier = Modifier.fillMaxWidth(),
                             shape = MaterialTheme.shapes.small,
-                            color = GymSmartColors.Error.copy(alpha = 0.12f),
+                            color = Palette.current.danger.copy(alpha = 0.12f),
                             tonalElevation = 0.dp
                         ) {
                             Text(
                                 "⚠ $msg",
                                 modifier = Modifier.padding(12.dp),
-                                color = GymSmartColors.Error,
+                                color = Palette.current.danger,
                                 style = MaterialTheme.typography.bodySmall
                             )
                         }
@@ -250,13 +268,13 @@ fun WeightScreen(
                         Surface(
                             modifier = Modifier.fillMaxWidth(),
                             shape = MaterialTheme.shapes.medium,
-                            color = GymSmartColors.Primary.copy(alpha = 0.12f),
+                            color = Palette.current.accentText.copy(alpha = 0.12f),
                             tonalElevation = 0.dp
                         ) {
                             Column(modifier = Modifier.padding(14.dp)) {
-                                Text("Resumen IA", fontWeight = FontWeight.Bold, color = GymSmartColors.TextPrimary)
+                                Text("Resumen IA", fontWeight = FontWeight.Bold, color = Palette.current.textPrimary)
                                 Spacer(Modifier.height(6.dp))
-                                Text(result.summary, color = GymSmartColors.TextSecondary)
+                                Text(result.summary, color = Palette.current.textSecondary)
                             }
                         }
                     }
@@ -269,7 +287,7 @@ fun WeightScreen(
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = MaterialTheme.shapes.large,
-                color = GymSmartColors.SurfaceCard,
+                color = Palette.current.surface,
                 tonalElevation = 0.dp
             ) {
                 Row(
@@ -277,14 +295,14 @@ fun WeightScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Hoy: $today", fontWeight = FontWeight.Bold, color = GymSmartColors.TextPrimary)
+                    Text("Hoy: $today", fontWeight = FontWeight.Bold, color = Palette.current.textPrimary)
                     Button(
                         onClick = { inputWeightError = null; showDialog = true },
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = GymSmartColors.Primary,
-                            contentColor = GymSmartColors.OnPrimary,
-                            disabledContainerColor = GymSmartColors.Outline,
-                            disabledContentColor = GymSmartColors.TextDisabled
+                            containerColor = Palette.current.hero,
+                            contentColor = Palette.current.onHero,
+                            disabledContainerColor = Palette.current.border,
+                            disabledContentColor = Palette.current.chevron
                         )
                     ) {
                         Text("Añadir peso")
@@ -299,11 +317,11 @@ fun WeightScreen(
                 Surface(
                     modifier = Modifier.fillMaxWidth().height(320.dp),
                     shape = MaterialTheme.shapes.large,
-                    color = GymSmartColors.SurfaceCard,
+                    color = Palette.current.surface,
                     tonalElevation = 0.dp
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Progreso", fontWeight = FontWeight.Bold, color = GymSmartColors.TextPrimary)
+                        Text("Progreso", fontWeight = FontWeight.Bold, color = Palette.current.textPrimary)
                         Spacer(Modifier.height(8.dp))
 
                         val sorted = remember(entries) { entries.sortedBy { it.day } }
@@ -334,12 +352,13 @@ fun WeightScreen(
                             fun xPos(index: Int) = pLeft + index * stepX
                             fun yPos(v: Float) = pTop + chartH - ((v - minW) / range) * chartH
 
+                            val pal = Palette.current
                             Canvas(modifier = Modifier.fillMaxSize()) {
                                 for (i in 0..3) {
                                     val fraction = i / 3f
                                     val yG = pTop + chartH * (1f - fraction)
                                     drawLine(
-                                        color = GymSmartColors.Divider,
+                                        color = pal.divider,
                                         start = Offset(pLeft, yG),
                                         end = Offset(pLeft + chartW, yG),
                                         strokeWidth = 1.5f
@@ -359,7 +378,7 @@ fun WeightScreen(
                                 areaPath.lineTo(xPos(sorted.size - 1), pTop + chartH)
                                 areaPath.lineTo(pLeft, pTop + chartH)
                                 areaPath.close()
-                                drawPath(areaPath, color = GymSmartColors.Primary.copy(alpha = 0.15f))
+                                drawPath(areaPath, color = pal.accentText.copy(alpha = 0.15f))
 
                                 val linePath = Path()
                                 sorted.forEachIndexed { i, e ->
@@ -371,12 +390,12 @@ fun WeightScreen(
                                         linePath.cubicTo(cx, py, cx, y, x, y)
                                     }
                                 }
-                                drawPath(linePath, color = GymSmartColors.Primary, style = Stroke(width = 5f))
+                                drawPath(linePath, color = pal.accentText, style = Stroke(width = 5f))
 
                                 sorted.forEachIndexed { i, e ->
                                     val x = xPos(i); val y = yPos(e.weightKg)
-                                    drawCircle(GymSmartColors.SurfaceCard, radius = 8f, center = Offset(x, y))
-                                    drawCircle(GymSmartColors.Primary, radius = 8f, center = Offset(x, y), style = Stroke(width = 3f))
+                                    drawCircle(pal.surface, radius = 8f, center = Offset(x, y))
+                                    drawCircle(pal.accentText, radius = 8f, center = Offset(x, y), style = Stroke(width = 3f))
                                 }
                             }
 
@@ -390,7 +409,7 @@ fun WeightScreen(
                                 Text(
                                     text = "$rounded",
                                     fontSize = 9.sp,
-                                    color = GymSmartColors.TextSecondary,
+                                    color = Palette.current.textSecondary,
                                     modifier = Modifier
                                         .align(Alignment.TopStart)
                                         .offset(x = 0.dp, y = yDp - 7.dp)
@@ -407,7 +426,7 @@ fun WeightScreen(
                                 Text(
                                     text = label,
                                     fontSize = 9.sp,
-                                    color = GymSmartColors.TextSecondary,
+                                    color = Palette.current.textSecondary,
                                     textAlign = TextAlign.Center,
                                     modifier = Modifier
                                         .align(Alignment.TopStart)
@@ -428,21 +447,21 @@ fun WeightScreen(
     if (showDialog) {
         AlertDialog(
             onDismissRequest = { inputWeightError = null; showDialog = false },
-            containerColor = GymSmartColors.SurfaceElevated,
-            titleContentColor = GymSmartColors.TextPrimary,
-            textContentColor = GymSmartColors.TextSecondary,
+            containerColor = Palette.current.surface,
+            titleContentColor = Palette.current.textPrimary,
+            textContentColor = Palette.current.textSecondary,
             title = { Text("Añadir peso — $today") },
             text = {
                 val fieldColors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = GymSmartColors.Primary,
-                    unfocusedBorderColor = GymSmartColors.Outline,
-                    focusedLabelColor = GymSmartColors.Primary,
-                    unfocusedLabelColor = GymSmartColors.TextSecondary,
-                    cursorColor = GymSmartColors.Primary,
-                    focusedTextColor = GymSmartColors.TextPrimary,
-                    unfocusedTextColor = GymSmartColors.TextPrimary,
-                    focusedContainerColor = GymSmartColors.SurfaceElevated,
-                    unfocusedContainerColor = GymSmartColors.SurfaceElevated
+                    focusedBorderColor = Palette.current.accentText,
+                    unfocusedBorderColor = Palette.current.border,
+                    focusedLabelColor = Palette.current.accentText,
+                    unfocusedLabelColor = Palette.current.textSecondary,
+                    cursorColor = Palette.current.accentText,
+                    focusedTextColor = Palette.current.textPrimary,
+                    unfocusedTextColor = Palette.current.textPrimary,
+                    focusedContainerColor = Palette.current.surfaceSunken,
+                    unfocusedContainerColor = Palette.current.surfaceSunken
                 )
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     OutlinedTextField(
@@ -499,10 +518,10 @@ fun WeightScreen(
                         }
                     },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = GymSmartColors.Primary,
-                        contentColor = GymSmartColors.OnPrimary,
-                        disabledContainerColor = GymSmartColors.Outline,
-                        disabledContentColor = GymSmartColors.TextDisabled
+                        containerColor = Palette.current.hero,
+                        contentColor = Palette.current.onHero,
+                        disabledContainerColor = Palette.current.border,
+                        disabledContentColor = Palette.current.chevron
                     )
                 ) {
                     Text("Guardar")
@@ -510,7 +529,7 @@ fun WeightScreen(
             },
             dismissButton = {
                 TextButton(onClick = { inputWeightError = null; showDialog = false }) {
-                    Text("Cancelar", color = GymSmartColors.TextSecondary)
+                    Text("Cancelar", color = Palette.current.textSecondary)
                 }
             }
         )
@@ -522,15 +541,15 @@ private fun AnalysisCard(title: String, value: String) {
     Surface(
         modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
         shape = MaterialTheme.shapes.medium,
-        color = GymSmartColors.SurfaceElevated,
+        color = Palette.current.surfaceSunken,
         tonalElevation = 0.dp
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(14.dp),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(title, fontWeight = FontWeight.Bold, color = GymSmartColors.TextPrimary)
-            Text(value, color = GymSmartColors.Primary, fontWeight = FontWeight.Bold)
+            Text(title, fontWeight = FontWeight.Bold, color = Palette.current.textPrimary)
+            Text(value, color = Palette.current.accentText, fontWeight = FontWeight.Bold)
         }
     }
 }

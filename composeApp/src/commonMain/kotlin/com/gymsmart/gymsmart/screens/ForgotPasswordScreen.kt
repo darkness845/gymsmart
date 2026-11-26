@@ -13,11 +13,31 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.gymsmart.gymsmart.navigation.Screen
 import com.gymsmart.gymsmart.services.AuthService
-import com.gymsmart.gymsmart.ui.theme.GymSmartColors
+import com.gymsmart.gymsmart.ui.theme.MelocotonTheme
+import com.gymsmart.gymsmart.ui.theme.Palette
+import com.gymsmart.gymsmart.ui.theme.SystemBarsAppearance
 import kotlinx.coroutines.launch
 
+/**
+ * ForgotPasswordScreen con el estilo Melocotón (Tarea 3). Solo cambia el aspecto: la estructura y la lógica
+ * de la pantalla son las de siempre, en [ForgotPasswordScreenContent].
+ */
 @Composable
 fun ForgotPasswordScreen(
+    navController: NavController,
+    authService:   AuthService,
+    fromProfile:   Boolean = false,
+    prefillEmail:  String  = ""
+) {
+    MelocotonTheme {
+        // Fondo crema hasta arriba: la hora y la batería tienen que ir en oscuro.
+        SystemBarsAppearance(darkStatusIcons = true)
+        ForgotPasswordScreenContent(navController, authService, fromProfile, prefillEmail)
+    }
+}
+
+@Composable
+private fun ForgotPasswordScreenContent(
     navController: NavController,
     authService:   AuthService,
     fromProfile:   Boolean = false,
@@ -33,18 +53,18 @@ fun ForgotPasswordScreen(
     val scope = rememberCoroutineScope()
 
     val fieldColors = OutlinedTextFieldDefaults.colors(
-        focusedBorderColor      = GymSmartColors.Primary,
-        unfocusedBorderColor    = GymSmartColors.Outline,
-        focusedLabelColor       = GymSmartColors.Primary,
-        unfocusedLabelColor     = GymSmartColors.TextSecondary,
-        cursorColor             = GymSmartColors.Primary,
-        focusedTextColor        = GymSmartColors.TextPrimary,
-        unfocusedTextColor      = GymSmartColors.TextPrimary,
-        focusedContainerColor   = GymSmartColors.SurfaceCard,
-        unfocusedContainerColor = GymSmartColors.SurfaceCard,
-        errorBorderColor        = GymSmartColors.Error,
-        errorLabelColor         = GymSmartColors.Error,
-        errorContainerColor     = GymSmartColors.SurfaceCard,
+        focusedBorderColor      = Palette.current.accentText,
+        unfocusedBorderColor    = Palette.current.border,
+        focusedLabelColor       = Palette.current.accentText,
+        unfocusedLabelColor     = Palette.current.textSecondary,
+        cursorColor             = Palette.current.accentText,
+        focusedTextColor        = Palette.current.textPrimary,
+        unfocusedTextColor      = Palette.current.textPrimary,
+        focusedContainerColor   = Palette.current.surface,
+        unfocusedContainerColor = Palette.current.surface,
+        errorBorderColor        = Palette.current.danger,
+        errorLabelColor         = Palette.current.danger,
+        errorContainerColor     = Palette.current.surface,
     )
 
     LaunchedEffect(prefillEmail) {
@@ -59,7 +79,7 @@ fun ForgotPasswordScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(GymSmartColors.Background)
+            .background(Palette.current.background)
             .padding(horizontal = 28.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
@@ -69,7 +89,7 @@ fun ForgotPasswordScreen(
         Box(
             modifier = Modifier
                 .size(72.dp)
-                .background(GymSmartColors.SurfaceCard, shape = MaterialTheme.shapes.extraLarge),
+                .background(Palette.current.surface, shape = MaterialTheme.shapes.extraLarge),
             contentAlignment = Alignment.Center
         ) {
             Text(
@@ -83,7 +103,7 @@ fun ForgotPasswordScreen(
         Text(
             if (!emailSent) "Recuperar contraseña" else "Introduce el código",
             style = MaterialTheme.typography.headlineMedium,
-            color = GymSmartColors.TextPrimary
+            color = Palette.current.textPrimary
         )
 
         Spacer(Modifier.height(8.dp))
@@ -92,7 +112,7 @@ fun ForgotPasswordScreen(
             if (!emailSent) "Introduce tu email y te enviaremos un código"
             else "Revisa tu correo e introduce el código que te hemos enviado",
             style = MaterialTheme.typography.bodyMedium,
-            color = GymSmartColors.TextSecondary
+            color = Palette.current.textSecondary
         )
 
         if (emailSent) {
@@ -100,7 +120,7 @@ fun ForgotPasswordScreen(
             Text(
                 email,
                 style = MaterialTheme.typography.bodyMedium,
-                color = GymSmartColors.Primary,
+                color = Palette.current.accentText,
                 fontWeight = FontWeight.SemiBold
             )
         }
@@ -127,7 +147,7 @@ fun ForgotPasswordScreen(
             if (errorMsg.isNotEmpty()) {
                 Text(
                     errorMsg,
-                    color = GymSmartColors.Error,
+                    color = Palette.current.danger,
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -150,15 +170,15 @@ fun ForgotPasswordScreen(
                     .height(52.dp),
                 shape = MaterialTheme.shapes.small,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor         = GymSmartColors.Primary,
-                    disabledContainerColor = GymSmartColors.Outline,
-                    contentColor           = GymSmartColors.OnPrimary,
-                    disabledContentColor   = GymSmartColors.TextDisabled
+                    containerColor         = Palette.current.hero,
+                    disabledContainerColor = Palette.current.border,
+                    contentColor           = Palette.current.onHero,
+                    disabledContentColor   = Palette.current.chevron
                 )
             ) {
                 if (isLoading) {
                     CircularProgressIndicator(
-                        color = GymSmartColors.OnPrimary,
+                        color = Palette.current.onHero,
                         modifier = Modifier.size(22.dp),
                         strokeWidth = 2.dp
                     )
@@ -170,7 +190,7 @@ fun ForgotPasswordScreen(
             Spacer(Modifier.height(12.dp))
 
             TextButton(onClick = { navController.popBackStack() }) {
-                Text("← Volver", color = GymSmartColors.TextSecondary, style = MaterialTheme.typography.bodyMedium)
+                Text("← Volver", color = Palette.current.textSecondary, style = MaterialTheme.typography.bodyMedium)
             }
 
         } else {
@@ -192,7 +212,7 @@ fun ForgotPasswordScreen(
                 Spacer(Modifier.height(6.dp))
                 Text(
                     errorMsg,
-                    color = GymSmartColors.Error,
+                    color = Palette.current.danger,
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -220,15 +240,15 @@ fun ForgotPasswordScreen(
                     .height(52.dp),
                 shape = MaterialTheme.shapes.small,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor         = GymSmartColors.Primary,
-                    disabledContainerColor = GymSmartColors.Outline,
-                    contentColor           = GymSmartColors.OnPrimary,
-                    disabledContentColor   = GymSmartColors.TextDisabled
+                    containerColor         = Palette.current.hero,
+                    disabledContainerColor = Palette.current.border,
+                    contentColor           = Palette.current.onHero,
+                    disabledContentColor   = Palette.current.chevron
                 )
             ) {
                 if (isLoading) {
                     CircularProgressIndicator(
-                        color = GymSmartColors.OnPrimary,
+                        color = Palette.current.onHero,
                         modifier = Modifier.size(22.dp),
                         strokeWidth = 2.dp
                     )
@@ -241,11 +261,11 @@ fun ForgotPasswordScreen(
 
             if (fromProfile) {
                 TextButton(onClick = { navController.popBackStack() }) {
-                    Text("← Volver al perfil", color = GymSmartColors.TextSecondary, style = MaterialTheme.typography.bodyMedium)
+                    Text("← Volver al perfil", color = Palette.current.textSecondary, style = MaterialTheme.typography.bodyMedium)
                 }
             } else {
                 TextButton(onClick = { emailSent = false; token = ""; errorMsg = "" }) {
-                    Text("← Cambiar email", color = GymSmartColors.TextSecondary, style = MaterialTheme.typography.bodyMedium)
+                    Text("← Cambiar email", color = Palette.current.textSecondary, style = MaterialTheme.typography.bodyMedium)
                 }
             }
         }

@@ -14,11 +14,31 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.gymsmart.gymsmart.navigation.Screen
 import com.gymsmart.gymsmart.services.AuthService
-import com.gymsmart.gymsmart.ui.theme.GymSmartColors
+import com.gymsmart.gymsmart.ui.theme.MelocotonTheme
+import com.gymsmart.gymsmart.ui.theme.Palette
+import com.gymsmart.gymsmart.ui.theme.SystemBarsAppearance
 import kotlinx.coroutines.launch
 
+/**
+ * ResetPasswordScreen con el estilo Melocotón (Tarea 3). Solo cambia el aspecto: la estructura y la lógica
+ * de la pantalla son las de siempre, en [ResetPasswordScreenContent].
+ */
 @Composable
 fun ResetPasswordScreen(
+    navController: NavController,
+    authService:   AuthService,
+    token:         String,
+    fromProfile:   Boolean = false
+) {
+    MelocotonTheme {
+        // Fondo crema hasta arriba: la hora y la batería tienen que ir en oscuro.
+        SystemBarsAppearance(darkStatusIcons = true)
+        ResetPasswordScreenContent(navController, authService, token, fromProfile)
+    }
+}
+
+@Composable
+private fun ResetPasswordScreenContent(
     navController: NavController,
     authService:   AuthService,
     token:         String,
@@ -34,24 +54,24 @@ fun ResetPasswordScreen(
     val scope = rememberCoroutineScope()
 
     val fieldColors = OutlinedTextFieldDefaults.colors(
-        focusedBorderColor      = GymSmartColors.Primary,
-        unfocusedBorderColor    = GymSmartColors.Outline,
-        focusedLabelColor       = GymSmartColors.Primary,
-        unfocusedLabelColor     = GymSmartColors.TextSecondary,
-        cursorColor             = GymSmartColors.Primary,
-        focusedTextColor        = GymSmartColors.TextPrimary,
-        unfocusedTextColor      = GymSmartColors.TextPrimary,
-        focusedContainerColor   = GymSmartColors.SurfaceCard,
-        unfocusedContainerColor = GymSmartColors.SurfaceCard,
-        errorBorderColor        = GymSmartColors.Error,
-        errorLabelColor         = GymSmartColors.Error,
-        errorContainerColor     = GymSmartColors.SurfaceCard,
+        focusedBorderColor      = Palette.current.accentText,
+        unfocusedBorderColor    = Palette.current.border,
+        focusedLabelColor       = Palette.current.accentText,
+        unfocusedLabelColor     = Palette.current.textSecondary,
+        cursorColor             = Palette.current.accentText,
+        focusedTextColor        = Palette.current.textPrimary,
+        unfocusedTextColor      = Palette.current.textPrimary,
+        focusedContainerColor   = Palette.current.surface,
+        unfocusedContainerColor = Palette.current.surface,
+        errorBorderColor        = Palette.current.danger,
+        errorLabelColor         = Palette.current.danger,
+        errorContainerColor     = Palette.current.surface,
     )
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(GymSmartColors.Background)
+            .background(Palette.current.background)
             .padding(horizontal = 28.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
@@ -64,10 +84,10 @@ fun ResetPasswordScreen(
             Box(
                 modifier = Modifier
                     .size(80.dp)
-                    .background(GymSmartColors.SurfaceCard, shape = MaterialTheme.shapes.extraLarge),
+                    .background(Palette.current.surface, shape = MaterialTheme.shapes.extraLarge),
                 contentAlignment = Alignment.Center
             ) {
-                Text("✓", style = MaterialTheme.typography.displayLarge, color = GymSmartColors.Primary)
+                Text("✓", style = MaterialTheme.typography.displayLarge, color = Palette.current.accentText)
             }
 
             Spacer(Modifier.height(24.dp))
@@ -75,7 +95,7 @@ fun ResetPasswordScreen(
             Text(
                 "¡Listo!",
                 style = MaterialTheme.typography.headlineLarge,
-                color = GymSmartColors.TextPrimary
+                color = Palette.current.textPrimary
             )
 
             Spacer(Modifier.height(8.dp))
@@ -83,7 +103,7 @@ fun ResetPasswordScreen(
             Text(
                 "Tu contraseña ha sido actualizada correctamente.",
                 style = MaterialTheme.typography.bodyMedium,
-                color = GymSmartColors.TextSecondary
+                color = Palette.current.textSecondary
             )
 
             Spacer(Modifier.height(32.dp))
@@ -103,8 +123,8 @@ fun ResetPasswordScreen(
                     .height(52.dp),
                 shape = MaterialTheme.shapes.small,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = GymSmartColors.Primary,
-                    contentColor   = GymSmartColors.OnPrimary
+                    containerColor = Palette.current.hero,
+                    contentColor   = Palette.current.onHero
                 )
             ) {
                 Text(
@@ -121,7 +141,7 @@ fun ResetPasswordScreen(
             Box(
                 modifier = Modifier
                     .size(72.dp)
-                    .background(GymSmartColors.SurfaceCard, shape = MaterialTheme.shapes.extraLarge),
+                    .background(Palette.current.surface, shape = MaterialTheme.shapes.extraLarge),
                 contentAlignment = Alignment.Center
             ) {
                 Text("🔒", style = MaterialTheme.typography.headlineLarge)
@@ -132,7 +152,7 @@ fun ResetPasswordScreen(
             Text(
                 "Nueva contraseña",
                 style = MaterialTheme.typography.headlineMedium,
-                color = GymSmartColors.TextPrimary
+                color = Palette.current.textPrimary
             )
 
             Spacer(Modifier.height(8.dp))
@@ -140,7 +160,7 @@ fun ResetPasswordScreen(
             Text(
                 "Introduce tu nueva contraseña",
                 style = MaterialTheme.typography.bodyMedium,
-                color = GymSmartColors.TextSecondary
+                color = Palette.current.textSecondary
             )
 
             Spacer(Modifier.height(32.dp))
@@ -177,7 +197,7 @@ fun ResetPasswordScreen(
             if (errorMsg.isNotEmpty()) {
                 Text(
                     errorMsg,
-                    color = GymSmartColors.Error,
+                    color = Palette.current.danger,
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -203,15 +223,15 @@ fun ResetPasswordScreen(
                     .height(52.dp),
                 shape = MaterialTheme.shapes.small,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor         = GymSmartColors.Primary,
-                    disabledContainerColor = GymSmartColors.Outline,
-                    contentColor           = GymSmartColors.OnPrimary,
-                    disabledContentColor   = GymSmartColors.TextDisabled
+                    containerColor         = Palette.current.hero,
+                    disabledContainerColor = Palette.current.border,
+                    contentColor           = Palette.current.onHero,
+                    disabledContentColor   = Palette.current.chevron
                 )
             ) {
                 if (isLoading) {
                     CircularProgressIndicator(
-                        color = GymSmartColors.OnPrimary,
+                        color = Palette.current.onHero,
                         modifier = Modifier.size(22.dp),
                         strokeWidth = 2.dp
                     )

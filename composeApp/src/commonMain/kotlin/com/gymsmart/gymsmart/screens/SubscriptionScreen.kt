@@ -26,7 +26,9 @@ import androidx.navigation.NavController
 import com.gymsmart.gymsmart.model.SubscriptionStatus
 import com.gymsmart.gymsmart.services.AuthService
 import com.gymsmart.gymsmart.services.SubscriptionService
-import com.gymsmart.gymsmart.ui.theme.GymSmartColors
+import com.gymsmart.gymsmart.ui.theme.MelocotonTheme
+import com.gymsmart.gymsmart.ui.theme.Palette
+import com.gymsmart.gymsmart.ui.theme.SystemBarsAppearance
 import kotlinx.coroutines.launch
 import kotlin.time.Clock
 
@@ -64,9 +66,22 @@ class ExpiryVisualTransformation : VisualTransformation {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * SubscriptionScreen con el estilo Melocotón (Tarea 3). Solo cambia el aspecto: la estructura y la lógica
+ * de la pantalla son las de siempre, en [SubscriptionScreenContent].
+ */
 @Composable
 fun SubscriptionScreen(navController: NavController, authService: AuthService) {
+    MelocotonTheme {
+        // Fondo crema hasta arriba: la hora y la batería tienen que ir en oscuro.
+        SystemBarsAppearance(darkStatusIcons = true)
+        SubscriptionScreenContent(navController, authService)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SubscriptionScreenContent(navController: NavController, authService: AuthService) {
 
     val subService  = remember { SubscriptionService(authService.client) }
     val scope       = rememberCoroutineScope()
@@ -94,7 +109,7 @@ fun SubscriptionScreen(navController: NavController, authService: AuthService) {
                         Text(
                             "Suscripción",
                             fontWeight = FontWeight.Bold,
-                            color = GymSmartColors.TextPrimary
+                            color = Palette.current.textPrimary
                         )
                     },
                     navigationIcon = {
@@ -102,17 +117,17 @@ fun SubscriptionScreen(navController: NavController, authService: AuthService) {
                             Icon(
                                 Icons.AutoMirrored.Filled.ArrowBack,
                                 contentDescription = null,
-                                tint = GymSmartColors.TextPrimary
+                                tint = Palette.current.textPrimary
                             )
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = GymSmartColors.Background
+                        containerColor = Palette.current.background
                     )
                 )
             }
         },
-        containerColor = GymSmartColors.Background
+        containerColor = Palette.current.background
     ) { padding ->
 
         Column(
@@ -128,7 +143,7 @@ fun SubscriptionScreen(navController: NavController, authService: AuthService) {
                 // ── Pantalla de éxito ─────────────────────────────────────
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    color = GymSmartColors.SurfaceCard,
+                    color = Palette.current.surface,
                     shape = MaterialTheme.shapes.extraLarge
                 ) {
                     Column(
@@ -139,18 +154,18 @@ fun SubscriptionScreen(navController: NavController, authService: AuthService) {
                         Icon(
                             Icons.Default.CheckCircle,
                             contentDescription = null,
-                            tint = GymSmartColors.Success,
+                            tint = Palette.current.success,
                             modifier = Modifier.size(64.dp)
                         )
                         Text(
                             "¡Pago confirmado!",
                             fontWeight = FontWeight.Bold,
                             style = MaterialTheme.typography.headlineMedium,
-                            color = GymSmartColors.TextPrimary
+                            color = Palette.current.textPrimary
                         )
                         Text(
                             "Tu plan Premium ya está activo.\nHemos enviado un recibo a tu correo.",
-                            color = GymSmartColors.TextSecondary,
+                            color = Palette.current.textSecondary,
                             textAlign = TextAlign.Center,
                             style = MaterialTheme.typography.bodyMedium
                         )
@@ -159,8 +174,8 @@ fun SubscriptionScreen(navController: NavController, authService: AuthService) {
                             shape = MaterialTheme.shapes.small,
                             modifier = Modifier.fillMaxWidth().height(48.dp),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = GymSmartColors.Primary,
-                                contentColor   = GymSmartColors.OnPrimary
+                                containerColor = Palette.current.hero,
+                                contentColor   = Palette.current.onHero
                             )
                         ) {
                             Text("Volver", fontWeight = FontWeight.Bold)
@@ -200,7 +215,7 @@ fun SubscriptionScreen(navController: NavController, authService: AuthService) {
                         Text(
                             "⏱ Premium activo — caduca en $minutes min",
                             style = MaterialTheme.typography.bodySmall,
-                            color = GymSmartColors.TextSecondary,
+                            color = Palette.current.textSecondary,
                             modifier = Modifier.fillMaxWidth(),
                             textAlign = TextAlign.Center
                         )
@@ -213,12 +228,12 @@ fun SubscriptionScreen(navController: NavController, authService: AuthService) {
                     "Datos de pago",
                     fontWeight = FontWeight.Bold,
                     style = MaterialTheme.typography.titleLarge,
-                    color = GymSmartColors.TextPrimary
+                    color = Palette.current.textPrimary
                 )
 
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    color = GymSmartColors.SurfaceCard,
+                    color = Palette.current.surface,
                     shape = MaterialTheme.shapes.medium
                 ) {
                     Column(
@@ -231,22 +246,22 @@ fun SubscriptionScreen(navController: NavController, authService: AuthService) {
                             value = cardNumberRaw,
                             onValueChange = { cardNumberRaw = it.filter { c -> c.isDigit() }.take(16) },
                             label = { Text("Número de tarjeta") },
-                            placeholder = { Text("4242 4242 4242 4242", color = GymSmartColors.TextDisabled) },
+                            placeholder = { Text("4242 4242 4242 4242", color = Palette.current.chevron) },
                             visualTransformation = CardNumberVisualTransformation(),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             singleLine = true,
                             shape = MaterialTheme.shapes.small,
                             modifier = Modifier.fillMaxWidth(),
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor      = GymSmartColors.Primary,
-                                unfocusedBorderColor    = GymSmartColors.Outline,
-                                focusedLabelColor       = GymSmartColors.Primary,
-                                unfocusedLabelColor     = GymSmartColors.TextSecondary,
-                                cursorColor             = GymSmartColors.Primary,
-                                focusedTextColor        = GymSmartColors.TextPrimary,
-                                unfocusedTextColor      = GymSmartColors.TextPrimary,
-                                focusedContainerColor   = GymSmartColors.SurfaceElevated,
-                                unfocusedContainerColor = GymSmartColors.SurfaceElevated,
+                                focusedBorderColor      = Palette.current.accentText,
+                                unfocusedBorderColor    = Palette.current.border,
+                                focusedLabelColor       = Palette.current.accentText,
+                                unfocusedLabelColor     = Palette.current.textSecondary,
+                                cursorColor             = Palette.current.accentText,
+                                focusedTextColor        = Palette.current.textPrimary,
+                                unfocusedTextColor      = Palette.current.textPrimary,
+                                focusedContainerColor   = Palette.current.surfaceSunken,
+                                unfocusedContainerColor = Palette.current.surfaceSunken,
                             )
                         )
 
@@ -261,15 +276,15 @@ fun SubscriptionScreen(navController: NavController, authService: AuthService) {
                                 shape = MaterialTheme.shapes.small,
                                 modifier = Modifier.weight(1f),
                                 colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor      = GymSmartColors.Primary,
-                                    unfocusedBorderColor    = GymSmartColors.Outline,
-                                    focusedLabelColor       = GymSmartColors.Primary,
-                                    unfocusedLabelColor     = GymSmartColors.TextSecondary,
-                                    cursorColor             = GymSmartColors.Primary,
-                                    focusedTextColor        = GymSmartColors.TextPrimary,
-                                    unfocusedTextColor      = GymSmartColors.TextPrimary,
-                                    focusedContainerColor   = GymSmartColors.SurfaceElevated,
-                                    unfocusedContainerColor = GymSmartColors.SurfaceElevated,
+                                    focusedBorderColor      = Palette.current.accentText,
+                                    unfocusedBorderColor    = Palette.current.border,
+                                    focusedLabelColor       = Palette.current.accentText,
+                                    unfocusedLabelColor     = Palette.current.textSecondary,
+                                    cursorColor             = Palette.current.accentText,
+                                    focusedTextColor        = Palette.current.textPrimary,
+                                    unfocusedTextColor      = Palette.current.textPrimary,
+                                    focusedContainerColor   = Palette.current.surfaceSunken,
+                                    unfocusedContainerColor = Palette.current.surfaceSunken,
                                 )
                             )
                             PaymentTextField(
@@ -282,14 +297,14 @@ fun SubscriptionScreen(navController: NavController, authService: AuthService) {
                         }
 
                         Surface(
-                            color = GymSmartColors.SurfaceElevated,
+                            color = Palette.current.surfaceSunken,
                             shape = MaterialTheme.shapes.extraSmall
                         ) {
                             Text(
                                 "🔒 Pago seguro procesado por Stripe",
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                                 style = MaterialTheme.typography.labelMedium,
-                                color = GymSmartColors.TextSecondary
+                                color = Palette.current.textSecondary
                             )
                         }
                     }
@@ -298,13 +313,13 @@ fun SubscriptionScreen(navController: NavController, authService: AuthService) {
                 AnimatedVisibility(errorMsg != null) {
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        color = GymSmartColors.Error.copy(alpha = 0.12f),
+                        color = Palette.current.danger.copy(alpha = 0.12f),
                         shape = MaterialTheme.shapes.extraSmall
                     ) {
                         Text(
                             errorMsg ?: "",
                             modifier = Modifier.padding(10.dp),
-                            color = GymSmartColors.Error,
+                            color = Palette.current.danger,
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
@@ -337,16 +352,16 @@ fun SubscriptionScreen(navController: NavController, authService: AuthService) {
                     shape = MaterialTheme.shapes.small,
                     modifier = Modifier.fillMaxWidth().height(52.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor         = GymSmartColors.Primary,
-                        contentColor           = GymSmartColors.OnPrimary,
-                        disabledContainerColor = GymSmartColors.Outline,
-                        disabledContentColor   = GymSmartColors.TextDisabled
+                        containerColor         = Palette.current.hero,
+                        contentColor           = Palette.current.onHero,
+                        disabledContainerColor = Palette.current.border,
+                        disabledContentColor   = Palette.current.chevron
                     )
                 ) {
                     if (isLoading) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(18.dp),
-                            color = GymSmartColors.OnPrimary,
+                            color = Palette.current.onHero,
                             strokeWidth = 2.dp
                         )
                     } else {
@@ -363,9 +378,9 @@ fun SubscriptionScreen(navController: NavController, authService: AuthService) {
                     },
                     modifier = Modifier.fillMaxWidth().height(48.dp),
                     shape = MaterialTheme.shapes.small,
-                    border = BorderStroke(1.dp, GymSmartColors.Outline),
+                    border = BorderStroke(1.dp, Palette.current.border),
                     colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = GymSmartColors.TextSecondary
+                        contentColor = Palette.current.textSecondary
                     )
                 ) {
                     Text("← Cancelar", fontWeight = FontWeight.SemiBold)
@@ -380,11 +395,11 @@ private fun PlanCard(
     title: String, price: String, features: List<String>,
     active: Boolean, isPremium: Boolean, onSelect: (() -> Unit)?
 ) {
-    val accentColor = if (isPremium) GymSmartColors.PremiumGold else GymSmartColors.TextDisabled
+    val accentColor = if (isPremium) Palette.current.accent else Palette.current.chevron
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = if (active) accentColor.copy(alpha = 0.10f) else GymSmartColors.SurfaceCard,
+        color = if (active) accentColor.copy(alpha = 0.10f) else Palette.current.surface,
         shape = MaterialTheme.shapes.large,
         border = if (active) ButtonDefaults.outlinedButtonBorder.copy(
             brush = androidx.compose.ui.graphics.SolidColor(accentColor)
@@ -401,7 +416,7 @@ private fun PlanCard(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     if (isPremium) Icon(Icons.Default.Star, null, tint = accentColor)
-                    Text(title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge, color = GymSmartColors.TextPrimary)
+                    Text(title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge, color = Palette.current.textPrimary)
                 }
                 Text(price, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge, color = accentColor)
             }
@@ -412,7 +427,7 @@ private fun PlanCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("✓", color = accentColor, fontWeight = FontWeight.Bold)
-                    Text(feature, style = MaterialTheme.typography.bodyMedium, color = GymSmartColors.TextSecondary)
+                    Text(feature, style = MaterialTheme.typography.bodyMedium, color = Palette.current.textSecondary)
                 }
             }
 
@@ -429,8 +444,8 @@ private fun PlanCard(
                     shape = MaterialTheme.shapes.small,
                     modifier = Modifier.fillMaxWidth().height(48.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = GymSmartColors.PremiumGold,
-                        contentColor   = GymSmartColors.Background
+                        containerColor = Palette.current.accent,
+                        contentColor   = Palette.current.background
                     )
                 ) {
                     Text("Suscribirse por 4,99€", fontWeight = FontWeight.Bold)
@@ -451,21 +466,21 @@ private fun PaymentTextField(
         value = value,
         onValueChange = onValueChange,
         label = { Text(label) },
-        placeholder = { if (placeholder.isNotEmpty()) Text(placeholder, color = GymSmartColors.TextDisabled) },
+        placeholder = { if (placeholder.isNotEmpty()) Text(placeholder, color = Palette.current.chevron) },
         singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
         shape = MaterialTheme.shapes.small,
         modifier = modifier,
         colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor      = GymSmartColors.Primary,
-            unfocusedBorderColor    = GymSmartColors.Outline,
-            focusedLabelColor       = GymSmartColors.Primary,
-            unfocusedLabelColor     = GymSmartColors.TextSecondary,
-            cursorColor             = GymSmartColors.Primary,
-            focusedTextColor        = GymSmartColors.TextPrimary,
-            unfocusedTextColor      = GymSmartColors.TextPrimary,
-            focusedContainerColor   = GymSmartColors.SurfaceElevated,
-            unfocusedContainerColor = GymSmartColors.SurfaceElevated,
+            focusedBorderColor      = Palette.current.accentText,
+            unfocusedBorderColor    = Palette.current.border,
+            focusedLabelColor       = Palette.current.accentText,
+            unfocusedLabelColor     = Palette.current.textSecondary,
+            cursorColor             = Palette.current.accentText,
+            focusedTextColor        = Palette.current.textPrimary,
+            unfocusedTextColor      = Palette.current.textPrimary,
+            focusedContainerColor   = Palette.current.surfaceSunken,
+            unfocusedContainerColor = Palette.current.surfaceSunken,
         )
     )
 }

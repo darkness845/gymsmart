@@ -16,11 +16,32 @@ import androidx.navigation.NavController
 import com.gymsmart.gymsmart.navigation.Screen
 import com.gymsmart.gymsmart.services.AuthService
 import com.gymsmart.gymsmart.services.ProfileService
-import com.gymsmart.gymsmart.ui.theme.GymSmartColors
+import com.gymsmart.gymsmart.ui.theme.MelocotonTheme
+import com.gymsmart.gymsmart.ui.theme.Palette
+import com.gymsmart.gymsmart.ui.theme.SystemBarsAppearance
 import kotlinx.coroutines.launch
 
+/**
+ * LoginScreen con el estilo Melocotón (Tarea 3). Solo cambia el aspecto: la estructura y la lógica
+ * de la pantalla son las de siempre, en [LoginScreenContent].
+ */
 @Composable
 fun LoginScreen(
+    navController: NavController,
+    authService: AuthService,
+    profileService: ProfileService,
+    sessionExpiredNotice: Boolean = false,
+    onNoticeShown: () -> Unit = {}
+) {
+    MelocotonTheme {
+        // Fondo crema hasta arriba: la hora y la batería tienen que ir en oscuro.
+        SystemBarsAppearance(darkStatusIcons = true)
+        LoginScreenContent(navController, authService, profileService, sessionExpiredNotice, onNoticeShown)
+    }
+}
+
+@Composable
+private fun LoginScreenContent(
     navController: NavController,
     authService: AuthService,
     profileService: ProfileService,
@@ -49,15 +70,15 @@ fun LoginScreen(
     val scope = rememberCoroutineScope()
 
     val fieldColors = OutlinedTextFieldDefaults.colors(
-        focusedBorderColor = GymSmartColors.Primary,
-        unfocusedBorderColor = GymSmartColors.Outline,
-        focusedLabelColor = GymSmartColors.Primary,
-        unfocusedLabelColor = GymSmartColors.TextSecondary,
-        cursorColor = GymSmartColors.Primary,
-        focusedTextColor = GymSmartColors.TextPrimary,
-        unfocusedTextColor = GymSmartColors.TextPrimary,
-        focusedContainerColor = GymSmartColors.SurfaceCard,
-        unfocusedContainerColor = GymSmartColors.SurfaceCard,
+        focusedBorderColor = Palette.current.accentText,
+        unfocusedBorderColor = Palette.current.border,
+        focusedLabelColor = Palette.current.accentText,
+        unfocusedLabelColor = Palette.current.textSecondary,
+        cursorColor = Palette.current.accentText,
+        focusedTextColor = Palette.current.textPrimary,
+        unfocusedTextColor = Palette.current.textPrimary,
+        focusedContainerColor = Palette.current.surface,
+        unfocusedContainerColor = Palette.current.surface,
     )
 
     suspend fun goToDashboardOrOnboarding() {
@@ -74,7 +95,7 @@ fun LoginScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(GymSmartColors.Background)
+                .background(Palette.current.background)
                 .padding(horizontal = 28.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
@@ -82,22 +103,22 @@ fun LoginScreen(
             Box(
                 modifier = Modifier
                     .size(72.dp)
-                    .background(GymSmartColors.SurfaceCard, shape = MaterialTheme.shapes.extraLarge),
+                    .background(Palette.current.surface, shape = MaterialTheme.shapes.extraLarge),
                 contentAlignment = Alignment.Center
             ) {
-                Text("✉", style = MaterialTheme.typography.headlineLarge, color = GymSmartColors.Primary)
+                Text("✉", style = MaterialTheme.typography.headlineLarge, color = Palette.current.accentText)
             }
 
             Spacer(Modifier.height(24.dp))
 
-            Text("Verifica tu email", style = MaterialTheme.typography.headlineMedium, color = GymSmartColors.TextPrimary)
+            Text("Verifica tu email", style = MaterialTheme.typography.headlineMedium, color = Palette.current.textPrimary)
             Spacer(Modifier.height(8.dp))
             Text(
                 "Tu cuenta todavía no está verificada. Introduce el código que te enviamos a",
                 style = MaterialTheme.typography.bodyMedium,
-                color = GymSmartColors.TextSecondary
+                color = Palette.current.textSecondary
             )
-            Text(email, style = MaterialTheme.typography.bodyMedium, color = GymSmartColors.Primary, fontWeight = FontWeight.SemiBold)
+            Text(email, style = MaterialTheme.typography.bodyMedium, color = Palette.current.accentText, fontWeight = FontWeight.SemiBold)
 
             Spacer(Modifier.height(32.dp))
 
@@ -116,7 +137,7 @@ fun LoginScreen(
                 Spacer(Modifier.height(6.dp))
                 Text(
                     verifyError,
-                    color = if (verifyError.contains("reenviado")) GymSmartColors.Success else GymSmartColors.Error,
+                    color = if (verifyError.contains("reenviado")) Palette.current.success else Palette.current.danger,
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -142,14 +163,14 @@ fun LoginScreen(
                 modifier = Modifier.fillMaxWidth().height(52.dp),
                 shape = MaterialTheme.shapes.small,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = GymSmartColors.Primary,
-                    disabledContainerColor = GymSmartColors.Outline,
-                    contentColor = GymSmartColors.OnPrimary,
-                    disabledContentColor = GymSmartColors.TextDisabled
+                    containerColor = Palette.current.hero,
+                    disabledContainerColor = Palette.current.border,
+                    contentColor = Palette.current.onHero,
+                    disabledContentColor = Palette.current.chevron
                 )
             ) {
                 if (isVerifying) {
-                    CircularProgressIndicator(color = GymSmartColors.OnPrimary, modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                    CircularProgressIndicator(color = Palette.current.onHero, modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
                 } else {
                     Text("Verificar cuenta", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
                 }
@@ -170,7 +191,7 @@ fun LoginScreen(
             ) {
                 Text(
                     if (isResending) "Enviando..." else "¿No te llegó? Reenviar código",
-                    color = GymSmartColors.TextSecondary,
+                    color = Palette.current.textSecondary,
                     style = MaterialTheme.typography.bodyMedium
                 )
             }
@@ -178,7 +199,7 @@ fun LoginScreen(
             Spacer(Modifier.height(8.dp))
 
             TextButton(onClick = { showVerification = false; verifyError = "" }) {
-                Text("Volver", color = GymSmartColors.TextSecondary, style = MaterialTheme.typography.bodyMedium)
+                Text("Volver", color = Palette.current.textSecondary, style = MaterialTheme.typography.bodyMedium)
             }
         }
         return
@@ -187,7 +208,7 @@ fun LoginScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(GymSmartColors.Background)
+            .background(Palette.current.background)
             .padding(horizontal = 28.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
@@ -197,13 +218,13 @@ fun LoginScreen(
         Text(
             text = "GYM",
             style = MaterialTheme.typography.displayLarge,
-            color = GymSmartColors.TextPrimary,
+            color = Palette.current.textPrimary,
             letterSpacing = 4.sp
         )
         Text(
             text = "SMART",
             style = MaterialTheme.typography.displayLarge,
-            color = GymSmartColors.Primary,
+            color = Palette.current.accentText,
             letterSpacing = 4.sp
         )
 
@@ -212,7 +233,7 @@ fun LoginScreen(
         Text(
             text = "Inicia sesión para continuar",
             style = MaterialTheme.typography.bodyMedium,
-            color = GymSmartColors.TextSecondary
+            color = Palette.current.textSecondary
         )
 
         Spacer(modifier = Modifier.height(48.dp))
@@ -226,15 +247,15 @@ fun LoginScreen(
             modifier = Modifier.fillMaxWidth(),
             shape = MaterialTheme.shapes.small,
             colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = GymSmartColors.Primary,
-                unfocusedBorderColor = GymSmartColors.Outline,
-                focusedLabelColor = GymSmartColors.Primary,
-                unfocusedLabelColor = GymSmartColors.TextSecondary,
-                cursorColor = GymSmartColors.Primary,
-                focusedTextColor = GymSmartColors.TextPrimary,
-                unfocusedTextColor = GymSmartColors.TextPrimary,
-                focusedContainerColor = GymSmartColors.SurfaceCard,
-                unfocusedContainerColor = GymSmartColors.SurfaceCard,
+                focusedBorderColor = Palette.current.accentText,
+                unfocusedBorderColor = Palette.current.border,
+                focusedLabelColor = Palette.current.accentText,
+                unfocusedLabelColor = Palette.current.textSecondary,
+                cursorColor = Palette.current.accentText,
+                focusedTextColor = Palette.current.textPrimary,
+                unfocusedTextColor = Palette.current.textPrimary,
+                focusedContainerColor = Palette.current.surface,
+                unfocusedContainerColor = Palette.current.surface,
             )
         )
 
@@ -250,15 +271,15 @@ fun LoginScreen(
             modifier = Modifier.fillMaxWidth(),
             shape = MaterialTheme.shapes.small,
             colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = GymSmartColors.Primary,
-                unfocusedBorderColor = GymSmartColors.Outline,
-                focusedLabelColor = GymSmartColors.Primary,
-                unfocusedLabelColor = GymSmartColors.TextSecondary,
-                cursorColor = GymSmartColors.Primary,
-                focusedTextColor = GymSmartColors.TextPrimary,
-                unfocusedTextColor = GymSmartColors.TextPrimary,
-                focusedContainerColor = GymSmartColors.SurfaceCard,
-                unfocusedContainerColor = GymSmartColors.SurfaceCard,
+                focusedBorderColor = Palette.current.accentText,
+                unfocusedBorderColor = Palette.current.border,
+                focusedLabelColor = Palette.current.accentText,
+                unfocusedLabelColor = Palette.current.textSecondary,
+                cursorColor = Palette.current.accentText,
+                focusedTextColor = Palette.current.textPrimary,
+                unfocusedTextColor = Palette.current.textPrimary,
+                focusedContainerColor = Palette.current.surface,
+                unfocusedContainerColor = Palette.current.surface,
             )
         )
 
@@ -267,7 +288,7 @@ fun LoginScreen(
         if (errorMsg.isNotEmpty()) {
             Text(
                 text = errorMsg,
-                color = GymSmartColors.Error,
+                color = Palette.current.danger,
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -296,15 +317,15 @@ fun LoginScreen(
                 .height(52.dp),
             shape = MaterialTheme.shapes.small,
             colors = ButtonDefaults.buttonColors(
-                containerColor = GymSmartColors.Primary,
-                disabledContainerColor = GymSmartColors.Outline,
-                contentColor = GymSmartColors.OnPrimary,
-                disabledContentColor = GymSmartColors.TextDisabled
+                containerColor = Palette.current.hero,
+                disabledContainerColor = Palette.current.border,
+                contentColor = Palette.current.onHero,
+                disabledContentColor = Palette.current.chevron
             )
         ) {
             if (isLoading) {
                 CircularProgressIndicator(
-                    color = GymSmartColors.OnPrimary,
+                    color = Palette.current.onHero,
                     modifier = Modifier.size(22.dp),
                     strokeWidth = 2.dp
                 )
@@ -324,7 +345,7 @@ fun LoginScreen(
         }) {
             Text(
                 "¿Olvidaste tu contraseña?",
-                color = GymSmartColors.TextSecondary,
+                color = Palette.current.textSecondary,
                 style = MaterialTheme.typography.bodyMedium
             )
         }
@@ -332,12 +353,12 @@ fun LoginScreen(
         TextButton(onClick = { navController.navigate(Screen.Register.route) }) {
             Text(
                 "¿No tienes cuenta?  ",
-                color = GymSmartColors.TextSecondary,
+                color = Palette.current.textSecondary,
                 style = MaterialTheme.typography.bodyMedium
             )
             Text(
                 "Regístrate",
-                color = GymSmartColors.Primary,
+                color = Palette.current.accentText,
                 fontWeight = FontWeight.Bold,
                 style = MaterialTheme.typography.bodyMedium
             )
