@@ -4,6 +4,110 @@ Bitácora corta por sesión de trabajo sobre el endurecimiento del proyecto. Ent
 
 ---
 
+## 2026-11-26 (cont. 2) — Melocotón en todas las pantallas; commits y push
+
+Estilo aplicado sin rediseñar a Nutrición, Peso, Onboarding, Login, Registro, contraseña (olvidé /
+restablecer), Suscripción, Progreso, arranque y raíz de la app. Tokens de macros nuevos en la paleta;
+dos `Canvas` leían la paleta dentro del dibujo (no compila) y se sacó a una variable. Verificado en
+JVM, Android, JS y Wasm. A petición del usuario: commits separados por temas y push.
+
+## 2026-11-26 (cont.) — Tarea 7: unir ejercicios entre días, del simulador al código
+
+Se diseñó con un simulador HTML iterado con el usuario (lista de días, día, añadir/unir, apuntar series)
+y se pasó al código tal cual: modelo nuevo con `linkId`/`lastFrom` y configuración por serie
+(`perSide`/`unilateral` nullable, lectura antigua por tipo si faltan), espejo en el servidor,
+`WorkoutScreen.kt` y `WorkoutLogScreen.kt` reescritas en Melocotón, `ProgressScreen` lee la
+configuración de cada serie, `WorkoutModelsTest` reescrito (13 tests). Arreglado de paso un
+`padding` negativo que habría hecho caer la hoja de nombre. Batería completa + Android en verde.
+El usuario aprobó las piezas que el simulador no tenía (se quedan las 4 de la app real); descartó unir ejercicios ya existentes y las sugerencias de ejercicios. Pendiente: redesplegar el servidor y probar en el móvil.
+
+## 2026-11-26 — Tarea 3: estilo elegido con maquetas y primera pantalla aplicada; tarea 5 cerrada
+
+**Tarea 5 (pulsera).** Se exploró con el usuario y su pulsera en la mano. "Compartir FC" existe pero
+es un modo de pantalla (al salir se apaga); la monitorización de Mi Fitness tiene 1 min como mínimo y
+el modo "inteligente" mide *menos* en reposo, no más en actividad (ficha oficial de la Band 10). El
+usuario la dio por cerrada. Detalle y la vía no probada, en `CONTINUAR.md`.
+
+**Tarea 7.** Diseñada pero no implementada: la identidad de un ejercicio se **declara** al añadirlo
+("es el mismo que este de otro día") en vez de deducirse del nombre, que fue la objeción del usuario.
+Maqueta navegable de cinco pantallas en https://claude.ai/artifact/7VTBXk5NPcDDfGe5WMy4N8.
+
+**Tarea 3 (rediseño).** Todo por maquetas antes de tocar código, en un lienzo de diseño con cuatro
+páginas (https://claude.ai/artifact/9vnNXBDdPnrQqqp4qDrhJr): 6 direcciones → 6 variaciones de la que
+gustó → 6 estructuras de la elegida → la elegida es "Melocotón y chocolate", estructura M1. Después,
+seis versiones del perfil en esa paleta, pendientes de elección.
+
+Aplicado al inicio con una base pensada para el interruptor claro/oscuro: paleta con **tokens por
+función** servida por `CompositionLocal` (`Palette.kt`), migración pantalla a pantalla sin tocar el
+`GymSmartColors` viejo, DM Sans incluida, iconos de línea con los trazos exactos de la maqueta y una
+función de barra de estado para que la hora no desaparezca sobre el crema con el móvil en modo
+oscuro. Una diferencia deliberada con la maqueta: la barra no va hacia "10.000 pasos" (objetivo que la
+app no tiene) sino hacia el siguiente nivel del baremo, que en el caso de la maqueta da lo mismo.
+
+**Después, el perfil**: el usuario eligió una mezcla de las maquetas P1 y P4 (cabecera a sangre con
+sus cifras + pestañas Cuerpo/Cuenta/Pulsera) y pidió aplicarla "tal cual". Hecho con la lógica
+intacta; la única desviación es que el deslizador de ritmo conserva su zona verde y su línea de
+kcal, que la maqueta simplificaba.
+
+**Verificado**: `:shared:jvmTest` (116), `:composeApp:jvmTest`, `:server:compileKotlin`,
+`:composeApp:compileKotlinJvm`, `:composeApp:compileDebugKotlinAndroid`. **Sin verificar en
+dispositivo.** **Nada commiteado** (tampoco la tanda 1/4/2/6 del 2026-11-25).
+
+---
+
+## 2026-11-25 — Segunda lista de mejoras (1-7): investigadas las siete, hechas 1, 4, 2 y 6
+
+Mismo patrón que la sesión anterior: el usuario dio 7 mejoras, pidió **no tocar nada** hasta tenerlas
+todas investigadas (dentro del código y fuera, con fuentes donde hacían falta) y clasificadas por
+esfuerzo y nivel de modelo. Vista la tabla, pidió ejecutar **1, 4, 2 y 6 en ese orden y del tirón**.
+
+Tres decisiones se tomaron sin respuesta del usuario, porque pidió no parar, y quedan marcadas como
+reversibles en `CONTINUAR.md`: en la 1, borrar los atajos sin sustituirlos; en la 4, emoji en vez de
+iconos vectoriales; en la 6, la convención de las repeticiones en unilateral.
+
+**Lo que salió de la investigación y no se esperaba:**
+
+- **El TEF rompe la comparación obvia (tarea 2).** `BMR × (PAL − 1)` no son calorías de movimiento:
+  el PAL se define como `gasto total ÷ BMR` y el gasto total incluye el efecto térmico de los
+  alimentos (~10 %). La pulsera reporta solo actividad. Sin descontarlo, la app le habría dicho al
+  usuario que su pulsera marca siempre un 10 % menos que su nivel — la misma familia de fallo que ya
+  le hizo perder peso queriendo ganarlo. Documentado en §16 del fundamento científico, que es sección
+  nueva: la ciencia de los pasos de la tarea F **nunca se había escrito**, y la referencia del código
+  a "§14" era falsa (§14 son los invariantes de tests).
+- **La pulsera ya hace lo que el usuario quería hackear (tarea 5).** La Band 10 emite FC por el perfil
+  BLE estándar; Xiaomi lo documenta. Pero no arregla las kcal: el cuello de botella medido está en
+  Mi Fitness → Health Connect, y convertir pulso en calorías en el gimnasio cae fuera del rango de
+  validación de Keytel (2005). Queda como spike, no como tarea.
+- **El rediseño (tarea 3) es, de largo, lo más caro de la lista**: 955 referencias directas a
+  `GymSmartColors.*` en 20 archivos, sobre un `object` de constantes que no puede cambiar en runtime.
+  Hoy un interruptor claro/oscuro es imposible sin tocar las 955.
+
+**Dos bugs preexistentes que aparecieron al hacer el trabajo, los dos de la tanda anterior:**
+
+1. **El baremo de pasos de la tarea F no se veía en el onboarding.** `SelectableRow` pintaba
+   `parts[0]` y `parts[1]` y tiraba el resto sin avisar; los pasos iban como tercera línea. Solo se
+   veían en el perfil. Arreglado.
+2. **El conmutador total/por lado ya existía, escondido y amnésico**: un `remember` local dentro del
+   teclado numérico que se olvidaba al cerrar la hoja. La tarea 6 lo ha convertido en una preferencia
+   guardada del ejercicio, visible en la tarjeta de peso.
+
+**Decisión de diseño que vale la pena recordar (tarea 6):** `entryTotal` es una preferencia *de
+entrada*; lo que se guarda en `WorkoutSet.value` sigue siendo la unidad canónica del tipo. Guardar el
+total habría hecho que el histórico significase cosas distintas según cuándo se apuntó cada serie. En
+cambio `unilateral` **sí** se copia a `SessionExercise`, porque cambia el volumen y el volumen de un
+día pasado no puede depender de cómo esté el plan hoy.
+
+**Un fallo propio por el camino**: el test de comprobación cruzada de la tarea 2 usaba 0,04 kcal/kg/km
+cuando ese 0,04 es por *paso* (el valor por km es ~0,75). Lo cazó el propio test al fallar; corregido
+en el test y en el KDoc. El código nunca llegó a estar mal.
+
+**Verificado**: `:shared:jvmTest` (111), `:composeApp:jvmTest` (23), `:server:compileKotlin`,
+`:composeApp:compileKotlinJvm` y `:composeApp:compileDebugKotlinAndroid`, todo en verde. 28 tests
+nuevos entre las tres tareas con lógica. **Nada commiteado.** Pendiente de ver en el móvil: el aspecto
+de los emoji (tres son de Unicode 13/14) y de los conmutadores nuevos.
+
+---
+
 ## 2026-11-24 — Nueva lista de mejoras A-G: hechas A, D, B y G
 
 Sesión de funcionalidades, no de endurecimiento. El usuario pidió 7 mejoras (luego 8) y, antes de tocar

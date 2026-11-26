@@ -6,9 +6,355 @@
 > [08-backlog-mejoras.md](08-backlog-mejoras.md) (cada hallazgo con su estado).
 > Este documento se actualiza cada vez que se termina algo, no solo al final de la sesión.
 
-**Última actualización**: 2026-11-24 (nueva lista de mejoras A-G pedida por el usuario; hechas A, D, B
-y G, sin commitear; ver sección de abajo. Antes de eso: los 5 bloques de la auditoría de kcal están
-completos — detalle más abajo en este mismo documento).
+**Última actualización**: 2026-11-26 (tarea 7 cerrada en código; **estilo Melocotón aplicado a todas las pantallas en uso**; commits por temas y push hechos a petición del usuario. Pendiente: redesplegar el servidor, probar en el móvil, variante oscura de Melocotón).
+
+---
+
+## 🟡 Segunda lista de mejoras (2026-11-25) — tareas 1-7
+
+El usuario pidió 7 mejoras nuevas y, como la vez anterior, primero una investigación de todas (dentro
+y fuera del código, con fuentes para las que lo necesitaban) y una clasificación por esfuerzo. Luego
+pidió ejecutar **1, 4, 2 y 6 en ese orden, del tirón**. Las otras tres siguen sin empezar.
+
+| # | Tarea | Modelo | Esfuerzo | Estado |
+|---|---|---|---|---|
+| 1 | Quitar los chips de 50/100/150/200 g del selector de ración | Sonnet 5 | Bajo | ✅ Hecho |
+| 4 | Iconos en los alimentos, como Fitia | Sonnet 5 | Medio | ✅ Hecho |
+| 2 | kcal activas estimadas bajo cada nivel de actividad | Opus 5 | Medio | ✅ Hecho |
+| 6 | Conmutadores total/por lado y unilateral al registrar una serie | Opus 5 | Medio | ✅ Hecho |
+| 7 | Recordar el peso de un ejercicio entre días distintos | Opus 5 | Alto | ✅ Hecho (falta probar en móvil y redesplegar servidor) |
+| 5 | Pulsera: pulsaciones cada 5 s en vez de cada minuto | Opus 5 | Alto | ❌ Cerrada: no viable (ver abajo) |
+| 3 | Rediseño general + tema claro/oscuro | Opus 5 | Alto | 🟡 En marcha: inicio hecho, perfil en maquetas |
+
+**Verificado con** `:shared:jvmTest` (111 tests), `:composeApp:jvmTest` (23), `:server:compileKotlin`,
+`:composeApp:compileKotlinJvm` y **`:composeApp:compileDebugKotlinAndroid`**, todo en verde.
+**Nada commiteado.** Sin verificar en dispositivo: el aspecto real de los emoji de alimentos y de los
+conmutadores nuevos.
+
+### ✅ Tarea 1 — Fuera los atajos de gramos
+
+`listOf(50, 100, 150, 200)` aparecía dos veces en `NutritionScreen.kt`: en el selector de ración y en
+el editor de una entrada ya guardada. Se quitaron los dos, con su `Spacer` sobrante (−31 líneas). Se
+comprobó que `BorderStroke` y `OutlinedButton` siguen usándose en el archivo, así que no quedan
+imports huérfanos.
+
+**Decisión tomada sin preguntar** (el usuario no contestó y pidió no parar): solo borrar, sin
+sustituir. Queda anotado que Fitia no los quita sino que pone **raciones reales** ("1 taza (200 g)",
+"1 huevo"), que sí tendría valor, pero eso es otra tarea: hay que meter raciones caseras en los 90
+alimentos genéricos.
+
+### ✅ Tarea 4 — Iconos en los alimentos
+
+`shared/.../nutrition/FoodIcons.kt` (nuevo): una tabla de reglas palabra → emoji y `foodIconFor()`.
+Se pintan en los resultados de búsqueda, en las comidas del día, en la cabecera del selector de
+ración y en los alimentos de una colección.
+
+**Por qué emoji y no iconos dibujados**: pesan cero, funcionan en las cuatro plataformas sin escribir
+nada por plataforma, y es la convención que la app ya usaba en `WorkoutKind` y en los tipos de comida.
+Un juego vectorial se vería algo mejor a cambio de dibujar y mantener ~25 assets.
+
+**Por qué una sola tabla para genéricos y marcas**: los 90 alimentos de `GENERIC_FOODS` podrían llevar
+su icono escrito al lado, pero entonces habría dos mecanismos y dos sitios donde el pollo puede dejar
+de ser pollo. Hay uno solo, y un test exige que **los 90 genéricos resuelvan a un icono concreto**: la
+curación existe, pero vive en el test en vez de duplicada.
+
+**Dos cosas que se aprendieron por el camino:**
+- La búsqueda es **por palabra completa**, reutilizando `normalizeFoodName`/`phraseMatches` de
+  `CookingYield` (que pasó de `private` a `internal`). Por subcadena, "repollo" contendría "pollo" y
+  una verdura saldría con un muslo al lado — la misma trampa que ya mordió en el catálogo de cocción.
+- **Las marcas de suplementos rompen esa regla**: "Evowhey 2.0" es una sola palabra, así que por
+  palabra completa no se reconoce. Se añadió un segundo modo de búsqueda **por fragmento** (`stems`),
+  usado *solo* en la regla de suplementos y *solo* con raíces inglesas que no pueden aparecer dentro
+  de una palabra española (`whey`, `protein`, `proteic`, `casein`, `isolat`, `creatin`). Buscar "cola"
+  por fragmento convertiría la coliflor en un refresco: por eso es una excepción y está acotada.
+  (`proteic` hace falta aparte porque "proteico" no contiene "protein" — le falta la n.)
+
+**Nota de compatibilidad**: tres iconos son de Unicode 13/14 (🫒 aceite, 🫘 legumbres, 🫑 pimiento) y
+piden Android 12L o superior. Se usaron solo donde no había alternativa clásica razonable. Si alguno
+sale como un cuadrado en el móvil, se cambia en un sitio y afecta a toda la app.
+
+10 tests nuevos en `FoodIconsTest.kt`.
+
+### ✅ Tarea 2 — Calorías activas bajo cada nivel de actividad
+
+Amplía lo que hizo la tarea F con los pasos. Ahora cada nivel enseña también las **calorías activas**
+que le corresponderían al usuario, calculadas con su BMR real del formulario (se actualizan en cuanto
+corrige peso o edad). Si el perfil está a medias, se queda en los pasos: media ayuda es mejor que una
+cifra inventada.
+
+**No hay tabla fija de kcal por nivel y no puede haberla**: dependen del peso, la altura, la edad y el
+sexo. "Moderado = 500 kcal" sería inventado.
+
+**El hallazgo que justifica que esto lo hiciera Opus y no un modelo pequeño.** La resta evidente
+(`gasto − BMR`) **está mal para este uso**. El PAL se define como `gasto total ÷ BMR` (National
+Academies, *DRI*, cap. 4) y el gasto total incluye el **efecto térmico de los alimentos**, ~10 % del
+total. O sea, `BMR × (PAL − 1)` son movimiento **más digestión**. La pulsera, en cambio, reporta
+`ActiveCaloriesBurnedRecord`, que es solo actividad. Enseñar las dos cifras juntas sin descontar el TEF
+le diría al usuario que su pulsera marca siempre un ~10 % menos que el nivel que eligió, y la reacción
+natural sería bajar de nivel y comer de menos. **Es exactamente la familia de fallo que ya llegó al
+usuario** (objetivo de ganar peso → déficit encubierto de 400-500 kcal/día). Así que se descuenta:
+`activas = BMR × (PAL × 0,90 − 1)`, y lo que se muestra está ya en la escala de la pulsera.
+
+**Comprobación cruzada**: andar cuesta ~0,75 kcal/kg/km brutos → ~0,04 kcal/paso para 75-80 kg → los
+~4.000 pasos de un sedentario son ~170 kcal, frente a las ~145 que da la fórmula. Dos caminos que no
+comparten ni una constante, mismo orden de magnitud. Hay un test que lo fija.
+
+Se redondea a la decena y con `~` delante: "711 kcal" afirmaría tres cifras significativas sobre una
+estimación cuyo eslabón más débil tiene 250-350 kcal de margen.
+
+**Un bug que apareció al hacerlo**: en el onboarding, `SelectableRow` pintaba `parts[0]` y `parts[1]` y
+**descartaba el resto en silencio**. El baremo de pasos de la tarea F se añadía como tercera línea, así
+que **nunca llegó a verse en el onboarding** — solo en el perfil. Arreglado: ahora pinta todas las
+líneas que reciba.
+
+**Cambio de interfaz en el perfil**: el baremo iba dentro del texto de cada opción del desplegable, y
+el campo cerrado es de una sola línea, así que al elegir un nivel el nombre salía cortado. `DropdownField`
+acepta ahora una línea de ayuda opcional bajo cada opción: la ayuda se ve donde sirve (mientras se
+compara) y el campo cerrado dice solo "Moderado".
+
+Documentado en `10-fundamento-cientifico.md` **§16** (sección nueva). De paso se descubrió que la
+referencia del código a "§14" era **falsa**: §14 son los invariantes de tests y la ciencia de los pasos
+no estaba escrita en ninguna parte. Ahora sí, y la referencia apunta a §16.1. 9 tests nuevos.
+
+### ✅ Tarea 6 — Total / por lado, y unilateral
+
+Dos conmutadores nuevos en la tarjeta de peso, justo bajo la píldora del tipo de ejercicio. Se guardan
+en el **ejercicio**, no en la serie: se eligen una vez y no en cada repetición del flujo.
+
+**Lo de "total / por lado" ya existía a medias y mal colocado**: había un `asTotal` dentro del teclado
+numérico, con `remember` local, que se olvidaba al cerrar la hoja y había que volver a pulsar en cada
+serie. Ahora es `WorkoutExercise.entryTotal`, persistente, y el botón del teclado y el conmutador de la
+tarjeta son el mismo ajuste.
+
+**La invariante que sostiene el cambio**: `entryTotal` es una preferencia **de entrada**. Lo que se
+guarda en `WorkoutSet.value` sigue siendo la unidad canónica del tipo, siempre. Si se guardase el
+total, dos series idénticas apuntadas en modos distintos divergirían y el histórico pasaría a
+significar cosas distintas según cuándo se registró cada serie. Hay un test que lo fija.
+
+Solo se ofrece donde hay algo que convertir (barra y mancuernas, `canSwitchTotal`). En máquina, polea
+y peso corporal el número de la placa **es** el total. Para una máquina cargada con discos a los lados,
+la forma correcta sigue siendo "Barra libre" con el peso del carro en `barKg`.
+
+Detalle que se cuidó: el ± sigue moviendo un disco por lado, pero en modo total el número que se ve se
+mueve el doble, así que el rótulo del botón lo dice (`displayStep()`, derivado de `totalKg` para que no
+pueda desincronizarse).
+
+**Unilateral — la convención, que era lo que había que decidir**: las repeticiones que se apuntan son
+**las de un lado** ("10 por brazo", que es como lo cuenta todo el mundo) y el **volumen cuenta los
+dos**, porque el trabajo se hizo dos veces. Comprobación de que es la correcta y no una inflación: un
+remo a dos manos con 40 kg × 10 y uno a una mano con 20 kg × 10 por lado dan **el mismo volumen**, que
+es lo que debe pasar — es el mismo trabajo repartido de otra forma. Hay un test exactamente para eso.
+
+`SessionExercise` también guarda `unilateral`, por la misma razón que ya guardaba el nombre y el tipo:
+si el volumen de una sesión pasada se calculase mirando el plan de hoy, desmarcar la casilla cambiaría
+retroactivamente un entrenamiento de hace un mes.
+
+Los dos campos son `false` por defecto, así que **todo lo guardado antes se lee exactamente igual**.
+Espejo de los dos en el modelo del servidor; al ser booleanos no hacen falta validaciones nuevas.
+9 tests nuevos en `WorkoutModelsTest.kt`.
+
+### 🟡 Tarea 3 — Rediseño: estilo elegido y primera pantalla aplicada
+
+**Lienzo de diseño** (privado del usuario): https://claude.ai/artifact/9vnNXBDdPnrQqqp4qDrhJr — cuatro
+páginas: seis direcciones iniciales, seis variaciones de "Estudio", seis estructuras de "Melocotón" y
+seis versiones del perfil. Ahí está todo lo que se le enseñó y lo que eligió.
+
+**Cómo se eligió**: seis direcciones (3 oscuras, 3 claras) → le gustó la 2 "Estudio" (claro, cálido,
+editorial) → seis variaciones de esa línea → eligió **2e "Melocotón y chocolate"** "sin ninguna duda"
+→ seis estructuras con esos colores → se quedó con la **M1, la 2e original**.
+
+**La paleta** (exacta de la maqueta, contrastes comprobados contra WCAG AA): fondo `#F7EEE6`,
+tarjeta `#FFFFFF`, borde `#EADCCF`, texto `#2B1D17` / `#6E5D53`, bloque protagonista chocolate
+`#3E2A20` (con `#5A3F31` dentro y textos `#FBF4EE` / `#D8C3B4` / `#F8D3B6`), acento melocotón de
+relleno `#E8955E` y **acento para texto `#A85A2A`** (el melocotón no llega a 4,5:1 como texto pequeño
+sobre blanco, por eso hay dos). Tipografía **DM Sans**.
+
+**Lo que ya está en el código** (verificado: `:shared:jvmTest` 116 tests, `:composeApp:jvmTest`,
+`:server:compileKotlin`, `:composeApp:compileKotlinJvm` y `:composeApp:compileDebugKotlinAndroid`,
+todo en verde):
+
+- `ui/theme/Palette.kt` (nuevo): `GymSmartPalette` con **tokens por función** (`hero`,
+  `accentText`, `textSecondary`…), la instancia `MelocotonClaro`, `LocalPalette` + `Palette.current`
+  y `MelocotonTheme { }`, que fija paleta, un esquema de color claro coherente (para que menús y
+  diálogos no salgan oscuros) y la tipografía DM Sans **sin colores metidos dentro**. Esto es la base
+  del interruptor claro/oscuro: con tokens por función, una paleta oscura solo tiene que asignar
+  otro color a cada papel. **La migración es pantalla a pantalla**: cada una que se rediseña se
+  envuelve en `MelocotonTheme` y deja de leer `GymSmartColors`.
+- **DM Sans incluida en la app**: 5 pesos en `composeResources/font/` (subconjunto latino de
+  Fontsource, licencia OFL; cubre ñ, tildes, ¿¡, €). Se comprobó la firma TrueType de cada archivo
+  antes de meterlo. Ojo: no incluye `≈`; si se usa DM Sans donde aparece ese símbolo, saldrá de la
+  fuente de respaldo.
+- `ui/icons/LineIcons.kt` (nuevo): iconos de línea como `ImageVector`, con **los mismos trazos SVG
+  que la maqueta**, teñibles con la paleta. Sustituyen a los emoji de las secciones del inicio. Los
+  emoji de los alimentos (tarea 4) se quedan: ahí sí ayudan.
+- `ui/theme/SystemBars.kt` + `actual` en las 5 plataformas: `SystemBarsAppearance(darkIcons)`. Hace
+  falta porque la app va de borde a borde y, con el móvil en modo oscuro, la hora y la batería
+  saldrían blancas sobre el crema. En Android pone iconos oscuros mientras la pantalla está delante
+  y **restaura los anteriores al salir** (las pantallas viejas siguen siendo oscuras).
+- `ActivityBenchmarks.levelForSteps` / `nextLevelThreshold` / `labelFor` (+5 tests): el nivel que
+  corresponde a los pasos **de hoy** y el siguiente corte.
+- **`DashboardScreen.kt` reescrita** con la estructura de M1: cabecera, saludo según la hora, bloque
+  de chocolate (fecha, nivel de hoy, pasos, kcal activas, barra), secciones en lista y Planes. Se
+  conservan el refresco automático de la pulsera, el botón de refresco manual y el menú de cuenta
+  (perfil / cerrar sesión). `AnimatedCard` y `AnimatedMiniCard` desaparecen (no los usaba nadie más).
+
+**Una diferencia deliberada con la maqueta**: la maqueta ponía "78 % de 10.000 pasos", pero la app
+**no tiene objetivo de pasos** y 10.000 sería inventado (se le avisó tres veces al enseñar las
+maquetas). La barra avanza hacia el **siguiente nivel del baremo** que ya usa el perfil, y el texto
+dice "78 % · faltan 2.158 pasos para Activo". Con 7.842 pasos el siguiente corte es justo 10.000, así
+que en el caso de la maqueta se ve igual.
+
+**Sin verificar en dispositivo**: el aspecto real (tipografía, iconos, barra de estado con el móvil
+en modo oscuro). Las demás pantallas siguen con el tema oscuro antiguo, así que **al entrar desde el
+inicio a cualquier sección el salto de claro a oscuro es esperable** hasta que se migren.
+
+**Perfil aplicado (2026-11-26)** — diseño elegido por el usuario: **mezcla de P1 y P4** (página
+"Perfil — mezcla P1 + P4" del lienzo). Cabecera de chocolate a sangre detrás de la barra de estado
+con las cifras **guardadas** (peso, objetivo, kcal/día — no las que se están tecleando), y tres
+pestañas: **Cuerpo** (ajuste adaptativo + cuerpo y objetivo), **Cuenta** (datos personales +
+suscripción) y **Pulsera**. La lógica es la de antes línea a línea: los dos guardados, el reguardado
+al cambiar la fecha de nacimiento, validaciones, autoajuste y diálogo de resumen (restilado).
+Detalles: la pestaña se guarda al girar el móvil; `SystemBarsAppearance` ahora separa iconos de
+arriba (claros, sobre chocolate) y de abajo (oscuros, sobre crema); `RateSlider` acepta colores
+(`RateSliderColors`, por defecto los antiguos para el onboarding) y **conserva su zona verde
+recomendada y su línea de kcal**, que la maqueta simplificaba; formato de miles compartido en
+`ui/Format.kt`. Verificado con la batería completa + Android. Sin verificar en dispositivo.
+
+**GPS, Mis rutas, Rutas de la comunidad y Detalle de ruta (2026-11-26)** — solo estilo, sin
+rediseñar (petición expresa del usuario): misma estructura y lógica; cada pantalla se envuelve en
+`MelocotonTheme` con iconos oscuros arriba, y sus 116 colores viejos pasan a tokens de la paleta.
+Regla aplicada, porque el azul viejo hacía de dos cosas: `Primary` como **fondo de botón** → chocolate
+(`hero`, texto `onHero`); `Primary` como **texto, icono, foco o indicador** → `accentText`. Diálogos
+en tarjeta blanca; snackbar en chocolate; botón de "ruta completada" en melocotón. Los colores de la
+línea de la ruta sobre el mapa no se tocan (los dibuja el mapa de cada plataforma). Script de
+migración reutilizable: el mismo patrón sirve para las pantallas que quedan.
+
+**Resto de pantallas (2026-11-26)** — solo estilo, mismo script: Nutrición, Peso, Onboarding, Login,
+Registro, Olvidé/Restablecer contraseña, Suscripción y Progreso. La paleta gana `macroProtein`,
+`macroCarbs` y `macroFat` (más oscuros que los viejos, para leerse sobre blanco). El deslizador del
+onboarding usa los mismos colores que el del perfil. La pantalla de arranque (`NavGraph.StartupScreen`)
+y la raíz de la app (`App.kt`) pasan a `MelocotonTheme`. **Con esto no queda ninguna pantalla en uso con
+el tema oscuro**; solo `TrainingScreen` (inalcanzable, nadie navega a ella; el usuario decidió dejarla
+como está) y los colores por defecto de `RateSlider`. `GymSmartColors` / `GymSmartTheme` siguen en
+`AppTheme.kt` sin uso real: candidatos a borrar cuando se decida. Verificado: batería completa +
+Android + JS + Wasm. Sin verificar en dispositivo.
+
+**Lo siguiente**:
+1. ~~Perfil~~ hecho (arriba). Siguiente pantalla a migrar: la elige el usuario. Pendiente de hablar
+   antes: la tarea 7 (el usuario quiere la versión simple: él decide si dos ejercicios son el mismo,
+   sin el caso de tipos distintos).
+2. **Diseñar la variante oscura de Melocotón** antes del interruptor: no se ha inventado a propósito.
+3. Migrar el resto de pantallas (el usuario decide cuáles se rediseñan; el estilo se aplica a todas).
+
+### ✅ Tarea 7 — Unir el mismo ejercicio entre días: hecha (falta probar en móvil)
+
+**Cómo se diseñó**: simulador HTML interactivo iterado con el usuario hasta que dijo "así me gusta
+3000 veces mejor" y pidió pasarlo **tal cual** al código. Simulador:
+https://claude.ai/artifact/7VTBXk5NPcDDfGe5WMy4N8 (privado). **Es la especificación**: si algo de la
+app no cuadra con él, manda el simulador.
+
+**Versión simple (decisión del usuario, no re-preguntar)**: el usuario decide si dos ejercicios son el
+mismo. Al escribir un nombre que ya existe en otro día (comparando sin mayúsculas, sin tildes y sin
+espacios de más, `normalizeExerciseName`; nada de sinónimos) se pregunta "¿Es el mismo?" → "Sí,
+unirlos" / "No, es otro". También se puede unir desde la lista "Ya lo haces en otro día" al añadir.
+
+**Modelo** (`composeApp/.../model/WorkoutModels.kt`, reescrito; espejo en el servidor):
+- `WorkoutExercise.linkId` (vacío = sin unir; `groupId = linkId.ifBlank { id }`), `lastFrom` (en qué
+  día fue la última vez). Unidos comparten **tipo, barra, salto y última vez**; el nombre es de cada día.
+- `WorkoutSet.perSide` / `unilateral` (nullable): **la configuración va en cada serie**, no en el
+  ejercicio. `null` = serie vieja → se lee como siempre (barra y mancuernas a cada lado, el resto en
+  total: `legacyPerSide`). El ejercicio guarda solo los valores por defecto.
+- Al terminar, la sesión se copia como `lastSession` **a todos los ejercicios del grupo**, con `lastFrom`.
+- Las comparaciones con la última vez son siempre en **peso total** (`totalKgOf` / `valueForTotal`).
+- `entryTotal` y `SessionExercise.unilateral` se conservan como campos obsoletos: el cliente usa JSON
+  estricto y el histórico viejo los trae.
+
+**Pantallas**: `WorkoutScreen.kt` (días, día, hojas de crear día / añadir / editar ejercicio / editar
+día, pantalla final) y `WorkoutLogScreen.kt` (apuntar series) reescritas en estilo Melocotón, tal cual
+el simulador. La tarea 6 queda sustituida: los conmutadores ahora son "Unilateral" y "A cada lado",
+en una sola línea junto al tipo, y se guardan en la serie. Se conserva lo que ya había: sesión
+guardada en cada cambio, aviso de descanso del sistema (tarea C), teclado numérico propio, histórico.
+
+**Verificado**: `:shared:jvmTest`, `:server:compileKotlin`, `:composeApp:compileKotlinJvm`,
+`:composeApp:jvmTest` (`WorkoutModelsTest` reescrito, 13 tests) y `:composeApp:compileDebugKotlinAndroid`,
+todo en verde. **Nada commiteado. Sin verificar en dispositivo.**
+
+**⚠️ Hay que redesplegar el servidor**: el servidor reescribe el plan con su modelo; uno viejo tiraría
+`linkId`, `lastFrom`, `perSide` y `unilateral` de cada serie al guardar (no rompe nada, pero se pierden
+las uniones).
+
+**Decidido por el usuario (2026-11-26, no re-preguntar)** sobre lo que el simulador no tenía
+(HTML: https://claude.ai/artifact/7niNEMs6voX2xgagjSRqdM): **se quedan** el botón atrás de la lista de
+días, "Ver mi progreso", el aviso "Entrenando · N series", "Editar" día (renombrar / eliminar), las
+sugerencias de nombre al crear día y el aviso sin conexión / error al cargar. **No se hace** unir dos
+ejercicios que ya existen (se asume: para unirlos hay que borrar uno y volver a añadirlo). **Se quedan
+fuera** las sugerencias de ejercicios al añadir. Con esto la tarea 7 queda cerrada en código; solo
+falta redesplegar el servidor y que el usuario la pruebe en el móvil.
+
+### ❌ Tarea 5 — Cerrada: no viable
+
+Lo que se comprobó, con el usuario delante y su pulsera (Xiaomi Smart Band 10):
+- **"Compartir FC" (emisión BLE estándar a ~1 Hz) existe**, pero es un **modo de pantalla**: solo
+  emite mientras esa pantalla está abierta en la pulsera; al salir se desactiva. Es lo mismo que el
+  modo entrenamiento, así que no quita el gesto manual que el usuario quería quitar.
+- **La monitorización de Mi Fitness**: opciones "inteligente", 1, 10 o 30 min. Según la ficha oficial
+  de Xiaomi de la Band 10, "inteligente" mide **cada 1 min en actividad y cada 10-30 en reposo**: no
+  mide más a menudo al moverse, mide menos al estar quieto. **1 minuto es el suelo** en todo lo que no
+  sea modo entrenamiento. Recomendación dada: dejarlo en "1 min" fijo.
+- Firmware propio: no existe para la Band 10 (Gadgetbridge no toca firmware; la Band 10 está "mostly
+  supported", con token y protocolo experimental).
+- Queda una vía **sin probar** que se le planteó y descartó él: mantener viva la emisión con un
+  cliente BLE conectado (prueba con nRF Connect) o pedir mediciones bajo demanda por el protocolo de
+  Xiaomi. Si algún día se retoma, se empieza por ahí, no desde cero.
+
+Alternativa que salió y quedó sin decidir: **calcular las kcal de fuerza desde lo que la app ya sabe**
+(ejercicio, peso, series, reps, descanso) en vez de desde el pulso, que para fuerza está fuera del
+rango de validación de Keytel (2005).
+
+### ⬜ Tareas 3, 5 y 7 — la investigación original (se conserva como referencia)
+
+**7 — recordar el peso entre días distintos.** Diagnóstico confirmado: `lastSession` vive **dentro de
+`WorkoutExercise`, que vive dentro de `WorkoutDay`**. El mismo ejercicio en dos días del plan son dos
+objetos con ids distintos y memorias independientes, que es justo lo que el usuario describió. La
+solución está medio construida: la tarea E creó `WorkoutSession`/`SessionExercise`, un histórico real
+por fecha, así que la referencia debe pasar a ser "la última vez que hice **este ejercicio**", mire el
+día que mire. Lo que lo hace caro: emparejar por nombre es frágil ("Press banca" vs "press de banca"),
+haría falta un identificador de ejercicio compartido entre días; y hay que decidir qué pasa si el mismo
+ejercicio se hizo con **tipos distintos** en dos días (máquina el lunes, mancuernas el sábado), porque
+ahí los números no son comparables y proponer el peso de uno en el otro sería peor que no proponer nada.
+
+**5 — pulsera cada 5 s.** Tres conclusiones de la investigación:
+1. **No hace falta hackear nada.** La Xiaomi Smart Band 10 soporta **emisión de FC por Bluetooth
+   estándar** (perfil BLE Heart Rate, el de las bandas pectorales). Xiaomi lo documenta y apps como
+   Pulsoid ya lo usan: se activa "Compartir FC" y cualquier app lee el pulso a ~1 Hz.
+2. **No arregla lo que se pretende.** La medición del 2026-11-24 (pulsera 56 kcal / Mi Fitness 54 /
+   Health Connect 37 / GymSmart 37) ya localizó el cuello de botella en **Mi Fitness → Health
+   Connect**. Leer el pulso por BLE abre una vía paralela, no toca ese tramo.
+3. **Pulso → kcal en el gimnasio es dudoso.** Keytel et al. (2005), r = 0,913, pero validado sobre
+   carrera y bici en estado estable al 57-90 % de FC máx. La fuerza no es nada de eso. Las fuentes
+   secundarias que dicen "sobreestima en fuerza" se contradicen entre ellas y ninguna es primaria: lo
+   honesto es decir que está **fuera de su rango de validación**, sin saber en qué dirección falla.
+
+   Limitaciones prácticas: la emisión se activa **a mano** (o sea, no es el "automático" que se pedía),
+   mientras emite la pulsera suele quedarse con un solo dispositivo, consume batería, y el código BLE
+   habría que escribirlo por plataforma. Modificar el firmware está descartado: Gadgetbridge declara
+   que no toca el software de la pulsera, la Band 10 está solo "mostly supported", necesita token y el
+   protocolo está marcado como experimental.
+
+   **Veredicto: es un spike con prueba en el móvil, no una tarea de desarrollo.** El pulso en vivo sí
+   tiene valor por sí mismo (verlo durante la serie, zonas de intensidad); como arreglo de las kcal, no.
+
+**3 — rediseño y tema claro/oscuro.** Medido el acoplamiento, que es lo que manda sobre el coste:
+**955 referencias directas a `GymSmartColors.*` fuera del archivo de tema**, en 20 archivos
+(`NutritionScreen` 142, `ProfileScreen` 124, `WorkoutLogScreen` 91, `WorkoutScreen` 71...).
+`GymSmartColors` es un `object` de `val` constantes, así que **hoy un interruptor claro/oscuro es
+imposible sin tocar esas 955 líneas**. La tipografía además fija colores dentro de cada `TextStyle`
+(segundo foco de fuga) y no hay `lightColorScheme` ni `isSystemInDarkTheme()` en ningún sitio. Lo bueno:
+apenas hay `Color(0x...)` sueltos (13 en total, en `TrainingScreen`, `WorkoutLogScreen`, `TrainingTable`
+y `TrainingCard`), así que el problema está concentrado. Plan propuesto en tres pasos: maquetas de la
+pantalla principal para elegir paleta → convertir `GymSmartColors` en un proveedor sensible al tema
+(`CompositionLocal`) y sacar los colores de la tipografía → rediseñar las pantallas que el usuario elija.
+**Va después de 6 y 7**, para no rediseñar `WorkoutLogScreen` dos veces.
 
 ---
 
@@ -203,7 +549,7 @@ Rangos de la clasificación por podómetro de **Tudor-Locke y Bassett, Sports Me
 <5.000 sedentario, 5.000-7.499 ligero, 7.500-9.999 moderado, 10.000-12.499 activo, >12.500 muy activo.
 En `shared/.../nutrition/ActivityBenchmarks.kt`, mostrado en el onboarding y en el perfil.
 
-**Dos avisos de honestidad que van escritos en el código y en §14 del fundamento científico:**
+**Dos avisos de honestidad que van escritos en el código y en §16.1 del fundamento científico:**
 1. El texto original **no se pudo leer**: el PDF y las versiones de PubMed están tras verificación
    anti-robot. Los cortes vienen de varias fuentes secundarias independientes que coinciden; la
    frontera superior varía en la literatura posterior (la revisión de 2008 la mueve a 12.000).
