@@ -59,6 +59,7 @@ import com.gymsmart.gymsmart.nutrition.matchingGenerics
 import com.gymsmart.gymsmart.nutrition.rankFoodResults
 import com.gymsmart.gymsmart.nutrition.WeighBasis
 import com.gymsmart.gymsmart.nutrition.findCookingYield
+import com.gymsmart.gymsmart.nutrition.foodIconFor
 import com.gymsmart.gymsmart.nutrition.per100For
 import com.gymsmart.gymsmart.nutrition.rawWeightFor
 import com.gymsmart.gymsmart.services.HealthDataProvider
@@ -66,7 +67,9 @@ import com.gymsmart.gymsmart.services.NutritionService
 import com.gymsmart.gymsmart.services.ProfileService
 import com.gymsmart.gymsmart.services.WEARABLE_POLL_INTERVAL_MS
 import com.gymsmart.gymsmart.services.WearableEnergy
-import com.gymsmart.gymsmart.ui.theme.GymSmartColors
+import com.gymsmart.gymsmart.ui.theme.MelocotonTheme
+import com.gymsmart.gymsmart.ui.theme.Palette
+import com.gymsmart.gymsmart.ui.theme.SystemBarsAppearance
 import io.ktor.client.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
@@ -128,9 +131,28 @@ private val httpClient = HttpClient {
 
 // ── Pantalla principal ────────────────────────────────────────────────────────
 
-@OptIn(kotlin.time.ExperimentalTime::class, ExperimentalMaterial3Api::class)
+/**
+ * NutritionScreen con el estilo Melocotón (Tarea 3). Solo cambia el aspecto: la estructura y la lógica
+ * de la pantalla son las de siempre, en [NutritionScreenContent].
+ */
 @Composable
 fun NutritionScreen(
+    navController: NavController,
+    nutritionService: NutritionService,
+    profileService: ProfileService,
+    healthDataProvider: HealthDataProvider,
+    onRequestCameraPermission: (callback: (Boolean) -> Unit) -> Unit = {}
+) {
+    MelocotonTheme {
+        // Fondo crema hasta arriba: la hora y la batería tienen que ir en oscuro.
+        SystemBarsAppearance(darkStatusIcons = true)
+        NutritionScreenContent(navController, nutritionService, profileService, healthDataProvider, onRequestCameraPermission)
+    }
+}
+
+@OptIn(kotlin.time.ExperimentalTime::class, ExperimentalMaterial3Api::class)
+@Composable
+private fun NutritionScreenContent(
     navController: NavController,
     nutritionService: NutritionService,
     profileService: ProfileService,
@@ -247,7 +269,7 @@ fun NutritionScreen(
         ModalBottomSheet(
             onDismissRequest = { sheetMode = null },
             sheetState = sheetState,
-            containerColor = GymSmartColors.SurfaceCard,
+            containerColor = Palette.current.surface,
             shape = MaterialTheme.shapes.large
         ) {
             when (val mode = sheetMode!!) {
@@ -426,7 +448,7 @@ fun NutritionScreen(
                         Text(
                             "Nutrición",
                             fontWeight = FontWeight.Bold,
-                            color = GymSmartColors.TextPrimary
+                            color = Palette.current.textPrimary
                         )
                     },
                     navigationIcon = {
@@ -434,7 +456,7 @@ fun NutritionScreen(
                             Icon(
                                 Icons.AutoMirrored.Filled.ArrowBack,
                                 contentDescription = "Volver",
-                                tint = GymSmartColors.TextPrimary
+                                tint = Palette.current.textPrimary
                             )
                         }
                     },
@@ -457,25 +479,25 @@ fun NutritionScreen(
                                     CircularProgressIndicator(
                                         modifier = Modifier.size(20.dp),
                                         strokeWidth = 2.dp,
-                                        color = GymSmartColors.TextPrimary
+                                        color = Palette.current.textPrimary
                                     )
                                 } else {
                                     Icon(
                                         Icons.Default.Refresh,
                                         contentDescription = "Actualizar calorías de la pulsera",
-                                        tint = GymSmartColors.TextPrimary
+                                        tint = Palette.current.textPrimary
                                     )
                                 }
                             }
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = GymSmartColors.Background
+                        containerColor = Palette.current.background
                     )
                 )
             }
         },
-        containerColor = GymSmartColors.Background,
+        containerColor = Palette.current.background,
         snackbarHost = {
             SnackbarHost(
                 hostState = snackbarHostState,
@@ -483,9 +505,9 @@ fun NutritionScreen(
             ) { data ->
                 Snackbar(
                     snackbarData = data,
-                    containerColor = GymSmartColors.SurfaceElevated,
-                    contentColor = GymSmartColors.TextPrimary,
-                    actionColor = GymSmartColors.Primary
+                    containerColor = Palette.current.hero,
+                    contentColor = Palette.current.onHero,
+                    actionColor = Palette.current.onHeroAccent
                 )
             }
         }
@@ -493,7 +515,7 @@ fun NutritionScreen(
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .background(GymSmartColors.Background)
+                .background(Palette.current.background)
                 .padding(padding),
             contentPadding = PaddingValues(bottom = 32.dp)
         ) {
@@ -509,13 +531,13 @@ fun NutritionScreen(
                     Spacer(Modifier.height(16.dp))
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        color = GymSmartColors.Error.copy(alpha = 0.12f),
+                        color = Palette.current.danger.copy(alpha = 0.12f),
                         shape = MaterialTheme.shapes.small
                     ) {
                         Text(
                             "⚠ No se pudieron cargar tus objetivos reales. Mostrando valores aproximados.",
                             modifier = Modifier.padding(12.dp),
-                            color = GymSmartColors.Error,
+                            color = Palette.current.danger,
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
@@ -533,7 +555,7 @@ fun NutritionScreen(
                     Spacer(Modifier.height(16.dp))
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        color = GymSmartColors.Warning.copy(alpha = 0.12f),
+                        color = Palette.current.accentText.copy(alpha = 0.12f),
                         shape = MaterialTheme.shapes.small
                     ) {
                         Text(
@@ -561,7 +583,7 @@ fun NutritionScreen(
                                         "vez de ${formatRate(t.requestedRate)} por semana."
                             },
                             modifier = Modifier.padding(12.dp),
-                            color = GymSmartColors.Warning,
+                            color = Palette.current.accentText,
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
@@ -576,7 +598,7 @@ fun NutritionScreen(
                     Spacer(Modifier.height(16.dp))
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        color = GymSmartColors.Warning.copy(alpha = 0.12f),
+                        color = Palette.current.accentText.copy(alpha = 0.12f),
                         shape = MaterialTheme.shapes.small
                     ) {
                         Text(
@@ -584,7 +606,7 @@ fun NutritionScreen(
                                 "como si fueras sedentario, que puede quedarse corto si has hecho " +
                                 "ejercicio. Sincroniza la app de tu pulsera y vuelve a entrar.",
                             modifier = Modifier.padding(12.dp),
-                            color = GymSmartColors.Warning,
+                            color = Palette.current.accentText,
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
@@ -598,7 +620,7 @@ fun NutritionScreen(
                     Spacer(Modifier.height(16.dp))
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        color = GymSmartColors.Warning.copy(alpha = 0.12f),
+                        color = Palette.current.accentText.copy(alpha = 0.12f),
                         shape = MaterialTheme.shapes.small
                     ) {
                         Text(
@@ -606,7 +628,7 @@ fun NutritionScreen(
                                 "proteína y la grasa ocupan casi todas las kcal y apenas queda sitio " +
                                 "para carbohidratos. Puede ser momento de revisar el ritmo elegido.",
                             modifier = Modifier.padding(12.dp),
-                            color = GymSmartColors.Warning,
+                            color = Palette.current.accentText,
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
@@ -674,7 +696,7 @@ private fun CalorieCard(
             .padding(horizontal = 16.dp)
             .fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
-        color = GymSmartColors.SurfaceCard
+        color = Palette.current.surface
     ) {
         Row(
             modifier = Modifier
@@ -685,6 +707,7 @@ private fun CalorieCard(
         ) {
             // Rueda — aquí sí usamos el gradiente permitido
             Box(contentAlignment = Alignment.Center) {
+                val pal = Palette.current
                 Canvas(modifier = Modifier.size(130.dp)) {
                     val stroke = 16.dp.toPx()
                     val inset  = stroke / 2
@@ -692,7 +715,7 @@ private fun CalorieCard(
 
                     // Fondo del ring
                     drawArc(
-                        color = GymSmartColors.SurfaceElevated,
+                        color = pal.surfaceSunken,
                         startAngle = -90f, sweepAngle = 360f,
                         useCenter = false, topLeft = Offset(inset, inset),
                         size = arc, style = Stroke(stroke, cap = StrokeCap.Butt)
@@ -708,24 +731,24 @@ private fun CalorieCard(
                     val carbsSweep   = if (totalKcalRaw > 0) (carbsKcal   / totalKcalRaw).toFloat() * totalSweep else 0f
                     val fatSweep     = if (totalKcalRaw > 0) (fatKcal     / totalKcalRaw).toFloat() * totalSweep else 0f
 
-                    if (proteinSweep > 0f) drawArc(GymSmartColors.MacroProtein, -90f, proteinSweep, false, Offset(inset, inset), arc, style = Stroke(stroke, cap = StrokeCap.Butt))
-                    if (carbsSweep   > 0f) drawArc(GymSmartColors.MacroCarbs,   -90f + proteinSweep, carbsSweep, false, Offset(inset, inset), arc, style = Stroke(stroke, cap = StrokeCap.Butt))
-                    if (fatSweep     > 0f) drawArc(GymSmartColors.MacroFat,     -90f + proteinSweep + carbsSweep, fatSweep, false, Offset(inset, inset), arc, style = Stroke(stroke, cap = StrokeCap.Butt))
+                    if (proteinSweep > 0f) drawArc(pal.macroProtein, -90f, proteinSweep, false, Offset(inset, inset), arc, style = Stroke(stroke, cap = StrokeCap.Butt))
+                    if (carbsSweep   > 0f) drawArc(pal.macroCarbs,   -90f + proteinSweep, carbsSweep, false, Offset(inset, inset), arc, style = Stroke(stroke, cap = StrokeCap.Butt))
+                    if (fatSweep     > 0f) drawArc(pal.macroFat,     -90f + proteinSweep + carbsSweep, fatSweep, false, Offset(inset, inset), arc, style = Stroke(stroke, cap = StrokeCap.Butt))
                 }
 
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("${totalKcal.toInt()}", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = GymSmartColors.TextPrimary)
-                    Text("/ ${realGoal.toInt()} kcal", style = MaterialTheme.typography.labelSmall, color = GymSmartColors.TextSecondary)
+                    Text("${totalKcal.toInt()}", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = Palette.current.textPrimary)
+                    Text("/ ${realGoal.toInt()} kcal", style = MaterialTheme.typography.labelSmall, color = Palette.current.textSecondary)
                     if (activeCaloriesToday > 0) {
-                        Text("${activeCaloriesToday.toInt()} kcal 🔥 hoy", fontSize = 9.sp, color = GymSmartColors.Warning, fontWeight = FontWeight.Bold)
+                        Text("${activeCaloriesToday.toInt()} kcal 🔥 hoy", fontSize = 9.sp, color = Palette.current.accentText, fontWeight = FontWeight.Bold)
                     }
                 }
             }
 
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                MacroRow("Proteínas", proteins, proteinGoal, GymSmartColors.MacroProtein)
-                MacroRow("Carbs",     carbs,    carbGoal,    GymSmartColors.MacroCarbs)
-                MacroRow("Grasas",    fat,      fatGoal,     GymSmartColors.MacroFat)
+                MacroRow("Proteínas", proteins, proteinGoal, Palette.current.macroProtein)
+                MacroRow("Carbs",     carbs,    carbGoal,    Palette.current.macroCarbs)
+                MacroRow("Grasas",    fat,      fatGoal,     Palette.current.macroFat)
             }
         }
     }
@@ -735,8 +758,8 @@ private fun CalorieCard(
 private fun MacroRow(label: String, value: Double, goal: Double, color: androidx.compose.ui.graphics.Color) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(color))
-        Text(label, style = MaterialTheme.typography.bodySmall, color = GymSmartColors.TextSecondary, modifier = Modifier.width(65.dp))
-        Text("${value.toInt()} / ${goal.toInt()}g", style = MaterialTheme.typography.bodySmall, color = GymSmartColors.TextPrimary, fontWeight = FontWeight.SemiBold)
+        Text(label, style = MaterialTheme.typography.bodySmall, color = Palette.current.textSecondary, modifier = Modifier.width(65.dp))
+        Text("${value.toInt()} / ${goal.toInt()}g", style = MaterialTheme.typography.bodySmall, color = Palette.current.textPrimary, fontWeight = FontWeight.SemiBold)
     }
 }
 
@@ -756,7 +779,7 @@ private fun MealSection(
             .fillMaxWidth()
             .animateContentSize(),
         shape = MaterialTheme.shapes.medium,
-        color = GymSmartColors.SurfaceCard
+        color = Palette.current.surface
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
@@ -766,36 +789,36 @@ private fun MealSection(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(meal.emoji, fontSize = 18.sp)
-                    Text(meal.label, style = MaterialTheme.typography.titleMedium, color = GymSmartColors.TextPrimary)
+                    Text(meal.label, style = MaterialTheme.typography.titleMedium, color = Palette.current.textPrimary)
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (entries.isNotEmpty()) {
                         Text("${entries.sumOf { it.kcal }.toInt()} kcal",
-                            style = MaterialTheme.typography.labelMedium, color = GymSmartColors.MacroFat, fontWeight = FontWeight.SemiBold)
+                            style = MaterialTheme.typography.labelMedium, color = Palette.current.macroFat, fontWeight = FontWeight.SemiBold)
                     }
                     if (onScanClick != null) {
                         Box(
-                            modifier = Modifier.size(30.dp).clip(MaterialTheme.shapes.extraSmall).background(GymSmartColors.MacroCarbs),
+                            modifier = Modifier.size(30.dp).clip(MaterialTheme.shapes.extraSmall).background(Palette.current.macroCarbs),
                             contentAlignment = Alignment.Center
                         ) {
                             IconButton(onClick = onScanClick, modifier = Modifier.size(30.dp)) {
-                                Icon(Icons.Default.QrCodeScanner, contentDescription = "Escanear", tint = GymSmartColors.TextPrimary, modifier = Modifier.size(18.dp))
+                                Icon(Icons.Default.QrCodeScanner, contentDescription = "Escanear", tint = Palette.current.textPrimary, modifier = Modifier.size(18.dp))
                             }
                         }
                     }
                     Box(
-                        modifier = Modifier.size(30.dp).clip(MaterialTheme.shapes.extraSmall).background(GymSmartColors.Primary),
+                        modifier = Modifier.size(30.dp).clip(MaterialTheme.shapes.extraSmall).background(Palette.current.accentText),
                         contentAlignment = Alignment.Center
                     ) {
                         IconButton(onClick = onAddClick, modifier = Modifier.size(30.dp)) {
-                            Icon(Icons.Default.Add, contentDescription = "Añadir", tint = GymSmartColors.OnPrimary, modifier = Modifier.size(18.dp))
+                            Icon(Icons.Default.Add, contentDescription = "Añadir", tint = Palette.current.onHero, modifier = Modifier.size(18.dp))
                         }
                     }
                 }
             }
 
             entries.forEach { entry ->
-                HorizontalDivider(color = GymSmartColors.Divider, modifier = Modifier.padding(vertical = 8.dp))
+                HorizontalDivider(color = Palette.current.divider, modifier = Modifier.padding(vertical = 8.dp))
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -805,14 +828,15 @@ private fun MealSection(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    Text(foodIconFor(entry.name), fontSize = 18.sp, modifier = Modifier.width(26.dp))
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(entry.name, style = MaterialTheme.typography.bodyMedium, color = GymSmartColors.TextPrimary, fontWeight = FontWeight.Medium)
+                        Text(entry.name, style = MaterialTheme.typography.bodyMedium, color = Palette.current.textPrimary, fontWeight = FontWeight.Medium)
                         Text(
                             "${entry.grams.toInt()}g${basisSuffix(entry)} · P: ${entry.proteins.toInt()}g · C: ${entry.carbs.toInt()}g · G: ${entry.fat.toInt()}g",
-                            style = MaterialTheme.typography.bodySmall, color = GymSmartColors.TextSecondary
+                            style = MaterialTheme.typography.bodySmall, color = Palette.current.textSecondary
                         )
                     }
-                    Text("${entry.kcal.toInt()} kcal", style = MaterialTheme.typography.bodySmall, color = GymSmartColors.TextSecondary, fontWeight = FontWeight.Medium)
+                    Text("${entry.kcal.toInt()} kcal", style = MaterialTheme.typography.bodySmall, color = Palette.current.textSecondary, fontWeight = FontWeight.Medium)
                 }
             }
         }
@@ -864,7 +888,7 @@ private fun FoodSearchSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(MaterialTheme.shapes.small)
-                .background(GymSmartColors.SurfaceElevated)
+                .background(Palette.current.surfaceSunken)
                 .padding(4.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
@@ -873,8 +897,8 @@ private fun FoodSearchSheet(
                     modifier = Modifier
                         .weight(1f)
                         .clip(MaterialTheme.shapes.extraSmall)
-                        .background(if (selectedTab == index) GymSmartColors.SurfaceCard else androidx.compose.ui.graphics.Color.Transparent)
-                        .border(if (selectedTab == index) 1.dp else 0.dp, if (selectedTab == index) GymSmartColors.Primary else androidx.compose.ui.graphics.Color.Transparent, MaterialTheme.shapes.extraSmall)
+                        .background(if (selectedTab == index) Palette.current.surface else androidx.compose.ui.graphics.Color.Transparent)
+                        .border(if (selectedTab == index) 1.dp else 0.dp, if (selectedTab == index) Palette.current.accentText else androidx.compose.ui.graphics.Color.Transparent, MaterialTheme.shapes.extraSmall)
                         .clickable { selectedTab = index }
                         .padding(vertical = 8.dp),
                     contentAlignment = Alignment.Center
@@ -883,7 +907,7 @@ private fun FoodSearchSheet(
                         label,
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal,
-                        color = if (selectedTab == index) GymSmartColors.Primary else GymSmartColors.TextSecondary
+                        color = if (selectedTab == index) Palette.current.accentText else Palette.current.textSecondary
                     )
                 }
             }
@@ -896,11 +920,11 @@ private fun FoodSearchSheet(
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
                         value = query, onValueChange = { query = it },
-                        placeholder = { Text("ej: arroz, pollo...", color = GymSmartColors.TextSecondary) },
-                        leadingIcon = { Icon(Icons.Default.Search, null, tint = GymSmartColors.TextSecondary) },
+                        placeholder = { Text("ej: arroz, pollo...", color = Palette.current.textSecondary) },
+                        leadingIcon = { Icon(Icons.Default.Search, null, tint = Palette.current.textSecondary) },
                         trailingIcon = {
                             if (query.isNotEmpty()) IconButton(onClick = { query = ""; results = emptyList() }) {
-                                Icon(Icons.Default.Close, null, tint = GymSmartColors.TextSecondary)
+                                Icon(Icons.Default.Close, null, tint = Palette.current.textSecondary)
                             }
                         },
                         modifier = Modifier.weight(1f), singleLine = true,
@@ -953,9 +977,9 @@ private fun FoodSearchSheet(
                         enabled = query.isNotBlank() && !isLoading,
                         shape = MaterialTheme.shapes.small,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = GymSmartColors.Primary,
-                            contentColor = GymSmartColors.OnPrimary,
-                            disabledContainerColor = GymSmartColors.Outline
+                            containerColor = Palette.current.hero,
+                            contentColor = Palette.current.onHero,
+                            disabledContainerColor = Palette.current.border
                         ),
                         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 14.dp)
                     ) {
@@ -963,7 +987,7 @@ private fun FoodSearchSheet(
                     }
                 }
                 Spacer(Modifier.height(8.dp))
-                errorMsg?.let { Text(it, color = GymSmartColors.Error, style = MaterialTheme.typography.bodySmall) }
+                errorMsg?.let { Text(it, color = Palette.current.danger, style = MaterialTheme.typography.bodySmall) }
                 Spacer(Modifier.height(4.dp))
                 if (hasSearched && errorMsg == null && results.isEmpty()) {
                     EmptySheetState("Sin resultados con datos nutricionales para \"$query\"")
@@ -1035,7 +1059,7 @@ private fun CollectionCard(
     Surface(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onApply),
         shape = MaterialTheme.shapes.small,
-        color = GymSmartColors.SurfaceElevated
+        color = Palette.current.surfaceSunken
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(12.dp),
@@ -1047,21 +1071,21 @@ private fun CollectionCard(
                     collection.name,
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
-                    color = GymSmartColors.TextPrimary
+                    color = Palette.current.textPrimary
                 )
                 val totalKcal = collection.items.sumOf { it.kcal }
                 val count = collection.items.size
                 Text(
                     "$count ${if (count == 1) "alimento" else "alimentos"} · ${totalKcal.toInt()} kcal",
                     style = MaterialTheme.typography.labelSmall,
-                    color = GymSmartColors.TextSecondary
+                    color = Palette.current.textSecondary
                 )
             }
             IconButton(onClick = onEdit) {
-                Icon(Icons.Default.Edit, contentDescription = "Editar colección", tint = GymSmartColors.TextSecondary)
+                Icon(Icons.Default.Edit, contentDescription = "Editar colección", tint = Palette.current.textSecondary)
             }
             IconButton(onClick = { confirmDelete = true }) {
-                Icon(Icons.Default.Delete, contentDescription = "Eliminar colección", tint = GymSmartColors.Error)
+                Icon(Icons.Default.Delete, contentDescription = "Eliminar colección", tint = Palette.current.danger)
             }
         }
     }
@@ -1073,7 +1097,7 @@ private fun CollectionCard(
             text = { Text("Esto no borra las comidas que ya hayas añadido con ella, solo la colección.") },
             confirmButton = {
                 TextButton(onClick = { confirmDelete = false; onDelete() }) {
-                    Text("Eliminar", color = GymSmartColors.Error)
+                    Text("Eliminar", color = Palette.current.danger)
                 }
             },
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancelar") } }
@@ -1120,28 +1144,29 @@ private fun CollectionEditorSheet(
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
                         shape = MaterialTheme.shapes.small,
-                        color = GymSmartColors.SurfaceElevated
+                        color = Palette.current.surfaceSunken
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(12.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            Text(foodIconFor(item.name), fontSize = 18.sp, modifier = Modifier.width(26.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     item.name,
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.SemiBold,
-                                    color = GymSmartColors.TextPrimary
+                                    color = Palette.current.textPrimary
                                 )
                                 Text(
                                     "${item.grams.toInt()} g${basisSuffix(item)} · ${item.kcal.toInt()} kcal",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = GymSmartColors.TextSecondary
+                                    color = Palette.current.textSecondary
                                 )
                             }
                             IconButton(onClick = { onRemoveItem(index) }) {
-                                Icon(Icons.Default.Delete, contentDescription = "Quitar", tint = GymSmartColors.Error)
+                                Icon(Icons.Default.Delete, contentDescription = "Quitar", tint = Palette.current.danger)
                             }
                         }
                     }
@@ -1167,11 +1192,11 @@ private fun CollectionEditorSheet(
             modifier = Modifier.fillMaxWidth().height(52.dp),
             shape = MaterialTheme.shapes.medium,
             colors = ButtonDefaults.buttonColors(
-                containerColor = GymSmartColors.Primary,
-                disabledContainerColor = GymSmartColors.Outline
+                containerColor = Palette.current.hero,
+                disabledContainerColor = Palette.current.border
             )
         ) {
-            Text("Guardar colección", color = GymSmartColors.OnPrimary, fontWeight = FontWeight.Bold)
+            Text("Guardar colección", color = Palette.current.onHero, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -1179,7 +1204,7 @@ private fun CollectionEditorSheet(
 @Composable
 private fun EmptySheetState(text: String) {
     Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-        Text(text, style = MaterialTheme.typography.bodyMedium, color = GymSmartColors.TextSecondary, textAlign = TextAlign.Center)
+        Text(text, style = MaterialTheme.typography.bodyMedium, color = Palette.current.textSecondary, textAlign = TextAlign.Center)
     }
 }
 
@@ -1197,27 +1222,33 @@ private fun ProductList(products: List<Product>, onProductSelected: (Product) ->
             Surface(
                 modifier = Modifier.fillMaxWidth().clickable { onProductSelected(product) },
                 shape = MaterialTheme.shapes.small,
-                color = GymSmartColors.SurfaceElevated
+                color = Palette.current.surfaceSunken
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(14.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    // Ancho fijo para que los nombres queden alineados aunque el emoji mida distinto.
+                    Text(
+                        foodIconFor(product.product_name),
+                        fontSize = 22.sp,
+                        modifier = Modifier.width(32.dp)
+                    )
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             product.product_name ?: "Sin nombre",
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.SemiBold,
-                            color = GymSmartColors.TextPrimary
+                            color = Palette.current.textPrimary
                         )
                         if (brand != null) {
                             Spacer(Modifier.height(2.dp))
                             Text(
                                 brand,
                                 style = MaterialTheme.typography.bodySmall,
-                                color = if (brand == GENERIC_BRAND) GymSmartColors.Primary
-                                        else GymSmartColors.TextSecondary
+                                color = if (brand == GENERIC_BRAND) Palette.current.accentText
+                                        else Palette.current.textSecondary
                             )
                         }
                     }
@@ -1225,13 +1256,13 @@ private fun ProductList(products: List<Product>, onProductSelected: (Product) ->
                         Text(
                             "$DEFAULT_GRAMS g",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = GymSmartColors.TextPrimary
+                            color = Palette.current.textPrimary
                         )
                         Spacer(Modifier.height(2.dp))
                         Text(
                             "${kcal.toInt()} kcal",
                             style = MaterialTheme.typography.bodySmall,
-                            color = GymSmartColors.TextSecondary
+                            color = Palette.current.textSecondary
                         )
                     }
                 }
@@ -1322,13 +1353,14 @@ private fun PortionPickerSheet(
         SheetHandle()
 
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text(foodIconFor(product.product_name), fontSize = 26.sp, modifier = Modifier.padding(end = 10.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(product.product_name ?: "Sin nombre", style = MaterialTheme.typography.titleLarge, color = GymSmartColors.TextPrimary)
+                Text(product.product_name ?: "Sin nombre", style = MaterialTheme.typography.titleLarge, color = Palette.current.textPrimary)
                 Text(
                     if (cookingYield == null) "Datos por ${grams.toInt()} g"
                     else "Datos por ${grams.toInt()} g - peso ${basisLabel.lowercase()}",
                     style = MaterialTheme.typography.bodySmall,
-                    color = GymSmartColors.TextSecondary
+                    color = Palette.current.textSecondary
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1340,12 +1372,12 @@ private fun PortionPickerSheet(
                         }
                     },
                     modifier = Modifier.size(36.dp).clip(MaterialTheme.shapes.extraSmall)
-                        .background(if (isFavorite) GymSmartColors.Error.copy(alpha = 0.12f) else GymSmartColors.SurfaceElevated)
+                        .background(if (isFavorite) Palette.current.danger.copy(alpha = 0.12f) else Palette.current.surfaceSunken)
                 ) { Text(if (isFavorite) "❤️" else "🤍", fontSize = 18.sp) }
                 IconButton(
                     onClick = onClose,
-                    modifier = Modifier.size(36.dp).clip(MaterialTheme.shapes.extraSmall).background(GymSmartColors.SurfaceElevated)
-                ) { Icon(Icons.Default.Close, contentDescription = "Cerrar", tint = GymSmartColors.TextPrimary, modifier = Modifier.size(18.dp)) }
+                    modifier = Modifier.size(36.dp).clip(MaterialTheme.shapes.extraSmall).background(Palette.current.surfaceSunken)
+                ) { Icon(Icons.Default.Close, contentDescription = "Cerrar", tint = Palette.current.textPrimary, modifier = Modifier.size(18.dp)) }
             }
         }
 
@@ -1356,21 +1388,21 @@ private fun PortionPickerSheet(
                 Text(
                     "Cantidad",
                     style = MaterialTheme.typography.labelMedium,
-                    color = GymSmartColors.TextSecondary,
+                    color = Palette.current.textSecondary,
                     fontWeight = FontWeight.Bold
                 )
                 Spacer(Modifier.height(6.dp))
                 OutlinedTextField(
                     value = gramsText,
                     onValueChange = { if (it.length <= 5) gramsText = it.filter { c -> c.isDigit() } },
-                    placeholder = { Text("Cantidad", color = GymSmartColors.TextSecondary) },
-                    suffix = { Text("g", color = GymSmartColors.TextSecondary, fontWeight = FontWeight.Bold) },
+                    placeholder = { Text("Cantidad", color = Palette.current.textSecondary) },
+                    suffix = { Text("g", color = Palette.current.textSecondary, fontWeight = FontWeight.Bold) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth().height(58.dp),
                     shape = MaterialTheme.shapes.small,
                     colors = sheetFieldColors(),
-                    textStyle = LocalTextStyle.current.copy(color = GymSmartColors.TextPrimary, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    textStyle = LocalTextStyle.current.copy(color = Palette.current.textPrimary, fontWeight = FontWeight.Bold, fontSize = 18.sp)
                 )
             }
 
@@ -1381,7 +1413,7 @@ private fun PortionPickerSheet(
                     Text(
                         "Tipo de peso",
                         style = MaterialTheme.typography.labelMedium,
-                        color = GymSmartColors.TextSecondary,
+                        color = Palette.current.textSecondary,
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(Modifier.height(6.dp))
@@ -1390,7 +1422,7 @@ private fun PortionPickerSheet(
                             .fillMaxWidth()
                             .height(58.dp)
                             .clip(MaterialTheme.shapes.small)
-                            .border(1.dp, GymSmartColors.Outline, MaterialTheme.shapes.small)
+                            .border(1.dp, Palette.current.border, MaterialTheme.shapes.small)
                             .clickable {
                                 basis = if (basis == WeighBasis.RAW) WeighBasis.COOKED else WeighBasis.RAW
                             }
@@ -1400,7 +1432,7 @@ private fun PortionPickerSheet(
                         Text(
                             basisLabel,
                             style = MaterialTheme.typography.bodyLarge,
-                            color = GymSmartColors.TextPrimary,
+                            color = Palette.current.textPrimary,
                             fontWeight = FontWeight.Bold
                         )
                     }
@@ -1410,38 +1442,20 @@ private fun PortionPickerSheet(
 
         Spacer(Modifier.height(16.dp))
 
-        Surface(shape = MaterialTheme.shapes.medium, color = GymSmartColors.SurfaceElevated, modifier = Modifier.fillMaxWidth()) {
+        Surface(shape = MaterialTheme.shapes.medium, color = Palette.current.surfaceSunken, modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
                     if (cookingYield == null) "Valores nutricionales por ${grams.toInt()} g"
                     else "Valores nutricionales por ${grams.toInt()} g (${basisLabel.lowercase()})",
                     style = MaterialTheme.typography.bodySmall,
-                    color = GymSmartColors.TextSecondary
+                    color = Palette.current.textSecondary
                 )
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
-                    NutrientPreview("Calorías",  "${kcal.toInt()}",     "kcal", GymSmartColors.Primary)
-                    NutrientPreview("Proteínas", "${proteins.toInt()}", "g",    GymSmartColors.MacroProtein)
-                    NutrientPreview("Carbs",     "${carbs.toInt()}",    "g",    GymSmartColors.MacroCarbs)
-                    NutrientPreview("Grasas",    "${fat.toInt()}",      "g",    GymSmartColors.MacroFat)
+                    NutrientPreview("Calorías",  "${kcal.toInt()}",     "kcal", Palette.current.accentText)
+                    NutrientPreview("Proteínas", "${proteins.toInt()}", "g",    Palette.current.macroProtein)
+                    NutrientPreview("Carbs",     "${carbs.toInt()}",    "g",    Palette.current.macroCarbs)
+                    NutrientPreview("Grasas",    "${fat.toInt()}",      "g",    Palette.current.macroFat)
                 }
-            }
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf(50, 100, 150, 200).forEach { preset ->
-                val isSelected = gramsText == preset.toString()
-                OutlinedButton(
-                    onClick = { gramsText = preset.toString() },
-                    modifier = Modifier.weight(1f),
-                    shape = MaterialTheme.shapes.extraSmall,
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = if (isSelected) GymSmartColors.Primary else GymSmartColors.TextSecondary,
-                        containerColor = if (isSelected) GymSmartColors.Primary.copy(alpha = 0.1f) else androidx.compose.ui.graphics.Color.Transparent
-                    ),
-                    border = BorderStroke(1.dp, if (isSelected) GymSmartColors.Primary else GymSmartColors.Outline)
-                ) { Text("${preset}g", style = MaterialTheme.typography.labelMedium) }
             }
         }
 
@@ -1450,8 +1464,8 @@ private fun PortionPickerSheet(
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             OutlinedButton(
                 onClick = onBack, modifier = Modifier.weight(1f), shape = MaterialTheme.shapes.small,
-                border = BorderStroke(1.dp, GymSmartColors.Outline),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = GymSmartColors.TextSecondary)
+                border = BorderStroke(1.dp, Palette.current.border),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = Palette.current.textSecondary)
             ) { Text("← Volver") }
             Button(
                 onClick = {
@@ -1471,7 +1485,7 @@ private fun PortionPickerSheet(
                     )
                 },
                 enabled = grams > 0, modifier = Modifier.weight(2f), shape = MaterialTheme.shapes.small,
-                colors = ButtonDefaults.buttonColors(containerColor = GymSmartColors.Primary, contentColor = GymSmartColors.OnPrimary, disabledContainerColor = GymSmartColors.Outline)
+                colors = ButtonDefaults.buttonColors(containerColor = Palette.current.hero, contentColor = Palette.current.onHero, disabledContainerColor = Palette.current.border)
             ) { Text("Añadir a $mealLabel", fontWeight = FontWeight.Bold) }
         }
     }
@@ -1509,15 +1523,15 @@ private fun EditEntrySheet(
         SheetHandle()
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Column {
-                Text(entry.name, style = MaterialTheme.typography.titleLarge, color = GymSmartColors.TextPrimary)
-                Text("Editar porción en $mealLabel", style = MaterialTheme.typography.bodySmall, color = GymSmartColors.TextSecondary)
+                Text(entry.name, style = MaterialTheme.typography.titleLarge, color = Palette.current.textPrimary)
+                Text("Editar porción en $mealLabel", style = MaterialTheme.typography.bodySmall, color = Palette.current.textSecondary)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                IconButton(onClick = onDelete, modifier = Modifier.size(36.dp).clip(MaterialTheme.shapes.extraSmall).background(GymSmartColors.Error.copy(alpha = 0.12f))) {
-                    Icon(Icons.Default.Delete, contentDescription = "Eliminar", tint = GymSmartColors.Error, modifier = Modifier.size(18.dp))
+                IconButton(onClick = onDelete, modifier = Modifier.size(36.dp).clip(MaterialTheme.shapes.extraSmall).background(Palette.current.danger.copy(alpha = 0.12f))) {
+                    Icon(Icons.Default.Delete, contentDescription = "Eliminar", tint = Palette.current.danger, modifier = Modifier.size(18.dp))
                 }
-                IconButton(onClick = onClose, modifier = Modifier.size(36.dp).clip(MaterialTheme.shapes.extraSmall).background(GymSmartColors.SurfaceElevated)) {
-                    Icon(Icons.Default.Close, contentDescription = "Cerrar", tint = GymSmartColors.TextPrimary, modifier = Modifier.size(18.dp))
+                IconButton(onClick = onClose, modifier = Modifier.size(36.dp).clip(MaterialTheme.shapes.extraSmall).background(Palette.current.surfaceSunken)) {
+                    Icon(Icons.Default.Close, contentDescription = "Cerrar", tint = Palette.current.textPrimary, modifier = Modifier.size(18.dp))
                 }
             }
         }
@@ -1528,37 +1542,24 @@ private fun EditEntrySheet(
             value = gramsText,
             onValueChange = { if (it.length <= 5) gramsText = it.filter { c -> c.isDigit() } },
             label = { Text("Cantidad (g)") },
-            suffix = { Text("g", color = GymSmartColors.TextSecondary, fontWeight = FontWeight.Bold) },
+            suffix = { Text("g", color = Palette.current.textSecondary, fontWeight = FontWeight.Bold) },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.small,
             colors = sheetFieldColors(),
-            textStyle = LocalTextStyle.current.copy(color = GymSmartColors.TextPrimary, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            textStyle = LocalTextStyle.current.copy(color = Palette.current.textPrimary, fontWeight = FontWeight.Bold, fontSize = 18.sp)
         )
 
         Spacer(Modifier.height(16.dp))
 
-        Surface(shape = MaterialTheme.shapes.medium, color = GymSmartColors.SurfaceElevated, modifier = Modifier.fillMaxWidth()) {
+        Surface(shape = MaterialTheme.shapes.medium, color = Palette.current.surfaceSunken, modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Valores para ${grams.toInt()}g${basisSuffix(entry)}", style = MaterialTheme.typography.bodySmall, color = GymSmartColors.TextSecondary)
+                Text("Valores para ${grams.toInt()}g${basisSuffix(entry)}", style = MaterialTheme.typography.bodySmall, color = Palette.current.textSecondary)
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
-                    NutrientPreview("Calorías",  "${kcal.toInt()}",     "kcal", GymSmartColors.Primary)
-                    NutrientPreview("Proteínas", "${proteins.toInt()}", "g",    GymSmartColors.MacroProtein)
-                    NutrientPreview("Carbs",     "${carbs.toInt()}",    "g",    GymSmartColors.MacroCarbs)
-                    NutrientPreview("Grasas",    "${fat.toInt()}",      "g",    GymSmartColors.MacroFat)
+                    NutrientPreview("Calorías",  "${kcal.toInt()}",     "kcal", Palette.current.accentText)
+                    NutrientPreview("Proteínas", "${proteins.toInt()}", "g",    Palette.current.macroProtein)
+                    NutrientPreview("Carbs",     "${carbs.toInt()}",    "g",    Palette.current.macroCarbs)
+                    NutrientPreview("Grasas",    "${fat.toInt()}",      "g",    Palette.current.macroFat)
                 }
-            }
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf(50, 100, 150, 200).forEach { preset ->
-                val isSelected = gramsText == preset.toString()
-                OutlinedButton(
-                    onClick = { gramsText = preset.toString() }, modifier = Modifier.weight(1f), shape = MaterialTheme.shapes.extraSmall,
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = if (isSelected) GymSmartColors.Primary else GymSmartColors.TextSecondary, containerColor = if (isSelected) GymSmartColors.Primary.copy(alpha = 0.1f) else androidx.compose.ui.graphics.Color.Transparent),
-                    border = BorderStroke(1.dp, if (isSelected) GymSmartColors.Primary else GymSmartColors.Outline)
-                ) { Text("${preset}g", style = MaterialTheme.typography.labelMedium) }
             }
         }
 
@@ -1567,7 +1568,7 @@ private fun EditEntrySheet(
         Button(
             onClick = { if (grams > 0) onConfirm(grams) }, enabled = grams > 0,
             modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.small,
-            colors = ButtonDefaults.buttonColors(containerColor = GymSmartColors.Primary, contentColor = GymSmartColors.OnPrimary, disabledContainerColor = GymSmartColors.Outline)
+            colors = ButtonDefaults.buttonColors(containerColor = Palette.current.hero, contentColor = Palette.current.onHero, disabledContainerColor = Palette.current.border)
         ) { Text("Guardar cambios", fontWeight = FontWeight.Bold) }
     }
 }
@@ -1577,7 +1578,7 @@ private fun EditEntrySheet(
 @Composable
 private fun SheetHandle() {
     Box(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp), contentAlignment = Alignment.Center) {
-        Box(modifier = Modifier.size(width = 40.dp, height = 4.dp).clip(CircleShape).background(GymSmartColors.Outline))
+        Box(modifier = Modifier.size(width = 40.dp, height = 4.dp).clip(CircleShape).background(Palette.current.border))
     }
 }
 
@@ -1585,11 +1586,11 @@ private fun SheetHandle() {
 private fun SheetHeader(title: String, subtitle: String, onClose: () -> Unit) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
         Column {
-            Text(title, style = MaterialTheme.typography.titleLarge, color = GymSmartColors.TextPrimary)
-            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = GymSmartColors.TextSecondary)
+            Text(title, style = MaterialTheme.typography.titleLarge, color = Palette.current.textPrimary)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = Palette.current.textSecondary)
         }
-        IconButton(onClick = onClose, modifier = Modifier.size(36.dp).clip(MaterialTheme.shapes.extraSmall).background(GymSmartColors.SurfaceElevated)) {
-            Icon(Icons.Default.Close, contentDescription = "Cerrar", tint = GymSmartColors.TextPrimary, modifier = Modifier.size(18.dp))
+        IconButton(onClick = onClose, modifier = Modifier.size(36.dp).clip(MaterialTheme.shapes.extraSmall).background(Palette.current.surfaceSunken)) {
+            Icon(Icons.Default.Close, contentDescription = "Cerrar", tint = Palette.current.textPrimary, modifier = Modifier.size(18.dp))
         }
     }
 }
@@ -1598,22 +1599,22 @@ private fun SheetHeader(title: String, subtitle: String, onClose: () -> Unit) {
 private fun NutrientPreview(label: String, value: String, unit: String, color: androidx.compose.ui.graphics.Color) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(value, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = color)
-        Text(unit, style = MaterialTheme.typography.labelSmall, color = GymSmartColors.TextSecondary)
-        Text(label, style = MaterialTheme.typography.labelSmall, color = GymSmartColors.TextSecondary)
+        Text(unit, style = MaterialTheme.typography.labelSmall, color = Palette.current.textSecondary)
+        Text(label, style = MaterialTheme.typography.labelSmall, color = Palette.current.textSecondary)
     }
 }
 
 @Composable
 private fun sheetFieldColors() = OutlinedTextFieldDefaults.colors(
-    focusedBorderColor      = GymSmartColors.Primary,
-    unfocusedBorderColor    = GymSmartColors.Outline,
-    focusedLabelColor       = GymSmartColors.Primary,
-    unfocusedLabelColor     = GymSmartColors.TextSecondary,
-    cursorColor             = GymSmartColors.Primary,
-    focusedTextColor        = GymSmartColors.TextPrimary,
-    unfocusedTextColor      = GymSmartColors.TextPrimary,
-    focusedContainerColor   = GymSmartColors.SurfaceElevated,
-    unfocusedContainerColor = GymSmartColors.SurfaceElevated,
+    focusedBorderColor      = Palette.current.accentText,
+    unfocusedBorderColor    = Palette.current.border,
+    focusedLabelColor       = Palette.current.accentText,
+    unfocusedLabelColor     = Palette.current.textSecondary,
+    cursorColor             = Palette.current.accentText,
+    focusedTextColor        = Palette.current.textPrimary,
+    unfocusedTextColor      = Palette.current.textPrimary,
+    focusedContainerColor   = Palette.current.surfaceSunken,
+    unfocusedContainerColor = Palette.current.surfaceSunken,
 )
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -1649,17 +1650,17 @@ private fun WeekDayPicker(today: LocalDate, selectedDate: LocalDate, onDateSelec
                         modifier = Modifier
                             .size(28.dp)
                             .clip(CircleShape)
-                            .background(if (isSelected) GymSmartColors.Primary else androidx.compose.ui.graphics.Color.Transparent)
-                            .then(if (isToday && !isSelected) Modifier.border(1.5.dp, GymSmartColors.Primary, CircleShape) else Modifier)
+                            .background(if (isSelected) Palette.current.accentText else androidx.compose.ui.graphics.Color.Transparent)
+                            .then(if (isToday && !isSelected) Modifier.border(1.5.dp, Palette.current.accentText, CircleShape) else Modifier)
                     ) {
                         Text(
                             dayLabels[index], style = MaterialTheme.typography.labelMedium,
                             fontWeight = if (isSelected || isToday) FontWeight.Bold else FontWeight.Normal,
                             color = when {
-                                isSelected -> GymSmartColors.OnPrimary
-                                isToday    -> GymSmartColors.Primary
-                                !inRange   -> GymSmartColors.TextDisabled
-                                else       -> GymSmartColors.TextSecondary
+                                isSelected -> Palette.current.onHero
+                                isToday    -> Palette.current.accentText
+                                !inRange   -> Palette.current.chevron
+                                else       -> Palette.current.textSecondary
                             }
                         )
                     }
@@ -1668,18 +1669,18 @@ private fun WeekDayPicker(today: LocalDate, selectedDate: LocalDate, onDateSelec
                         date.dayOfMonth.toString(), style = MaterialTheme.typography.bodyMedium,
                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                         color = when {
-                            isSelected -> GymSmartColors.TextPrimary
-                            !inRange   -> GymSmartColors.TextDisabled
-                            else       -> GymSmartColors.TextPrimary
+                            isSelected -> Palette.current.textPrimary
+                            !inRange   -> Palette.current.chevron
+                            else       -> Palette.current.textPrimary
                         }
                     )
                     Spacer(Modifier.height(4.dp))
                     Box(
                         modifier = Modifier.size(5.dp).clip(CircleShape).background(
                             when {
-                                isSelected || isToday -> GymSmartColors.Primary
+                                isSelected || isToday -> Palette.current.accentText
                                 !inRange -> androidx.compose.ui.graphics.Color.Transparent
-                                else -> GymSmartColors.TextDisabled
+                                else -> Palette.current.chevron
                             }
                         )
                     )

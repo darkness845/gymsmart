@@ -521,7 +521,7 @@ internal fun normalizeFoodName(name: String): String {
 }
 
 /** true si todas las palabras de [phrase] aparecen como palabra completa en [normalized]. */
-private fun phraseMatches(normalized: String, phrase: String): Boolean =
+internal fun phraseMatches(normalized: String, phrase: String): Boolean =
     normalizeFoodName(phrase).split(' ')
         .filter { it.isNotEmpty() }
         .all { normalized.contains(" $it ") }
