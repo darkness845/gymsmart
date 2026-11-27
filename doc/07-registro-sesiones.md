@@ -4,6 +4,31 @@ Bitácora corta por sesión de trabajo sobre el endurecimiento del proyecto. Ent
 
 ---
 
+## 2026-11-27 (cont.) — Auditoría del registro de alimentos y Fase 0: la búsqueda vuelve a funcionar
+
+Comité de 5 paneles sobre el registro de alimentos (informe en
+[13-auditoria-nutricion-2026-11-27.md](13-auditoria-nutricion-2026-11-27.md)), y a continuación la
+implementación de la Fase 0 y parte de la Fase 1.
+
+- **El hallazgo que mandaba**: `cgi/search.pl` de Open Food Facts devolvía **503 el 100 % de las
+  veces**, así que la búsqueda de marcas estaba muerta y la app degradaba en silencio a los 90
+  genéricos diciendo "Sin resultados", que es falso. Invisible en los logs porque un 503 no lanza.
+- Búsqueda migrada a **Search-a-licious** con hidratación por EAN. Durante la implementación se
+  descubrió que el campo `nutriments` del índice **no es fiable** (nulo en leches españolas con
+  `completeness` 0,975 que sí tienen datos en la API de producto): corregido en el informe, porque la
+  versión que había escrita invitaba a construir la búsqueda sobre ese campo.
+- **Filtro de sanidad** en el servidor, en los dos caminos. Antes no había ninguna comprobación de
+  rango en toda la cadena: entraban un coco rallado con 105 g de materia por 100 g y un queso fresco
+  con 99,6 kcal declaradas frente a 249 reales. Y el **escáner** permitía registrar una botella de
+  vino a **0 kcal**, porque filtraba la lista pero no el escaneo.
+- Energía estimada con los factores del **Anexo XIV** (fibra 2, polioles 2,4, alcohol 7) en vez de
+  4/4/9, que se queda corta en 52 kcal/100 g en un pan de fibra y en un 60 % en una cerveza.
+- **Primeros tests del módulo `server`** (19) y 11 nuevos del cliente. `:server:test` estaba en rojo
+  permanente por el test esqueleto de la plantilla, que comprueba una ruta `/` que no existe y exige
+  `TURSO_DB_URL`: desactivado con su motivo escrito, no borrado.
+- Verificado de punta a punta contra la API real: "yogur griego" devuelve 8 productos españoles con
+  marca y ración y "pan de molde integral" 6; las dos daban **cero** antes.
+
 ## 2026-11-27 — Maquetas de Nutrición y Pesaje; aplicadas N3 y W5
 
 Seis maquetas de cada pantalla en el lienzo de diseño, con los datos reales. El usuario eligió N3

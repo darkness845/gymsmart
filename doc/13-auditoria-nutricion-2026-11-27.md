@@ -5,7 +5,17 @@
 > obligación de verificar contra fuente primaria; esta sesión hizo de auditor independiente,
 > contrastó los informes entre sí y comprobó de primera mano los hallazgos que condicionan el plan.
 >
-> **Solo diagnóstico. Nada implementado. Ningún fichero de código tocado.**
+> **Estado de implementación** (actualizado el 2026-11-27, después de redactar el informe):
+> - ✅ **Fase 0 completa** — búsqueda migrada a Search-a-licious con hidratación por EAN, 503
+>   registrado en los logs, y la app ya distingue "no existe" de "no he podido preguntar".
+> - ✅ **Fase 1 parcial** — filtro de sanidad en el servidor para los dos caminos (búsqueda y
+>   escáner), deduplicación, campos nuevos pedidos a OFF, base 100 ml rotulada, y el escáner ya no
+>   deja registrar un producto sin datos utilizables. **Pendiente** de la Fase 1: validación de
+>   entrada en `/nutrition/add` e idempotencia del guardado.
+> - ⬜ Fases 2 a 5 sin empezar.
+>
+> El resto del documento es el diagnóstico tal como se redactó, con una corrección marcada en la
+> Fase 0 (§3) sobre el campo `nutriments` del índice de búsqueda.
 >
 > Complementa a [12-auditoria-comite-kcal-2026-11-27.md](12-auditoria-comite-kcal-2026-11-27.md),
 > que cubrió el **gasto energético** (BMR/TDEE/objetivos) el mismo día. Este cubre el **otro lado de
@@ -321,9 +331,25 @@ Ordenado por daño real al usuario, no por elegancia. **Nada de esto está imple
 2. **Distinguir "no hay resultados" de "la búsqueda está caída"**: que `searchFood` devuelva el
    motivo y que la UI diga *"La base de marcas no está disponible; se muestran solo genéricos"*.
 3. **Migrar la búsqueda a Search-a-licious** (`search.openfoodfacts.org`, 200 verificado sin
-   espaciado) **hidratando los nutrientes** por EAN solo para los 8-10 primeros resultados —
-   Search-a-licious **no indexa `nutriments`** (verificado), así que no es sustituto directo. Con el
+   espaciado) **hidratando los nutrientes** por EAN solo para los 8-12 primeros resultados. Con el
    límite de 15 req/min eso da ~1,5 búsquedas/min en frío; la caché por EAN lo absorbe en días.
+
+   > **Corrección (2026-11-27, al implementarlo).** El panel de datos concluyó que Search-a-licious
+   > *"no indexa `nutriments`"* y esta sección lo recogió así. **Es inexacto, y la matización
+   > importa**: el campo `nutriments` **sí existe** en el índice y a veces viene poblado con
+   > `energy-kcal_100g` y los tres macros — se puede comprobar con
+   > `fields=code,product_name,nutriments`, que es una proyección válida. Lo que ocurre es que está
+   > poblado **de forma irregular**, y en particular es `null` en muchos productos españoles que sí
+   > tienen datos: medido con tres leches (8411700026139, 8480000238191, 7751271032667), `nutriments`
+   > nulo en el índice —la primera con `completeness = 0,975`— y 63, 63 y 131 kcal/100 ml en la API de
+   > producto.
+   >
+   > La conclusión práctica del panel (**hay que hidratar por EAN**) era por tanto **correcta**, pero
+   > por otro motivo: no es que el dato no esté indexado, es que no es de fiar. Se deja escrito porque
+   > la versión incorrecta invitaba a una decisión equivocada: alguien que comprobara que el campo
+   > existe podría concluir que la hidratación es innecesaria y construir la búsqueda sobre un dato
+   > ausente en la mitad del catálogo español. La implementación usa el dato del índice **solo cuando
+   > trae energía utilizable**, y así se ahorra la petición sin depender de él.
 4. **Quitar el doble fetch España→global** mientras no se verifique que `countries_tags_en=spain`
    filtra algo en `search.pl` (no está documentado para ese endpoint): si se ignora, se está gastando
    **el doble del presupuesto para nada**.

@@ -47,8 +47,33 @@ vacía), **cero validación de rangos** (entran productos con P+C+F = 100,6 g/10
 **no filtra los 0 kcal** (escanear un vino registra 0 kcal), y el **doble conteo invisible** cuando
 falla la red tras un INSERT.
 
-**Siguiente paso**: el informe propone un plan en 6 fases (§3). Nada decidido ni implementado — el
-usuario tiene que elegir por dónde empezar. La Fase 0 (parar el incendio de la búsqueda) son horas. Antes: 2026-11-26 (tarea 7 cerrada en código; **estilo Melocotón aplicado a todas las pantallas en uso**; commits por temas y push hechos a petición del usuario. Pendiente: redesplegar el servidor, probar en el móvil, variante oscura de Melocotón).
+**Estado**: el usuario pidió implementarlo. **Fase 0 completa y Fase 1 a medias** (commit aparte):
+
+- Búsqueda migrada a **Search-a-licious** con hidratación por EAN (hasta 12 por búsqueda, en tandas
+  de 4, compartiendo la caché de EAN con el escáner). `search.pl` queda de respaldo y **cualquier
+  status ≠ 200 se loguea**. Nueva bandera `upstreamFailed`: la app ya dice "no se ha podido consultar
+  la base de marcas" en vez de "Sin resultados".
+- ⚠️ **Al implementarlo se corrigió un error del informe**: el campo `nutriments` del índice de
+  búsqueda **sí existe**, pero es `null` en muchos productos españoles que sí tienen datos (tres
+  leches medidas, una con `completeness` 0,975). Por eso hay que hidratar — la conclusión del panel
+  era correcta, el motivo que daba no. Está marcado en §3 Fase 0 del informe.
+- **Filtro de sanidad** en servidor para búsqueda y escáner: techo de 902 kcal, macros en 0..100,
+  P+C+G ≤ 101, contraste cruzado kcal↔Anexo XIV y descarte por `data_quality_errors_tags`.
+  **El escáner ya no deja registrar un vino a 0 kcal.** Deduplicación por (nombre, marca).
+- Energía estimada con los factores del **Anexo XIV** (fibra, polioles, alcohol) en lugar de 4/4/9.
+- Base **100 ml** rotulada como tal, y `roundToInt` en vez de `toInt` en la lista de resultados.
+- **30 tests nuevos** (19 en `server`, 11 en `composeApp`). `:server:test` está verde por primera
+  vez: el test esqueleto de la plantilla llevaba fallando desde siempre (comprueba una ruta `/` que
+  no existe y exige `TURSO_DB_URL`) y se ha desactivado con su motivo escrito, **sin borrarlo**.
+  → **Ya se puede añadir `:server:test` a la lista de verificación de CLAUDE.md.**
+
+**Siguiente paso**: resto de la Fase 1 (validar la entrada de `/nutrition/add` e idempotencia del
+guardado, que es el doble conteo invisible) y Fase 2 (plurales en la búsqueda). Las fases 3 a 5 del
+informe siguen sin empezar, y la Fase 3 **es una migración de datos**: hay que persistir
+`yield_factor` antes de corregir ningún factor de cocción.
+
+**Sin probar en el móvil**: todo lo de esta tanda es servidor y lógica de cliente, pero el servidor
+**hay que redesplegarlo en Render** para que la búsqueda funcione en el dispositivo. Antes: 2026-11-26 (tarea 7 cerrada en código; **estilo Melocotón aplicado a todas las pantallas en uso**; commits por temas y push hechos a petición del usuario. Pendiente: redesplegar el servidor, probar en el móvil, variante oscura de Melocotón).
 
 ## 🔎 2026-11-27 — Segunda auditoría del cálculo de kcal: comité de 3 paneles (sin implementar)
 

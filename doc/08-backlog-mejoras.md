@@ -388,9 +388,53 @@ el uso real lo justifica. Verificado con `:server:compileKotlin`. | `BodyAnalysi
   (`AppName/Version (ContactEmail)`) pero con `contact@gymsmart.com`, que no es un correo real y OFF pide
   que lo sea.
 
-  **Decisión**: no migrar ahora. Si alguna vez se migra, el destino es Search-a-licious, no v2. Esto
-  refuerza la tarea H (tabla local de alimentos genéricos): con los básicos en local, OFF quedaría solo
-  para marcas y una caída suya dejaría la app degradada en vez de muda.
+  **Decisión de entonces (2026-11-24)**: no migrar ahora. Si alguna vez se migra, el destino es
+  Search-a-licious, no v2. Esto refuerza la tarea H (tabla local de alimentos genéricos): con los
+  básicos en local, OFF quedaría solo para marcas y una caída suya dejaría la app degradada en vez de
+  muda.
+
+- ✅ **OFF-2 — RESUELTO (2026-11-27). La decisión anterior se quedó obsoleta en tres días: `search.pl`
+  dejó de funcionar.** La nota de arriba se conserva porque su análisis documental sigue siendo
+  correcto; lo que caducó es el hecho de que *"el endpoint responde con normalidad a día de hoy"*.
+
+  **Medición del 2026-11-27**, con el mismo `User-Agent` de `FoodService` y espaciando a 1 petición
+  cada 6 s (= 10/min, exactamente el límite documentado): `cgi/search.pl` devolvió **503 en 12 de 12**
+  intentos, y esta sesión lo reconfirmó por separado (3 de 3). Desde la misma IP, `GET /` daba 200,
+  `/api/v2/product/{ean}` daba 200 y `search.openfoodfacts.org/search` daba 200 en 10 de 10 **sin
+  espaciar**. El cuerpo del 503 no es un error genérico: dice que la página *"is not available to
+  anonymous users"* y que *"Registered users are not subject to request limits"*.
+
+  **Lo que eso provocaba en la app**: `fetchSearch` devolvía una respuesta vacía ante cualquier status
+  distinto de 200, **sin lanzar y sin loguear**, así que el `catch` que registra nunca se ejecutaba y
+  la caída era invisible en los logs de Render. El cliente veía un 200 con cero productos y mostraba
+  *"Sin resultados con datos nutricionales para X"* — un mensaje falso, porque sí hay resultados y lo
+  que falla es la consulta. La búsqueda de marcas estaba **muerta** y solo quedaban los 90 genéricos.
+
+  **Arreglo aplicado**:
+  - Búsqueda migrada a **Search-a-licious**, con tres consultas de más específica a más laxa
+    (`countries:"en:spain"` + `states_tags:"en:nutrition-facts-completed"` → solo país → solo ficha
+    completa). `search.pl` se mantiene como respaldo por si revive, y ahora **cualquier status ≠ 200
+    se loguea**.
+  - **⚠️ El índice de búsqueda no sirve para leer nutrientes.** Declara un campo `nutriments` y es
+    tentador usarlo para ahorrarse la segunda petición, pero está poblado de forma irregular: es
+    `null` en productos españoles que sí tienen datos. Medido con tres leches (8411700026139,
+    8480000238191, 7751271032667): `nutriments` nulo en el índice —una de ellas con
+    `completeness = 0,975`— y 63, 63 y 131 kcal/100 ml en la API de producto. Así que el índice
+    **encuentra** y la API de producto **lee los nutrientes**. Cuando el índice sí trae la energía se
+    usa y se ahorra la llamada.
+  - Hidratación de hasta 12 productos por búsqueda, en tandas de 4, compartiendo la caché por EAN con
+    el escáner (un producto ya visto no gasta petición). El límite real es el de la API de producto:
+    **15/min por IP**, medido (429 en cascada a 96/min; 119 de 120 correctas a 14/min).
+  - Nueva bandera `upstreamFailed` en la respuesta: la app ya distingue *"no existe ese alimento"* de
+    *"no he podido preguntar"*, y en el segundo caso dice que se muestran solo los genéricos.
+
+  **Verificado de punta a punta** replicando el algoritmo del servicio contra la API real: "yogur
+  griego" devuelve 8 productos españoles utilizables con marca y peso de ración (Hacendado, Lidl,
+  Danone, Consum, DIA) y "pan de molde integral" devuelve 6 (Bimbo, Spar, Supan), con raciones de 28
+  y 30 g que son el peso real de una rebanada. Las dos consultas devolvían **cero** antes del cambio.
+
+  Queda pendiente de OFF-2, y no bloquea: el correo del `User-Agent` no es real y OFF pide que lo sea;
+  y crear una cuenta de OFF daría acceso autenticado sin límites de petición.
 - **Análisis IA**: el resultado **no se persiste en ningún sitio** (es un `remember`), así que se pierde
   al salir: no hay histórico de composición corporal ni comparación en el tiempo. Siendo la única función
   premium y la más caro por uso, una tabla `body_analyses` es la mejora de producto más evidente ·
