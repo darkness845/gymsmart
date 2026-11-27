@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import kotlin.math.roundToInt
 import com.gymsmart.gymsmart.ui.icons.LineIcons
 import com.gymsmart.gymsmart.ui.formatThousands
 import androidx.compose.ui.text.withStyle
@@ -282,7 +283,19 @@ private fun NutritionScreenContent(
                             try {
                                 val response = httpClient.get("${AppConfig.BASE_URL}/food/barcode/$code")
                                 if (!response.status.isSuccess()) {
-                                    snackbarHostState.showSnackbar("Producto no encontrado (código: $code)", duration = SnackbarDuration.Short)
+                                    // El servidor distingue los casos y aquí se dicen por su nombre. El 422
+                                    // es el importante: el producto existe pero sus datos no sirven, y antes
+                                    // se colaba hasta el selector de ración y se podía registrar a 0 kcal
+                                    // (el caso típico es una botella de vino, que en OFF no tiene ni kcal
+                                    // ni macros ni alcohol).
+                                    snackbarHostState.showSnackbar(
+                                        when (response.status.value) {
+                                            422 -> "Este producto no tiene datos nutricionales utilizables en Open Food Facts"
+                                            502 -> "Open Food Facts no está disponible. Inténtalo en un rato"
+                                            else -> "Producto no encontrado (código: $code)"
+                                        },
+                                        duration = SnackbarDuration.Short
+                                    )
                                     return@launch
                                 }
                                 val product = Json { ignoreUnknownKeys = true }.decodeFromString<Product>(response.bodyAsText())
@@ -893,6 +906,9 @@ private fun FoodSearchSheet(
     var favorites by remember { mutableStateOf<List<Product>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
     var errorMsg  by remember { mutableStateOf<String?>(null) }
+    // Distinto de errorMsg: la búsqueda sí ha funcionado, pero solo con los alimentos genéricos
+    // porque Open Food Facts no ha contestado. Hay resultados que mostrar, así que no es un error.
+    var brandsDownMsg by remember { mutableStateOf<String?>(null) }
     var hasSearched by state::hasSearched
 
     LaunchedEffect(Unit) {
@@ -956,17 +972,25 @@ private fun FoodSearchSheet(
                     Button(
                         onClick = {
                             scope.launch {
-                                isLoading = true; errorMsg = null; results = emptyList(); hasSearched = false
+                                isLoading = true; errorMsg = null; brandsDownMsg = null
+                                results = emptyList(); hasSearched = false
                                 try {
                                     val response = httpClient.get("${AppConfig.BASE_URL}/food/search") { parameter("q", query) }
                                     if (!response.status.isSuccess()) {
                                         errorMsg = "No se pudo buscar. Inténtalo de nuevo."
                                     } else {
-                                        val products = Json { ignoreUnknownKeys = true }
-                                            .decodeFromString<FoodSearchResponse>(response.bodyAsText()).products
+                                        val decoded = Json { ignoreUnknownKeys = true }
+                                            .decodeFromString<FoodSearchResponse>(response.bodyAsText())
+                                        // El servidor avisa cuando no ha podido preguntar a Open Food Facts.
+                                        // Antes esto era indistinguible de "no existe ese alimento", y la app
+                                        // decía "Sin resultados" aunque la búsqueda de marcas estuviera caída.
+                                        if (decoded.upstreamFailed) {
+                                            brandsDownMsg = "No se ha podido consultar la base de marcas. " +
+                                                "Se muestran solo alimentos genéricos."
+                                        }
                                         // Sin kcal/100g ni macros no hay nada que registrar: se filtran para
                                         // no poder guardar una comida de 0 kcal (ver NUT-4 en el backlog).
-                                        val branded = products.filter { it.nutriments.estimatedKcalPer100() > 0.0 }
+                                        val branded = decoded.products.filter { it.nutriments.estimatedKcalPer100() > 0.0 }
                                         // Los genéricos de la USDA se mezclan con los productos de marca y
                                         // todo se ordena por lo que se parece a lo buscado: Open Food Facts
                                         // devolvía "tortitas de arroz" antes que el arroz (tarea H).
@@ -1010,9 +1034,17 @@ private fun FoodSearchSheet(
                 }
                 Spacer(Modifier.height(8.dp))
                 errorMsg?.let { Text(it, color = Palette.current.danger, style = MaterialTheme.typography.bodySmall) }
+                brandsDownMsg?.let {
+                    Text(it, color = Palette.current.accentText, style = MaterialTheme.typography.bodySmall)
+                }
                 Spacer(Modifier.height(4.dp))
                 if (hasSearched && errorMsg == null && results.isEmpty()) {
-                    EmptySheetState("Sin resultados con datos nutricionales para \"$query\"")
+                    EmptySheetState(
+                        if (brandsDownMsg != null)
+                            "La base de alimentos de marca no está disponible, y \"$query\" no está " +
+                                "entre los alimentos genéricos. Vuelve a intentarlo en un rato."
+                        else "Sin resultados con datos nutricionales para \"$query\""
+                    )
                 } else {
                     ProductList(products = results, onProductSelected = onProductSelected)
                 }
@@ -1276,13 +1308,17 @@ private fun ProductList(products: List<Product>, onProductSelected: (Product) ->
                     }
                     Column(horizontalAlignment = Alignment.End) {
                         Text(
-                            "$DEFAULT_GRAMS g",
+                            // "100 ml" cuando el producto declara sus valores por 100 ml: el 11,8 % de
+                            // los productos españoles lo hace (toda la leche, los caldos) y la lista
+                            // los rotulaba en gramos.
+                            "$DEFAULT_GRAMS ${product.unitLabel}",
                             style = MaterialTheme.typography.bodyMedium,
                             color = Palette.current.textPrimary
                         )
                         Spacer(Modifier.height(2.dp))
                         Text(
-                            "${kcal.toInt()} kcal",
+                            // roundToInt y no toInt: truncar sesga siempre a la baja.
+                            "${kcal.roundToInt()} kcal",
                             style = MaterialTheme.typography.bodySmall,
                             color = Palette.current.textSecondary
                         )
