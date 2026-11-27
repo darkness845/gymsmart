@@ -1,8 +1,6 @@
 package com.gymsmart.gymsmart.screens
 
-import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -10,27 +8,31 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import com.gymsmart.gymsmart.ui.icons.LineIcons
+import com.gymsmart.gymsmart.ui.formatThousands
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.QrCodeScanner
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -442,59 +444,46 @@ private fun NutritionScreenContent(
     // ── Contenido ─────────────────────────────────────────────────────────────
     Scaffold(
         topBar = {
-            Column {
-                TopAppBar(
-                    title = {
-                        Text(
-                            "Nutrición",
-                            fontWeight = FontWeight.Bold,
-                            color = Palette.current.textPrimary
-                        )
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = { navController.popBackStack() }) {
-                            Icon(
-                                Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Volver",
-                                tint = Palette.current.textPrimary
-                            )
-                        }
-                    },
-                    actions = {
-                        // Permite forzar una relectura inmediata tras sincronizar la pulsera a mano,
-                        // en vez de esperar al siguiente ciclo de WEARABLE_POLL_INTERVAL_MS.
-                        if (hasWearable) {
-                            IconButton(
-                                onClick = {
-                                    scope.launch {
-                                        wearableRefreshing = true
-                                        runCatching { healthDataProvider.getTodayActiveCalories() }
-                                            .onSuccess { activeCalories = it }
-                                        wearableRefreshing = false
-                                    }
-                                },
-                                enabled = !wearableRefreshing
-                            ) {
-                                if (wearableRefreshing) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(20.dp),
-                                        strokeWidth = 2.dp,
-                                        color = Palette.current.textPrimary
-                                    )
-                                } else {
-                                    Icon(
-                                        Icons.Default.Refresh,
-                                        contentDescription = "Actualizar calorías de la pulsera",
-                                        tint = Palette.current.textPrimary
-                                    )
-                                }
+            // Cabecera de la maqueta N3: atrás redondo, título con la fecha del día que se mira y, si hay
+            // pulsera, el refresco redondo. Sin TopAppBar: así el aspecto es el mismo que en el resto.
+            Row(
+                Modifier.fillMaxWidth().background(Palette.current.background).statusBarsPadding()
+                    .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                CircleBack { navController.popBackStack() }
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Nutrición", fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, color = Palette.current.textPrimary)
+                    Text(nutritionLongDate(selectedDate), fontSize = 12.sp, color = Palette.current.textSecondary)
+                }
+                // Permite forzar una relectura inmediata tras sincronizar la pulsera a mano,
+                // en vez de esperar al siguiente ciclo de WEARABLE_POLL_INTERVAL_MS.
+                if (hasWearable) {
+                    Surface(
+                        onClick = {
+                            scope.launch {
+                                wearableRefreshing = true
+                                runCatching { healthDataProvider.getTodayActiveCalories() }
+                                    .onSuccess { activeCalories = it }
+                                wearableRefreshing = false
+                            }
+                        },
+                        enabled = !wearableRefreshing,
+                        shape = CircleShape,
+                        color = Palette.current.surface,
+                        border = BorderStroke(1.dp, Palette.current.border),
+                        modifier = Modifier.size(42.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            if (wearableRefreshing) {
+                                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Palette.current.textPrimary)
+                            } else {
+                                Icon(LineIcons.Refresh, contentDescription = "Actualizar calorías de la pulsera", tint = Palette.current.textPrimary, modifier = Modifier.size(19.dp))
                             }
                         }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = Palette.current.background
-                    )
-                )
+                    }
+                }
             }
         },
         containerColor = Palette.current.background,
@@ -635,21 +624,25 @@ private fun NutritionScreenContent(
                 }
             }
             item {
-                Spacer(Modifier.height(16.dp))
-                CalorieCard(
+                Spacer(Modifier.height(14.dp))
+                BudgetCard(
                     totalKcal = totalKcal, kcalGoal = kcalGoal,
                     proteins = totalProteins, proteinGoal = proteinGoal,
                     carbs = totalCarbs, carbGoal = carbGoal,
                     fat = totalFat, fatGoal = fatGoal,
+                    isToday = isToday,
                     // Solo informativo, y solo si el día mostrado es hoy.
                     activeCaloriesToday = if (hasWearable && isToday) activeCalories else 0.0
                 )
             }
-            item { Spacer(Modifier.height(8.dp)) }
-            items(MealType.entries) { meal ->
-                MealSection(
+            item {
+                MiniTitle("Lo que has comido", Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 12.dp))
+            }
+            itemsIndexed(MealType.entries) { index, meal ->
+                MealTimelineItem(
                     meal = meal,
                     entries = meals[meal] ?: emptyList(),
+                    isLast = index == MealType.entries.lastIndex,
                     // Pulsar "Añadir" es una sesión de búsqueda nueva: se resetea a propósito. El
                     // "volver" desde el selector de ración (más abajo) NO resetea, para conservar lo
                     // que ya se había buscado.
@@ -662,7 +655,6 @@ private fun NutritionScreenContent(
                     },
                     onEntryClick = { entry -> sheetMode = SheetMode.EditEntry(meal, entry) }
                 )
-                Spacer(Modifier.height(10.dp))
             }
         }
     }
@@ -674,14 +666,20 @@ private fun formatRate(ratePct: Double): String {
     return if (ratePct < 0) "-$abs%" else "+$abs%"
 }
 
-// ── Rueda de calorías ─────────────────────────────────────────────────────────
+// ── Presupuesto del día (maqueta N3) ──────────────────────────────────────────
 
+/**
+ * Lo comido contra el objetivo en una sola barra partida por macros (cada tramo, las kcal que aporta
+ * ese macro), con lo que queda a la derecha. Sustituye a la rueda: se lee de un vistazo y deja más
+ * sitio a las comidas.
+ */
 @Composable
-private fun CalorieCard(
+private fun BudgetCard(
     totalKcal: Double, kcalGoal: Double,
     proteins: Double, proteinGoal: Double,
     carbs: Double, carbGoal: Double,
     fat: Double, fatGoal: Double,
+    isToday: Boolean,
     /**
      * Actividad de hoy según la pulsera. **No se suma al objetivo**: el objetivo ya viene completo del
      * servidor, calculado con la media de días completos. Antes se sumaba aquí la lectura en curso, que
@@ -689,158 +687,182 @@ private fun CalorieCard(
      */
     activeCaloriesToday: Double = 0.0
 ) {
-    val realGoal = kcalGoal
-
-    Surface(
-        modifier = Modifier
-            .padding(horizontal = 16.dp)
-            .fillMaxWidth(),
-        shape = MaterialTheme.shapes.medium,
-        color = Palette.current.surface
+    val p = Palette.current
+    val goal = kcalGoal.coerceAtLeast(1.0)
+    val left = (kcalGoal - totalKcal).toLong()
+    Column(
+        Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(p.surface)
+            .border(1.dp, p.border, RoundedCornerShape(22.dp)).padding(16.dp)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(20.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            // Rueda — aquí sí usamos el gradiente permitido
-            Box(contentAlignment = Alignment.Center) {
-                val pal = Palette.current
-                Canvas(modifier = Modifier.size(130.dp)) {
-                    val stroke = 16.dp.toPx()
-                    val inset  = stroke / 2
-                    val arc    = Size(size.width - stroke, size.height - stroke)
-
-                    // Fondo del ring
-                    drawArc(
-                        color = pal.surfaceSunken,
-                        startAngle = -90f, sweepAngle = 360f,
-                        useCenter = false, topLeft = Offset(inset, inset),
-                        size = arc, style = Stroke(stroke, cap = StrokeCap.Butt)
-                    )
-
-                    val proteinKcal  = proteins * 4.0
-                    val carbsKcal    = carbs    * 4.0
-                    val fatKcal      = fat      * 9.0
-                    val totalKcalRaw = proteinKcal + carbsKcal + fatKcal
-                    val totalCapped  = totalKcalRaw.coerceAtMost(realGoal)
-                    val totalSweep   = ((totalCapped / realGoal) * 360.0).toFloat()
-                    val proteinSweep = if (totalKcalRaw > 0) (proteinKcal / totalKcalRaw).toFloat() * totalSweep else 0f
-                    val carbsSweep   = if (totalKcalRaw > 0) (carbsKcal   / totalKcalRaw).toFloat() * totalSweep else 0f
-                    val fatSweep     = if (totalKcalRaw > 0) (fatKcal     / totalKcalRaw).toFloat() * totalSweep else 0f
-
-                    if (proteinSweep > 0f) drawArc(pal.macroProtein, -90f, proteinSweep, false, Offset(inset, inset), arc, style = Stroke(stroke, cap = StrokeCap.Butt))
-                    if (carbsSweep   > 0f) drawArc(pal.macroCarbs,   -90f + proteinSweep, carbsSweep, false, Offset(inset, inset), arc, style = Stroke(stroke, cap = StrokeCap.Butt))
-                    if (fatSweep     > 0f) drawArc(pal.macroFat,     -90f + proteinSweep + carbsSweep, fatSweep, false, Offset(inset, inset), arc, style = Stroke(stroke, cap = StrokeCap.Butt))
-                }
-
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("${totalKcal.toInt()}", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = Palette.current.textPrimary)
-                    Text("/ ${realGoal.toInt()} kcal", style = MaterialTheme.typography.labelSmall, color = Palette.current.textSecondary)
-                    if (activeCaloriesToday > 0) {
-                        Text("${activeCaloriesToday.toInt()} kcal 🔥 hoy", fontSize = 9.sp, color = Palette.current.accentText, fontWeight = FontWeight.Bold)
-                    }
+        Row(verticalAlignment = Alignment.Bottom) {
+            Column(Modifier.weight(1f)) {
+                MiniTitle(if (isToday) "Presupuesto de hoy" else "Presupuesto del día")
+                Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.padding(top = 4.dp)) {
+                    Text(formatThousands(totalKcal.toLong()), fontSize = 32.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = (-1).sp, color = p.textPrimary)
+                    Text(" / ${formatThousands(kcalGoal.toLong())} kcal", fontSize = 14.sp, color = p.textSecondary, modifier = Modifier.padding(bottom = 6.dp))
                 }
             }
-
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                MacroRow("Proteínas", proteins, proteinGoal, Palette.current.macroProtein)
-                MacroRow("Carbs",     carbs,    carbGoal,    Palette.current.macroCarbs)
-                MacroRow("Grasas",    fat,      fatGoal,     Palette.current.macroFat)
+            Column(horizontalAlignment = Alignment.End) {
+                // Pasarse no es un error que haya que gritar: se dice cuánto, en el mismo sitio.
+                Text(formatThousands(kotlin.math.abs(left)), fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, color = if (left >= 0) p.accentText else p.danger)
+                Text(if (left >= 0) "quedan" else "de más", fontSize = 12.sp, color = p.textSecondary)
+            }
+        }
+        // Una barra, tres tramos: lo que aporta cada macro sobre el objetivo. Si se pasa, se llena.
+        val pk = proteins * 4; val ck = carbs * 4; val fk = fat * 9
+        val scale = if (pk + ck + fk > goal) goal / (pk + ck + fk) else 1.0
+        val fr = listOf(pk, ck, fk).map { (it * scale / goal).toFloat() }
+        val rest = (1f - fr.sum()).coerceAtLeast(0f)
+        Row(Modifier.padding(top = 12.dp).fillMaxWidth().height(14.dp).clip(RoundedCornerShape(50)).background(p.track)) {
+            listOf(p.macroProtein, p.macroCarbs, p.macroFat).forEachIndexed { i, c ->
+                if (fr[i] > 0.001f) Box(Modifier.weight(fr[i]).fillMaxHeight().background(c))
+            }
+            if (rest > 0.001f) Spacer(Modifier.weight(rest))
+        }
+        Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+            MacroLegend(proteins, proteinGoal, "proteínas", p.macroProtein)
+            MacroLegend(carbs, carbGoal, "carbs", p.macroCarbs)
+            MacroLegend(fat, fatGoal, "grasas", p.macroFat)
+        }
+        if (activeCaloriesToday > 0) {
+            HorizontalDivider(color = p.divider, modifier = Modifier.padding(top = 12.dp))
+            Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(LineIcons.Flame, null, tint = p.accentText, modifier = Modifier.size(15.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    buildAnnotatedString {
+                        append("La pulsera suma ")
+                        withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = p.textPrimary)) { append("${activeCaloriesToday.toInt()} kcal") }
+                        append(" de actividad hoy")
+                    },
+                    fontSize = 12.sp, color = p.textSecondary
+                )
             }
         }
     }
 }
 
 @Composable
-private fun MacroRow(label: String, value: Double, goal: Double, color: androidx.compose.ui.graphics.Color) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(color))
-        Text(label, style = MaterialTheme.typography.bodySmall, color = Palette.current.textSecondary, modifier = Modifier.width(65.dp))
-        Text("${value.toInt()} / ${goal.toInt()}g", style = MaterialTheme.typography.bodySmall, color = Palette.current.textPrimary, fontWeight = FontWeight.SemiBold)
+private fun MacroLegend(value: Double, goal: Double, label: String, color: androidx.compose.ui.graphics.Color) {
+    val p = Palette.current
+    Row(verticalAlignment = Alignment.Top) {
+        Box(Modifier.padding(top = 4.dp).size(8.dp).clip(CircleShape).background(color))
+        Spacer(Modifier.width(5.dp))
+        Column {
+            Text(
+                buildAnnotatedString {
+                    withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = p.textPrimary)) { append("${value.toInt()}") }
+                    append(" / ${goal.toInt()} g")
+                },
+                fontSize = 12.sp, color = p.textSecondary
+            )
+            Text(label, fontSize = 12.sp, color = p.textSecondary)
+        }
     }
 }
 
-// ── Sección de comida ─────────────────────────────────────────────────────────
+// ── Comida en la línea del día (maqueta N3, sin horas) ────────────────────────
 
 @Composable
-private fun MealSection(
+private fun MealTimelineItem(
     meal: MealType,
     entries: List<MealEntry>,
+    isLast: Boolean,
     onAddClick: () -> Unit,
     onScanClick: (() -> Unit)? = null,
     onEntryClick: (MealEntry) -> Unit
 ) {
-    Surface(
-        modifier = Modifier
-            .padding(horizontal = 16.dp)
-            .fillMaxWidth()
-            .animateContentSize(),
-        shape = MaterialTheme.shapes.medium,
-        color = Palette.current.surface
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(meal.emoji, fontSize = 18.sp)
-                    Text(meal.label, style = MaterialTheme.typography.titleMedium, color = Palette.current.textPrimary)
-                }
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (entries.isNotEmpty()) {
-                        Text("${entries.sumOf { it.kcal }.toInt()} kcal",
-                            style = MaterialTheme.typography.labelMedium, color = Palette.current.macroFat, fontWeight = FontWeight.SemiBold)
-                    }
-                    if (onScanClick != null) {
-                        Box(
-                            modifier = Modifier.size(30.dp).clip(MaterialTheme.shapes.extraSmall).background(Palette.current.macroCarbs),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            IconButton(onClick = onScanClick, modifier = Modifier.size(30.dp)) {
-                                Icon(Icons.Default.QrCodeScanner, contentDescription = "Escanear", tint = Palette.current.textPrimary, modifier = Modifier.size(18.dp))
-                            }
+    val p = Palette.current
+    val filled = entries.isNotEmpty()
+    val dashColor = androidx.compose.ui.graphics.Color(0xFFCDBBAD)
+    Row(Modifier.padding(horizontal = 16.dp).fillMaxWidth().height(IntrinsicSize.Min)) {
+        // La línea: un círculo por comida (relleno si ya hay algo, punteado si no) unidos por un trazo.
+        Column(Modifier.width(36.dp).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(
+                Modifier.size(36.dp).clip(CircleShape).background(if (filled) p.hero else androidx.compose.ui.graphics.Color.Transparent)
+                    .then(
+                        if (filled) Modifier else Modifier.drawBehind {
+                            drawCircle(
+                                color = dashColor, radius = size.minDimension / 2 - 1.dp.toPx(),
+                                style = Stroke(width = 2.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(5.dp.toPx(), 4.dp.toPx())))
+                            )
                         }
-                    }
-                    Box(
-                        modifier = Modifier.size(30.dp).clip(MaterialTheme.shapes.extraSmall).background(Palette.current.accentText),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        IconButton(onClick = onAddClick, modifier = Modifier.size(30.dp)) {
-                            Icon(Icons.Default.Add, contentDescription = "Añadir", tint = Palette.current.onHero, modifier = Modifier.size(18.dp))
-                        }
-                    }
+                    ),
+                contentAlignment = Alignment.Center
+            ) { Text(meal.emoji, fontSize = 17.sp) }
+            if (!isLast) Box(Modifier.padding(vertical = 4.dp).width(2.dp).weight(1f).background(p.border))
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f).padding(bottom = if (isLast) 4.dp else 16.dp)) {
+            Row(Modifier.fillMaxWidth().heightIn(min = 36.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(meal.label, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = p.textPrimary, modifier = Modifier.weight(1f))
+                if (filled) {
+                    Text("${entries.sumOf { it.kcal }.toInt()} kcal", fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, color = p.textPrimary)
+                    Spacer(Modifier.width(8.dp))
+                    if (onScanClick != null) { MealIconButton(Icons.Default.QrCodeScanner, "Escanear", p.track, p.textPrimary, onScanClick); Spacer(Modifier.width(6.dp)) }
+                    MealIconButton(Icons.Default.Add, "Añadir a ${meal.label.lowercase()}", p.hero, p.onHero, onAddClick)
                 }
             }
-
-            entries.forEach { entry ->
-                HorizontalDivider(color = Palette.current.divider, modifier = Modifier.padding(vertical = 8.dp))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(MaterialTheme.shapes.extraSmall)
-                        .clickable { onEntryClick(entry) }
-                        .padding(vertical = 4.dp, horizontal = 2.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+            if (filled) {
+                Column(
+                    Modifier.padding(top = 8.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(p.surface)
+                        .border(1.dp, p.border, RoundedCornerShape(18.dp)).padding(horizontal = 12.dp, vertical = 4.dp)
                 ) {
-                    Text(foodIconFor(entry.name), fontSize = 18.sp, modifier = Modifier.width(26.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(entry.name, style = MaterialTheme.typography.bodyMedium, color = Palette.current.textPrimary, fontWeight = FontWeight.Medium)
-                        Text(
-                            "${entry.grams.toInt()}g${basisSuffix(entry)} · P: ${entry.proteins.toInt()}g · C: ${entry.carbs.toInt()}g · G: ${entry.fat.toInt()}g",
-                            style = MaterialTheme.typography.bodySmall, color = Palette.current.textSecondary
-                        )
+                    entries.forEachIndexed { i, entry ->
+                        if (i > 0) HorizontalDivider(color = p.divider)
+                        Row(
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { onEntryClick(entry) }.padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(foodIconFor(entry.name), fontSize = 18.sp, textAlign = TextAlign.Center, modifier = Modifier.width(26.dp))
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(entry.name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = p.textPrimary)
+                                Text("${entry.grams.toInt()} g${basisSuffix(entry)}", fontSize = 12.sp, color = p.textSecondary)
+                            }
+                            Text("${entry.kcal.toInt()} kcal", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = p.textSecondary)
+                        }
                     }
-                    Text("${entry.kcal.toInt()} kcal", style = MaterialTheme.typography.bodySmall, color = Palette.current.textSecondary, fontWeight = FontWeight.Medium)
+                }
+            } else {
+                // Comida vacía: el botón grande punteado invita a añadir; el escáner, al lado.
+                Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(15.dp)).background(p.surface)
+                            .drawBehind {
+                                drawRoundRect(
+                                    color = dashColor,
+                                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(15.dp.toPx()),
+                                    style = Stroke(width = 1.5.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 4.dp.toPx())))
+                                )
+                            }
+                            .clickable(onClick = onAddClick),
+                        contentAlignment = Alignment.Center
+                    ) { Text("+ Añadir ${meal.label.lowercase()}", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = p.textSecondary) }
+                    if (onScanClick != null) { Spacer(Modifier.width(8.dp)); MealIconButton(Icons.Default.QrCodeScanner, "Escanear", p.track, p.textPrimary, onScanClick, size = 44) }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun MealIconButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector, description: String,
+    bg: androidx.compose.ui.graphics.Color, tint: androidx.compose.ui.graphics.Color,
+    onClick: () -> Unit, size: Int = 34
+) {
+    Box(
+        Modifier.size(size.dp).clip(RoundedCornerShape(11.dp)).background(bg).clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) { Icon(icon, contentDescription = description, tint = tint, modifier = Modifier.size(17.dp)) }
+}
+
+/** "Viernes, 27 de noviembre", para la cabecera. */
+private fun nutritionLongDate(d: LocalDate): String {
+    val dias = listOf("Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo")
+    val meses = listOf("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre")
+    return "${dias[d.dayOfWeek.ordinal]}, ${d.day} de ${meses[d.month.ordinal]}"
 }
 
 // ── Sheet: Búsqueda ───────────────────────────────────────────────────────────
@@ -1620,7 +1642,7 @@ private fun sheetFieldColors() = OutlinedTextFieldDefaults.colors(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun WeekDayPicker(today: LocalDate, selectedDate: LocalDate, onDateSelected: (LocalDate) -> Unit) {
-    val dayLabels = listOf("L", "M", "M", "J", "V", "S", "D")
+    val dayLabels = listOf("L", "M", "X", "J", "V", "S", "D")
     val weekCount = 5
     val initialPage = 2
     val pagerState = rememberPagerState(initialPage = initialPage) { weekCount }
@@ -1631,58 +1653,56 @@ private fun WeekDayPicker(today: LocalDate, selectedDate: LocalDate, onDateSelec
         val monday = currentMonday.plus(DatePeriod(days = weekOffset * 7))
         val weekDays = (0..6).map { monday.plus(DatePeriod(days = it)) }
 
-        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+        // Baldosas de la maqueta: el día que se mira en chocolate, hoy con borde melocotón si no es
+        // el que se mira, los futuros y los que están fuera del rango consultable, apagados.
+        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             weekDays.forEachIndexed { index, date ->
                 val isSelected = date == selectedDate
                 val isToday    = date == today
                 val diffDays   = (date.toEpochDays() - today.toEpochDays()).toInt()
                 val inRange    = diffDays in -14..14
-
+                val dim        = diffDays > 0 || !inRange
+                val p = Palette.current
+                val shape = RoundedCornerShape(15.dp)
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
                     modifier = Modifier
-                        .clip(MaterialTheme.shapes.extraSmall)
-                        .clickable(enabled = inRange) { onDateSelected(date) }
-                        .padding(horizontal = 4.dp, vertical = 8.dp)
-                ) {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .size(28.dp)
-                            .clip(CircleShape)
-                            .background(if (isSelected) Palette.current.accentText else androidx.compose.ui.graphics.Color.Transparent)
-                            .then(if (isToday && !isSelected) Modifier.border(1.5.dp, Palette.current.accentText, CircleShape) else Modifier)
-                    ) {
-                        Text(
-                            dayLabels[index], style = MaterialTheme.typography.labelMedium,
-                            fontWeight = if (isSelected || isToday) FontWeight.Bold else FontWeight.Normal,
-                            color = when {
-                                isSelected -> Palette.current.onHero
-                                isToday    -> Palette.current.accentText
-                                !inRange   -> Palette.current.chevron
-                                else       -> Palette.current.textSecondary
+                        .weight(1f)
+                        .height(50.dp)
+                        .clip(shape)
+                        .background(
+                            when {
+                                isSelected -> p.hero
+                                dim -> androidx.compose.ui.graphics.Color.Transparent
+                                else -> p.surface
                             }
                         )
-                    }
-                    Spacer(Modifier.height(4.dp))
+                        .then(
+                            when {
+                                isSelected -> Modifier
+                                isToday -> Modifier.border(1.5.dp, p.accent, shape)
+                                dim -> Modifier
+                                else -> Modifier.border(1.dp, p.border, shape)
+                            }
+                        )
+                        .clickable(enabled = inRange) { onDateSelected(date) }
+                ) {
                     Text(
-                        date.dayOfMonth.toString(), style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                        dayLabels[index], fontSize = 11.sp, fontWeight = FontWeight.Bold,
                         color = when {
-                            isSelected -> Palette.current.textPrimary
-                            !inRange   -> Palette.current.chevron
-                            else       -> Palette.current.textPrimary
+                            isSelected -> p.onHeroSecondary
+                            dim -> p.chevron
+                            else -> p.textSecondary
                         }
                     )
-                    Spacer(Modifier.height(4.dp))
-                    Box(
-                        modifier = Modifier.size(5.dp).clip(CircleShape).background(
-                            when {
-                                isSelected || isToday -> Palette.current.accentText
-                                !inRange -> androidx.compose.ui.graphics.Color.Transparent
-                                else -> Palette.current.chevron
-                            }
-                        )
+                    Text(
+                        date.day.toString(), fontSize = 15.sp, fontWeight = FontWeight.ExtraBold,
+                        color = when {
+                            isSelected -> p.onHero
+                            dim -> p.chevron
+                            else -> p.textPrimary
+                        }
                     )
                 }
             }
