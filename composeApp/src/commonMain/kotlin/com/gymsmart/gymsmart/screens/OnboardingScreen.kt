@@ -185,8 +185,7 @@ private fun OnboardingScreenContent(
                                         sex           = form.sex,
                                         activityLevel = form.activityLevel,
                                         goal          = form.goal,
-                                        goalRate      = form.goalRate,
-                                        hasWearable   = form.hasWearable == true
+                                        goalRate      = form.goalRate
                                     )
                                 ).onSuccess { onComplete() }
                                     .onFailure { errorMsg = "Error al guardar. Inténtalo de nuevo." }

@@ -495,8 +495,7 @@ private fun WeightScreenContent(
                                     sex = profile.sex,
                                     activityLevel = profile.activityLevel,
                                     goal = profile.goal,
-                                    goalRate = profile.goalRate,
-                                    hasWearable = profile.activityLevel == "wearable"
+                                    goalRate = profile.goalRate
                                 )
                                 // Antes el diálogo se cerraba y el campo se vaciaba sin comprobar si
                                 // saveProfile() había tenido éxito (ERR-1 en doc/08-backlog-mejoras.md) —

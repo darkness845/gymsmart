@@ -259,8 +259,7 @@ fun ProfileScreen(
                                 heightCm = parseDecimal(height)!!,
                                 age = calculatedAge, sex = sex,
                                 activityLevel = activityLevel, goal = goal,
-                                goalRate = if (goal == NutritionMath.GOAL_MAINTAIN) 0.0 else parseDecimal(goalRate)!!,
-                                hasWearable = steps != null
+                                goalRate = if (goal == NutritionMath.GOAL_MAINTAIN) 0.0 else parseDecimal(goalRate)!!
                             )
                             profileService.saveProfile(request, avgActive).onSuccess { response ->
                                 savedTargets = response.targets
@@ -288,8 +287,7 @@ fun ProfileScreen(
                 heightCm = parseDecimal(height)!!,
                 age = age.toInt(), sex = sex,
                 activityLevel = activityLevel, goal = goal,
-                goalRate = if (goal == NutritionMath.GOAL_MAINTAIN) 0.0 else parseDecimal(goalRate)!!,
-                hasWearable = steps != null
+                goalRate = if (goal == NutritionMath.GOAL_MAINTAIN) 0.0 else parseDecimal(goalRate)!!
             )
             profileService.saveProfile(request, avgActive).onSuccess { response ->
                 savedTargets = response.targets

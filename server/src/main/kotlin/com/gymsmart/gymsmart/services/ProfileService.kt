@@ -72,7 +72,6 @@ class ProfileService(private val turso: TursoService) {
                 activity_level TEXT    NOT NULL,
                 goal           TEXT    NOT NULL,
                 goal_rate      REAL    NOT NULL,
-                has_wearable   INTEGER NOT NULL DEFAULT 0,
                 updated_at     INTEGER NOT NULL,
                 adaptive_tdee  REAL,
                 adaptive_updated_at INTEGER,
@@ -222,12 +221,11 @@ class ProfileService(private val turso: TursoService) {
                 "BEGIN IMMEDIATE" to emptyList(),
                 """
                 INSERT OR REPLACE INTO user_profiles
-                    (user_id, weight_kg, height_cm, age, sex, activity_level, goal, goal_rate, has_wearable, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (user_id, weight_kg, height_cm, age, sex, activity_level, goal, goal_rate, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """.trimIndent() to listOf(
                     userId, weightKg.toString(), heightCm.toString(), age.toString(),
-                    sex, activityLevel, goal, goalRate.toString(),
-                    if (activityLevel == "wearable") "1" else "0", now.toString()
+                    sex, activityLevel, goal, goalRate.toString(), now.toString()
                 ),
                 restoreStatement,
                 "COMMIT" to emptyList()

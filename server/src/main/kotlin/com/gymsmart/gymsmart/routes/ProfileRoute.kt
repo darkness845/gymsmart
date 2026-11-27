@@ -25,7 +25,9 @@ data class ProfileRequest(
     val activityLevel: String,
     val goal:          String,
     val goalRate:      Double,
-    val hasWearable:   Boolean = false
+    // Ya no se usa (AUD-16): nada leía la columna has_wearable. Se sigue aceptando porque el JSON del
+    // servidor es estricto y las apps ya instaladas lo mandan; quitarlo les daría un 400 al guardar.
+    @Suppress("unused") val hasWearable: Boolean = false
 )
 
 /** Respuesta común de perfil + objetivos, para no repetir el mapeo en cada endpoint. */
