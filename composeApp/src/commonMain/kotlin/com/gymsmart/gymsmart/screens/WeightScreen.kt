@@ -2,13 +2,19 @@ package com.gymsmart.gymsmart.screens
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.draw.clip
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.*
@@ -88,6 +94,7 @@ private fun WeightScreenContent(
     var selectedImageBase64 by remember { mutableStateOf<String?>(null) }
     var isLoadingAnalysis by remember { mutableStateOf(false) }
     var isPremium by remember { mutableStateOf(false) }
+    var tab by rememberSaveable { mutableStateOf(0) }
     val subService = remember { SubscriptionService(authService.client) }
 
     val today = remember {
@@ -119,28 +126,14 @@ private fun WeightScreenContent(
 
     Scaffold(
         topBar = {
-            Column {
-                TopAppBar(
-                    title = {
-                        Text(
-                            "Evolución de peso",
-                            fontWeight = FontWeight.Bold,
-                            color = Palette.current.textPrimary
-                        )
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = { navController.popBackStack() }) {
-                            Icon(
-                                Icons.Default.ArrowBack,
-                                contentDescription = "Volver",
-                                tint = Palette.current.textPrimary
-                            )
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = Palette.current.background
-                    )
-                )
+            Row(
+                Modifier.fillMaxWidth().background(Palette.current.background).statusBarsPadding()
+                    .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                CircleBack { navController.popBackStack() }
+                Spacer(Modifier.width(10.dp))
+                Text("Peso", fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, color = Palette.current.textPrimary)
             }
         },
         containerColor = Palette.current.background
@@ -152,80 +145,213 @@ private fun WeightScreenContent(
                 .background(Palette.current.background)
                 .verticalScroll(rememberScrollState())
                 .padding(padding)
-                .padding(horizontal = 16.dp)
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+            // Maqueta W5: dos pestañas. "Peso" es lo diario (hoy, añadir y gráfica); "Análisis IA" es
+            // lo que se hace de vez en cuando (la foto). Antes la IA ocupaba lo alto de la pantalla
+            // y el botón de añadir peso, que es lo que se usa cada día, quedaba debajo.
+            WeightTabs(selected = tab, onSelect = { tab = it })
 
-            Spacer(Modifier.height(8.dp))
-
-            // IA CARD
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.large,
-                color = Palette.current.surface,
-                tonalElevation = 0.dp
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            Icons.Default.AutoAwesome,
-                            contentDescription = null,
-                            tint = Palette.current.accent
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            "Analizar físico con IA",
-                            fontWeight = FontWeight.Bold,
-                            color = Palette.current.textPrimary
-                        )
-                    }
-
-                    Spacer(Modifier.height(16.dp))
-
-                    Button(
-                        onClick = {
-                            if (!isPremium) {
-                                navController.navigate(Screen.Subscription.route)
-                                return@Button
+            if (tab == 0) {
+                val sorted = remember(entries) { entries.sortedBy { it.day } }
+                val last = sorted.lastOrNull()
+                val prev = sorted.getOrNull(sorted.size - 2)
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(22.dp),
+                    color = Palette.current.surface,
+                    border = BorderStroke(1.dp, Palette.current.border)
+                ) {
+                    Column(Modifier.padding(18.dp)) {
+                        Row(verticalAlignment = Alignment.Top) {
+                            Column(Modifier.weight(1f)) {
+                                MiniTitle(if (last?.day == today) "Hoy · ${weekdayLabel(today)}" else if (last != null) "Último pesaje · ${shortDay(last.day)}" else "Hoy · ${weekdayLabel(today)}")
+                                Row(verticalAlignment = Alignment.Bottom) {
+                                    Text(last?.let { kgLabel(it.weightKg) } ?: "—", fontSize = 44.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = (-1.5).sp, color = Palette.current.textPrimary)
+                                    Text(" kg", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Palette.current.accentText, modifier = Modifier.padding(bottom = 8.dp))
+                                }
                             }
-                            launchImagePicker()
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Palette.current.hero,
-                            contentColor = Palette.current.onHero,
-                            disabledContainerColor = Palette.current.border,
-                            disabledContentColor = Palette.current.chevron
-                        )
-                    ) {
-                        Icon(Icons.Default.Image, contentDescription = null, tint = Palette.current.onHero)
-                        Spacer(Modifier.width(8.dp))
-                        Text(if (isPremium) "Subir foto" else "🔒 Solo Premium")
+                            if (last != null && prev != null) {
+                                val d = kotlin.math.round((last.weightKg - prev.weightKg) * 10) / 10f
+                                Text(
+                                    (if (d > 0) "+" else "") + (if (d == 0f) "=" else kgLabel(d)) + " vs el ${shortDay(prev.day)}",
+                                    fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Palette.current.textPrimary,
+                                    modifier = Modifier.padding(top = 2.dp).clip(RoundedCornerShape(50)).background(Palette.current.track).padding(horizontal = 10.dp, vertical = 5.dp)
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(14.dp))
+                        PrimaryButton("+ Añadir peso", { inputWeightError = null; showDialog = true }, Modifier.fillMaxWidth())
                     }
+                }
 
-                    previewBytes?.let { bytes ->
-                        Spacer(Modifier.height(16.dp))
-                        Image(
-                            bitmap = byteArrayToImageBitmap(bytes),
-                            contentDescription = null,
-                            modifier = Modifier.fillMaxWidth().height(300.dp)
-                        )
-                        Spacer(Modifier.height(16.dp))
-                        Button(
-                            onClick = {
-                                val image = selectedImageBase64 ?: return@Button
-                                scope.launch {
-                                    try {
-                                        isLoadingAnalysis = true
-                                        analysisError = null
-                                        analysis = weightService.analyzeBody(image)
-                                    } catch (e: Exception) {
-                                        analysisError = "No se pudo completar el análisis. Inténtalo de nuevo."
-                                    } finally {
-                                        isLoadingAnalysis = false
+                // GRÁFICA
+                if (entries.isNotEmpty()) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth().height(320.dp),
+                        shape = RoundedCornerShape(22.dp),
+                        color = Palette.current.surface,
+                        border = BorderStroke(1.dp, Palette.current.border),
+                        tonalElevation = 0.dp
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("Progreso", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Palette.current.textPrimary, modifier = Modifier.weight(1f))
+                                spanLabel(entries)?.let { Text(it, fontSize = 12.sp, color = Palette.current.textSecondary) }
+                            }
+                            Spacer(Modifier.height(8.dp))
+
+                            val sorted = remember(entries) { entries.sortedBy { it.day } }
+                            val minW = sorted.minOf { it.weightKg }
+                            val maxW = sorted.maxOf { it.weightKg }
+                            val range = max(1f, maxW - minW)
+
+                            val paddingLeftDp = 40.dp
+                            val paddingBotDp = 28.dp
+                            val paddingTopDp = 12.dp
+                            val paddingRightDp = 8.dp
+
+                            BoxWithConstraints(
+                                modifier = Modifier.fillMaxWidth().weight(1f)
+                            ) {
+                                val totalW = constraints.maxWidth.toFloat()
+                                val totalH = constraints.maxHeight.toFloat()
+
+                                val pLeft = with(LocalDensity.current) { paddingLeftDp.toPx() }
+                                val pBot = with(LocalDensity.current) { paddingBotDp.toPx() }
+                                val pTop = with(LocalDensity.current) { paddingTopDp.toPx() }
+                                val pRight = with(LocalDensity.current) { paddingRightDp.toPx() }
+
+                                val chartW = totalW - pLeft - pRight
+                                val chartH = totalH - pBot - pTop
+                                val stepX = if (sorted.size > 1) chartW / (sorted.size - 1) else chartW
+
+                                fun xPos(index: Int) = pLeft + index * stepX
+                                fun yPos(v: Float) = pTop + chartH - ((v - minW) / range) * chartH
+
+                                val pal = Palette.current
+                                Canvas(modifier = Modifier.fillMaxSize()) {
+                                    for (i in 0..3) {
+                                        val fraction = i / 3f
+                                        val yG = pTop + chartH * (1f - fraction)
+                                        drawLine(
+                                            color = pal.divider,
+                                            start = Offset(pLeft, yG),
+                                            end = Offset(pLeft + chartW, yG),
+                                            strokeWidth = 1.5f
+                                        )
+                                    }
+
+                                    val areaPath = Path()
+                                    sorted.forEachIndexed { i, e ->
+                                        val x = xPos(i); val y = yPos(e.weightKg)
+                                        if (i == 0) areaPath.moveTo(x, y)
+                                        else {
+                                            val px = xPos(i - 1); val py = yPos(sorted[i - 1].weightKg)
+                                            val cx = (px + x) / 2
+                                            areaPath.cubicTo(cx, py, cx, y, x, y)
+                                        }
+                                    }
+                                    areaPath.lineTo(xPos(sorted.size - 1), pTop + chartH)
+                                    areaPath.lineTo(pLeft, pTop + chartH)
+                                    areaPath.close()
+                                    drawPath(areaPath, color = pal.accentText.copy(alpha = 0.15f))
+
+                                    val linePath = Path()
+                                    sorted.forEachIndexed { i, e ->
+                                        val x = xPos(i); val y = yPos(e.weightKg)
+                                        if (i == 0) linePath.moveTo(x, y)
+                                        else {
+                                            val px = xPos(i - 1); val py = yPos(sorted[i - 1].weightKg)
+                                            val cx = (px + x) / 2
+                                            linePath.cubicTo(cx, py, cx, y, x, y)
+                                        }
+                                    }
+                                    drawPath(linePath, color = pal.accentText, style = Stroke(width = 5f))
+
+                                    sorted.forEachIndexed { i, e ->
+                                        val x = xPos(i); val y = yPos(e.weightKg)
+                                        drawCircle(pal.surface, radius = 8f, center = Offset(x, y))
+                                        drawCircle(pal.accentText, radius = 8f, center = Offset(x, y), style = Stroke(width = 3f))
                                     }
                                 }
+
+                                val density = LocalDensity.current
+                                for (i in 0..3) {
+                                    val fraction = i / 3f
+                                    val weightVal = minW + fraction * range
+                                    val yPx = pTop + chartH * (1f - fraction)
+                                    val yDp = with(density) { yPx.toDp() }
+                                    val rounded = (weightVal * 10).toInt() / 10f
+                                    Text(
+                                        text = "$rounded",
+                                        fontSize = 9.sp,
+                                        color = Palette.current.textSecondary,
+                                        modifier = Modifier
+                                            .align(Alignment.TopStart)
+                                            .offset(x = 0.dp, y = yDp - 7.dp)
+                                            .width(paddingLeftDp - 4.dp),
+                                        textAlign = TextAlign.End
+                                    )
+                                }
+
+                                sorted.forEachIndexed { i, e ->
+                                    val xPx = xPos(i)
+                                    val xDp = with(density) { xPx.toDp() }
+                                    val yDp = with(density) { (pTop + chartH + 4f).toDp() }
+                                    val label = e.day.substring(5).replace("-", "/")
+                                    Text(
+                                        text = label,
+                                        fontSize = 9.sp,
+                                        color = Palette.current.textSecondary,
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier
+                                            .align(Alignment.TopStart)
+                                            .offset(x = xDp - 16.dp, y = yDp)
+                                            .width(32.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+            } else {
+                // IA CARD
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(22.dp),
+                    color = Palette.current.surface,
+                    border = BorderStroke(1.dp, Palette.current.border),
+                    tonalElevation = 0.dp
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.AutoAwesome,
+                                contentDescription = null,
+                                tint = Palette.current.accent
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                "Analizar físico con IA",
+                                fontWeight = FontWeight.Bold,
+                                color = Palette.current.textPrimary
+                            )
+                        }
+
+                        Spacer(Modifier.height(16.dp))
+
+                        Button(
+                            onClick = {
+                                if (!isPremium) {
+                                    navController.navigate(Screen.Subscription.route)
+                                    return@Button
+                                }
+                                launchImagePicker()
                             },
-                            modifier = Modifier.fillMaxWidth(),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = Palette.current.hero,
                                 contentColor = Palette.current.onHero,
@@ -233,210 +359,90 @@ private fun WeightScreenContent(
                                 disabledContentColor = Palette.current.chevron
                             )
                         ) {
-                            Text("Analizar con IA")
+                            Icon(Icons.Default.Image, contentDescription = null, tint = Palette.current.onHero)
+                            Spacer(Modifier.width(8.dp))
+                            Text(if (isPremium) "Subir foto" else "🔒 Solo Premium")
                         }
-                    }
 
-                    if (isLoadingAnalysis) {
-                        Spacer(Modifier.height(16.dp))
-                        CircularProgressIndicator(color = Palette.current.accentText)
-                    }
-
-                    analysisError?.let { msg ->
-                        Spacer(Modifier.height(16.dp))
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = MaterialTheme.shapes.small,
-                            color = Palette.current.danger.copy(alpha = 0.12f),
-                            tonalElevation = 0.dp
-                        ) {
-                            Text(
-                                "⚠ $msg",
-                                modifier = Modifier.padding(12.dp),
-                                color = Palette.current.danger,
-                                style = MaterialTheme.typography.bodySmall
+                        previewBytes?.let { bytes ->
+                            Spacer(Modifier.height(16.dp))
+                            Image(
+                                bitmap = byteArrayToImageBitmap(bytes),
+                                contentDescription = null,
+                                modifier = Modifier.fillMaxWidth().height(300.dp)
                             )
-                        }
-                    }
-
-                    analysis?.let { result ->
-                        Spacer(Modifier.height(20.dp))
-                        AnalysisCard(title = "Grasa corporal", value = result.bodyFat)
-                        AnalysisCard(title = "Peso estimado", value = result.estimatedWeight)
-                        AnalysisCard(title = "Masa muscular", value = result.muscleMass)
-                        AnalysisCard(title = "Tipo físico", value = result.physiqueType)
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = MaterialTheme.shapes.medium,
-                            color = Palette.current.accentText.copy(alpha = 0.12f),
-                            tonalElevation = 0.dp
-                        ) {
-                            Column(modifier = Modifier.padding(14.dp)) {
-                                Text("Resumen IA", fontWeight = FontWeight.Bold, color = Palette.current.textPrimary)
-                                Spacer(Modifier.height(6.dp))
-                                Text(result.summary, color = Palette.current.textSecondary)
-                            }
-                        }
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(20.dp))
-
-            // CARD PESO
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.large,
-                color = Palette.current.surface,
-                tonalElevation = 0.dp
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Hoy: $today", fontWeight = FontWeight.Bold, color = Palette.current.textPrimary)
-                    Button(
-                        onClick = { inputWeightError = null; showDialog = true },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Palette.current.hero,
-                            contentColor = Palette.current.onHero,
-                            disabledContainerColor = Palette.current.border,
-                            disabledContentColor = Palette.current.chevron
-                        )
-                    ) {
-                        Text("Añadir peso")
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(16.dp))
-
-            // GRÁFICA
-            if (entries.isNotEmpty()) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth().height(320.dp),
-                    shape = MaterialTheme.shapes.large,
-                    color = Palette.current.surface,
-                    tonalElevation = 0.dp
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Progreso", fontWeight = FontWeight.Bold, color = Palette.current.textPrimary)
-                        Spacer(Modifier.height(8.dp))
-
-                        val sorted = remember(entries) { entries.sortedBy { it.day } }
-                        val minW = sorted.minOf { it.weightKg }
-                        val maxW = sorted.maxOf { it.weightKg }
-                        val range = max(1f, maxW - minW)
-
-                        val paddingLeftDp = 40.dp
-                        val paddingBotDp = 28.dp
-                        val paddingTopDp = 12.dp
-                        val paddingRightDp = 8.dp
-
-                        BoxWithConstraints(
-                            modifier = Modifier.fillMaxWidth().weight(1f)
-                        ) {
-                            val totalW = constraints.maxWidth.toFloat()
-                            val totalH = constraints.maxHeight.toFloat()
-
-                            val pLeft = with(LocalDensity.current) { paddingLeftDp.toPx() }
-                            val pBot = with(LocalDensity.current) { paddingBotDp.toPx() }
-                            val pTop = with(LocalDensity.current) { paddingTopDp.toPx() }
-                            val pRight = with(LocalDensity.current) { paddingRightDp.toPx() }
-
-                            val chartW = totalW - pLeft - pRight
-                            val chartH = totalH - pBot - pTop
-                            val stepX = if (sorted.size > 1) chartW / (sorted.size - 1) else chartW
-
-                            fun xPos(index: Int) = pLeft + index * stepX
-                            fun yPos(v: Float) = pTop + chartH - ((v - minW) / range) * chartH
-
-                            val pal = Palette.current
-                            Canvas(modifier = Modifier.fillMaxSize()) {
-                                for (i in 0..3) {
-                                    val fraction = i / 3f
-                                    val yG = pTop + chartH * (1f - fraction)
-                                    drawLine(
-                                        color = pal.divider,
-                                        start = Offset(pLeft, yG),
-                                        end = Offset(pLeft + chartW, yG),
-                                        strokeWidth = 1.5f
-                                    )
-                                }
-
-                                val areaPath = Path()
-                                sorted.forEachIndexed { i, e ->
-                                    val x = xPos(i); val y = yPos(e.weightKg)
-                                    if (i == 0) areaPath.moveTo(x, y)
-                                    else {
-                                        val px = xPos(i - 1); val py = yPos(sorted[i - 1].weightKg)
-                                        val cx = (px + x) / 2
-                                        areaPath.cubicTo(cx, py, cx, y, x, y)
+                            Spacer(Modifier.height(16.dp))
+                            Button(
+                                onClick = {
+                                    val image = selectedImageBase64 ?: return@Button
+                                    scope.launch {
+                                        try {
+                                            isLoadingAnalysis = true
+                                            analysisError = null
+                                            analysis = weightService.analyzeBody(image)
+                                        } catch (e: Exception) {
+                                            analysisError = "No se pudo completar el análisis. Inténtalo de nuevo."
+                                        } finally {
+                                            isLoadingAnalysis = false
+                                        }
                                     }
-                                }
-                                areaPath.lineTo(xPos(sorted.size - 1), pTop + chartH)
-                                areaPath.lineTo(pLeft, pTop + chartH)
-                                areaPath.close()
-                                drawPath(areaPath, color = pal.accentText.copy(alpha = 0.15f))
-
-                                val linePath = Path()
-                                sorted.forEachIndexed { i, e ->
-                                    val x = xPos(i); val y = yPos(e.weightKg)
-                                    if (i == 0) linePath.moveTo(x, y)
-                                    else {
-                                        val px = xPos(i - 1); val py = yPos(sorted[i - 1].weightKg)
-                                        val cx = (px + x) / 2
-                                        linePath.cubicTo(cx, py, cx, y, x, y)
-                                    }
-                                }
-                                drawPath(linePath, color = pal.accentText, style = Stroke(width = 5f))
-
-                                sorted.forEachIndexed { i, e ->
-                                    val x = xPos(i); val y = yPos(e.weightKg)
-                                    drawCircle(pal.surface, radius = 8f, center = Offset(x, y))
-                                    drawCircle(pal.accentText, radius = 8f, center = Offset(x, y), style = Stroke(width = 3f))
-                                }
-                            }
-
-                            val density = LocalDensity.current
-                            for (i in 0..3) {
-                                val fraction = i / 3f
-                                val weightVal = minW + fraction * range
-                                val yPx = pTop + chartH * (1f - fraction)
-                                val yDp = with(density) { yPx.toDp() }
-                                val rounded = (weightVal * 10).toInt() / 10f
-                                Text(
-                                    text = "$rounded",
-                                    fontSize = 9.sp,
-                                    color = Palette.current.textSecondary,
-                                    modifier = Modifier
-                                        .align(Alignment.TopStart)
-                                        .offset(x = 0.dp, y = yDp - 7.dp)
-                                        .width(paddingLeftDp - 4.dp),
-                                    textAlign = TextAlign.End
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Palette.current.hero,
+                                    contentColor = Palette.current.onHero,
+                                    disabledContainerColor = Palette.current.border,
+                                    disabledContentColor = Palette.current.chevron
                                 )
+                            ) {
+                                Text("Analizar con IA")
                             }
+                        }
 
-                            sorted.forEachIndexed { i, e ->
-                                val xPx = xPos(i)
-                                val xDp = with(density) { xPx.toDp() }
-                                val yDp = with(density) { (pTop + chartH + 4f).toDp() }
-                                val label = e.day.substring(5).replace("-", "/")
+                        if (isLoadingAnalysis) {
+                            Spacer(Modifier.height(16.dp))
+                            CircularProgressIndicator(color = Palette.current.accentText)
+                        }
+
+                        analysisError?.let { msg ->
+                            Spacer(Modifier.height(16.dp))
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = MaterialTheme.shapes.small,
+                                color = Palette.current.danger.copy(alpha = 0.12f),
+                                tonalElevation = 0.dp
+                            ) {
                                 Text(
-                                    text = label,
-                                    fontSize = 9.sp,
-                                    color = Palette.current.textSecondary,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier
-                                        .align(Alignment.TopStart)
-                                        .offset(x = xDp - 16.dp, y = yDp)
-                                        .width(32.dp)
+                                    "⚠ $msg",
+                                    modifier = Modifier.padding(12.dp),
+                                    color = Palette.current.danger,
+                                    style = MaterialTheme.typography.bodySmall
                                 )
                             }
                         }
+
+                        analysis?.let { result ->
+                            Spacer(Modifier.height(20.dp))
+                            AnalysisCard(title = "Grasa corporal", value = result.bodyFat)
+                            AnalysisCard(title = "Peso estimado", value = result.estimatedWeight)
+                            AnalysisCard(title = "Masa muscular", value = result.muscleMass)
+                            AnalysisCard(title = "Tipo físico", value = result.physiqueType)
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = MaterialTheme.shapes.medium,
+                                color = Palette.current.accentText.copy(alpha = 0.12f),
+                                tonalElevation = 0.dp
+                            ) {
+                                Column(modifier = Modifier.padding(14.dp)) {
+                                    Text("Resumen IA", fontWeight = FontWeight.Bold, color = Palette.current.textPrimary)
+                                    Spacer(Modifier.height(6.dp))
+                                    Text(result.summary, color = Palette.current.textSecondary)
+                                }
+                            }
+                        }
                     }
                 }
+
             }
 
             Spacer(Modifier.height(16.dp))
@@ -552,3 +558,47 @@ private fun AnalysisCard(title: String, value: String) {
         }
     }
 }
+
+/** Las dos pestañas de la maqueta W5, en una cápsula blanca; la elegida, en chocolate. */
+@Composable
+private fun WeightTabs(selected: Int, onSelect: (Int) -> Unit) {
+    val p = Palette.current
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(p.surface)
+            .border(1.dp, p.border, RoundedCornerShape(16.dp)).padding(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        listOf("Peso", "✦ Análisis IA").forEachIndexed { i, label ->
+            val on = i == selected
+            Box(
+                Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).background(if (on) p.hero else androidx.compose.ui.graphics.Color.Transparent)
+                    .clickable(role = Role.Tab) { onSelect(i) }.padding(vertical = 10.dp),
+                contentAlignment = Alignment.Center
+            ) { Text(label, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = if (on) p.onHero else p.textSecondary) }
+        }
+    }
+}
+
+/** 78.4 → "78,4". */
+private fun kgLabel(v: Float): String {
+    val r = kotlin.math.round(v * 10) / 10f
+    return (if (r == r.toInt().toFloat()) r.toInt().toString() else r.toString()).replace('.', ',')
+}
+
+/** "2026-11-25" → "25/11". */
+private fun shortDay(iso: String): String = iso.substring(8, 10) + "/" + iso.substring(5, 7)
+
+/** "2026-11-27" → "viernes 27". */
+private fun weekdayLabel(iso: String): String = runCatching {
+    val d = kotlinx.datetime.LocalDate.parse(iso)
+    val dias = listOf("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
+    "${dias[d.dayOfWeek.ordinal]} ${d.day}"
+}.getOrDefault(iso)
+
+/** Días que cubre la gráfica ("18 días"), o nada si solo hay un punto. */
+private fun spanLabel(entries: List<WeightEntry>): String? = runCatching {
+    if (entries.size < 2) return@runCatching null
+    val days = entries.map { kotlinx.datetime.LocalDate.parse(it.day) }
+    val n = (days.max().toEpochDays() - days.min().toEpochDays()).toInt() + 1
+    "$n días"
+}.getOrNull()
