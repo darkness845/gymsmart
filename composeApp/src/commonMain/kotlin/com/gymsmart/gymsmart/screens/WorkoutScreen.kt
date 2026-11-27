@@ -531,8 +531,8 @@ private fun DayView(
                                 fontSize = 12.sp, color = p.textSecondary
                             )
                             if (others.isNotEmpty()) {
-                                Spacer(Modifier.height(6.dp))
-                                LinkBadge("Unido con " + others.joinToString(", "))
+                                Spacer(Modifier.height(4.dp))
+                                LinkBadge(if (others.size == 1) "Unido con ${others[0]}" else "Unido con ${others.size} días")
                             }
                         }
                         Spacer(Modifier.width(4.dp))
@@ -932,14 +932,16 @@ internal fun ChoiceChip(text: String, selected: Boolean, modifier: Modifier = Mo
 
 @Composable
 internal fun LinkBadge(text: String) {
+    // Una sola línea y sin fondo. Antes era una píldora naranja que, con nombres de día largos
+    // ("Pecho · Hombro · Tríceps"), se partía en dos líneas y se comía media tarjeta.
     val p = Palette.current
-    Row(
-        Modifier.clip(RoundedCornerShape(50)).background(p.accentSoft).padding(horizontal = 9.dp, vertical = 3.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(LineIcons.Link, null, tint = p.accentText, modifier = Modifier.size(11.dp))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(LineIcons.Link, null, tint = p.accentText, modifier = Modifier.size(12.dp))
         Spacer(Modifier.width(5.dp))
-        Text(text, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF6B4330))
+        Text(
+            text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = p.accentText,
+            maxLines = 1, overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
