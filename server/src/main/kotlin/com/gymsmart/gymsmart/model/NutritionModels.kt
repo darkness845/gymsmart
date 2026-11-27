@@ -27,7 +27,23 @@ data class MealEntryRequest(
     val mealType: String,
     val date: String,
     val basis: String? = null,
-    val yieldId: String? = null
+    val yieldId: String? = null,
+    /**
+     * Identificador que genera el **cliente** para este intento de guardado, y que repite si tiene que
+     * reintentar. Hace que `POST /nutrition/add` sea idempotente.
+     *
+     * Existe por un fallo real y silencioso: `saveMealRemote` no distinguía "el servidor rechazó" de
+     * "no me llegó la respuesta", así que si el INSERT entraba y el móvil perdía la conexión antes del
+     * 201, el usuario veía un error, reintentaba, y quedaban **dos filas en la base y una sola en
+     * pantalla**. A partir de ahí el `SUM(grams * kcal_per_100 / 100)` que alimenta el autoajuste de
+     * kcal era el doble de lo que el usuario veía. En un móvil eso no es hipotético.
+     *
+     * No es la clave primaria y no la elige el cliente: la fila sigue teniendo su propio `id` de
+     * servidor. Si el cliente pudiera fijar la clave primaria, podría ocupar el id de la fila de otro.
+     *
+     * Es null en las apps ya instaladas, que no lo mandan; esas conservan el comportamiento anterior.
+     */
+    val clientId: String? = null
 )
 
 @Serializable

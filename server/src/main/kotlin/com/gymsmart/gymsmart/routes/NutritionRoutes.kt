@@ -28,9 +28,7 @@ fun Route.nutritionRoutes(nutritionService: NutritionService) {
         val session = call.sessions.get<UserSession>()
             ?: return@post call.respond(HttpStatusCode.Unauthorized, "No hay sesión")
         val req = call.receive<MealEntryRequest>()
-        if (!isValidBasis(req)) {
-            return@post call.respond(HttpStatusCode.BadRequest, "Base de pesaje inválida")
-        }
+        validateMeal(req)?.let { return@post call.respond(HttpStatusCode.BadRequest, it) }
         val id = nutritionService.addMeal(session.userId, req)
         call.respond(HttpStatusCode.Created, mapOf("id" to id))
     }
@@ -74,9 +72,7 @@ fun Route.nutritionRoutes(nutritionService: NutritionService) {
         val id = call.parameters["id"]
             ?: return@put call.respond(HttpStatusCode.BadRequest)
         val req = call.receive<MealEntryRequest>()
-        if (!isValidBasis(req)) {
-            return@put call.respond(HttpStatusCode.BadRequest, "Base de pesaje inválida")
-        }
+        validateMeal(req)?.let { return@put call.respond(HttpStatusCode.BadRequest, it) }
         nutritionService.updateMeal(id, session.userId, req)
         call.respond(HttpStatusCode.OK, "Actualizado")
     }
@@ -182,6 +178,64 @@ private fun isValidBasis(req: MealEntryRequest): Boolean {
     return true
 }
 
+/** Las cuatro comidas del día que maneja el cliente. Un valor distinto crea una fila invisible. */
+private val MEAL_TYPES = setOf("DESAYUNO", "ALMUERZO", "COMIDA", "CENA")
+
+/** Techo físico de energía: 100 g de grasa pura son 900 kcal. */
+private const val MAX_KCAL_PER_100 = 902.0
+private const val MAX_NAME_LENGTH = 120
+
+/**
+ * Valida todo lo que llega en una comida, no solo la base de pesaje.
+ *
+ * Antes **no había ninguna comprobación**: se aceptaban `grams` negativos, 0 o 10⁹, `kcalPer100` sin
+ * techo, una `date` con cualquier formato y un `mealType` desconocido. La incoherencia era además
+ * flagrante, porque `validateCollections` sí comprobaba `0 < grams ≤ 5000` para los ítems de una
+ * colección: el límite estaba puesto en la puerta por la que no se escribe en `meals`.
+ *
+ * Dos de estos casos no son teóricos:
+ * - un `mealType` que el cliente no reconoce se **descarta en silencio** al cargar el día
+ *   (`MealType.entries.find { ... }` devuelve null y la entrada desaparece), pero el
+ *   `SUM(grams * kcal_per_100 / 100)` del servidor la sigue contando: comida invisible que pesa en el
+ *   autoajuste de kcal.
+ * - una `date` que no parsea hace que ese día se descarte del cálculo del gasto medido.
+ *
+ * El daño estaba acotado aguas abajo (`reconcile` rechaza un TDEE fuera de 800..6000 y el factor
+ * adaptativo está recortado a 0,70..1,30), así que esto no era una vía para destruir el objetivo del
+ * usuario; pero sí para ensuciar sus datos sin que nada lo avisara.
+ *
+ * Devuelve el motivo del rechazo, o `null` si la comida es válida.
+ */
+private fun validateMeal(req: MealEntryRequest): String? {
+    if (req.name.isBlank()) return "La comida necesita un nombre"
+    if (req.name.length > MAX_NAME_LENGTH) return "Nombre demasiado largo"
+
+    if (!req.grams.isFinite() || req.grams <= 0.0 || req.grams > MAX_ITEM_GRAMS)
+        return "Cantidad fuera de rango (0 a $MAX_ITEM_GRAMS)"
+
+    val porCien = listOf(
+        "Energía" to (req.kcalPer100 to MAX_KCAL_PER_100),
+        "Proteínas" to (req.proteinsPer100 to 100.0),
+        "Hidratos" to (req.carbsPer100 to 100.0),
+        "Grasas" to (req.fatPer100 to 100.0)
+    )
+    porCien.forEach { (etiqueta, par) ->
+        val (valor, maximo) = par
+        if (!valor.isFinite() || valor < 0.0 || valor > maximo) return "$etiqueta fuera de rango"
+    }
+
+    if (req.mealType !in MEAL_TYPES) return "Comida del día inválida"
+    if (!esFechaValida(req.date)) return "Fecha inválida (se espera AAAA-MM-DD)"
+    if (!isValidBasis(req)) return "Base de pesaje inválida"
+    if (req.clientId != null && (req.clientId.isBlank() || req.clientId.length > 64))
+        return "Identificador de cliente inválido"
+    return null
+}
+
+/** `LocalDate.parse` acepta AAAA-MM-DD y rechaza tanto el formato raro como el día inexistente. */
+private fun esFechaValida(date: String): Boolean =
+    runCatching { java.time.LocalDate.parse(date) }.isSuccess
+
 private fun validateCollections(body: FoodCollections): String? {
     if (body.collections.size > MAX_COLLECTIONS) return "Demasiadas colecciones (máximo $MAX_COLLECTIONS)"
     body.collections.forEach { collection ->
@@ -191,8 +245,17 @@ private fun validateCollections(body: FoodCollections): String? {
             return "Demasiados alimentos en '${collection.name}' (máximo $MAX_ITEMS_PER_COLLECTION)"
         collection.items.forEach { item ->
             if (item.name.isBlank()) return "Hay un alimento sin nombre en '${collection.name}'"
-            if (item.grams <= 0.0 || item.grams > MAX_ITEM_GRAMS)
+            if (!item.grams.isFinite() || item.grams <= 0.0 || item.grams > MAX_ITEM_GRAMS)
                 return "Cantidad fuera de rango en '${collection.name}'"
+            // Los ítems de una colección son MealEntry y llevan base y alimento de referencia, pero
+            // aquí no se validaban: PUT /nutrition/collections aceptaba valores que POST
+            // /nutrition/add rechaza. Con un basis = "" la app etiquetaba el alimento como "crudo"
+            // sin que nadie lo hubiera dicho, y al aplicar la colección el POST daba 400 y el usuario
+            // veía "algunos alimentos no se pudieron guardar" sin saber por qué.
+            if (item.basis != null && item.basis != "raw" && item.basis != "cooked")
+                return "Base de pesaje inválida en '${collection.name}'"
+            if (item.yieldId != null && cookingYieldById(item.yieldId) == null)
+                return "Alimento de referencia desconocido en '${collection.name}'"
         }
     }
     return null
