@@ -49,6 +49,7 @@ import com.gymsmart.gymsmart.model.FoodCollection
 import com.gymsmart.gymsmart.model.FoodCollections
 import com.gymsmart.gymsmart.model.FoodSearchResponse
 import com.gymsmart.gymsmart.model.MealEntry
+import com.gymsmart.gymsmart.model.nuevoClientId
 import com.gymsmart.gymsmart.model.NutritionTargets
 import com.gymsmart.gymsmart.model.Nutriments
 import com.gymsmart.gymsmart.model.Product
@@ -175,6 +176,11 @@ private fun NutritionScreenContent(
     }
 
     var sheetMode by remember { mutableStateOf<SheetMode?>(null) }
+
+    // Identificador del intento de aplicar una colección. Se conserva mientras el intento no haya
+    // salido bien del todo, para que volver a pulsar la colección reintente el mismo guardado en vez
+    // de duplicar los alimentos que sí entraron (ver nuevoClientId).
+    var intentoColeccion by remember { mutableStateOf<String?>(null) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
 
@@ -319,18 +325,33 @@ private fun NutritionScreenContent(
                             val list = meals[mode.meal]
                             if (list != null) {
                                 scope.launch {
+                                    // El intento se reutiliza si el anterior no acabó bien: cada
+                                    // alimento lleva "<intento>-<posición>", así que los que sí
+                                    // entraron se reconocen y no se duplican al reintentar.
+                                    val intento = intentoColeccion ?: nuevoClientId().also { intentoColeccion = it }
                                     var anyFailed = false
-                                    for (item in collection.items) {
-                                        val newId = nutritionService.saveMealRemote(item, mode.meal.name, selectedDate.toString())
-                                        if (newId != null) list.add(item.copy(id = newId)) else anyFailed = true
+                                    collection.items.forEachIndexed { indice, item ->
+                                        val newId = nutritionService.saveMealRemote(
+                                            item, mode.meal.name, selectedDate.toString(),
+                                            "$intento-$indice"
+                                        )
+                                        if (newId == null) anyFailed = true
+                                        // En un reintento, los que ya se guardaron devuelven su id de
+                                        // antes: sin esta comprobación se añadirían otra vez a la
+                                        // lista de la pantalla, y entonces el arreglo del duplicado en
+                                        // la base lo habríamos cambiado por un duplicado en la vista.
+                                        else if (list.none { it.id == newId }) list.add(item.copy(id = newId))
                                     }
                                     if (anyFailed) {
                                         snackbarHostState.showSnackbar(
-                                            "Algunos alimentos de «${collection.name}» no se pudieron guardar.",
+                                            "Algunos alimentos de «${collection.name}» no se pudieron guardar. " +
+                                                "Vuelve a pulsar la colección para reintentarlo.",
                                             duration = SnackbarDuration.Short
                                         )
+                                    } else {
+                                        intentoColeccion = null
+                                        closeSheet()
                                     }
-                                    closeSheet()
                                 }
                             }
                         },
@@ -355,11 +376,13 @@ private fun NutritionScreenContent(
                     nutritionService = nutritionService,
                     initialBasis = mode.existingEntry?.basis,
                     initialYieldId = mode.existingEntry?.yieldId,
-                    onConfirm = { built ->
+                    onConfirm = { built, clientId ->
                         val list = meals[mode.meal] ?: return@PortionPickerSheet
                         val entry = built.copy(id = mode.existingEntry?.id ?: "")
                         scope.launch {
-                            val newId = nutritionService.saveMealRemote(entry, mode.meal.name, selectedDate.toString())
+                            val newId = nutritionService.saveMealRemote(
+                                entry, mode.meal.name, selectedDate.toString(), clientId
+                            )
                             if (newId != null) {
                                 // El id lo asigna el servidor: sin él, esta comida no se podría editar
                                 // ni borrar hasta recargar la pantalla (ver NUT-2 en el backlog).
@@ -443,7 +466,10 @@ private fun NutritionScreenContent(
                     product = mode.product,
                     initialGrams = 100.0,
                     nutritionService = nutritionService,
-                    onConfirm = { item ->
+                    // Aquí el clientId no se usa: esto solo añade el alimento al borrador de la
+                    // colección, en memoria. No hay petición que reintentar hasta que la colección
+                    // se aplique a una comida, y ese guardado tiene su propio identificador.
+                    onConfirm = { item, _ ->
                         val next = mode.draft.copy(items = mode.draft.items + item)
                         sheetMode = SheetMode.CollectionEditor(next, mode.returnMeal)
                     },
@@ -702,7 +728,13 @@ private fun BudgetCard(
 ) {
     val p = Palette.current
     val goal = kcalGoal.coerceAtLeast(1.0)
-    val left = (kcalGoal - totalKcal).toLong()
+    // El signo se decide sobre el valor real y la cifra se redondea aparte. Antes era un solo
+    // `toLong()`, que trunca hacia cero: con 2.000,5 kcal comidas de un objetivo de 2.000 daba
+    // `left = 0`, y como 0 >= 0 la tarjeta decía "0 quedan" estando ya pasado. Y con 1.500,6 se leía
+    // "1.500 / 2.000" junto a "499 quedan", que no suman.
+    val sobrante = kcalGoal - totalKcal
+    val left = sobrante.roundToInt().toLong()
+    val vaSobrado = sobrante >= 0.0
     Column(
         Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(p.surface)
             .border(1.dp, p.border, RoundedCornerShape(22.dp)).padding(16.dp)
@@ -711,20 +743,35 @@ private fun BudgetCard(
             Column(Modifier.weight(1f)) {
                 MiniTitle(if (isToday) "Presupuesto de hoy" else "Presupuesto del día")
                 Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.padding(top = 4.dp)) {
-                    Text(formatThousands(totalKcal.toLong()), fontSize = 32.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = (-1).sp, color = p.textPrimary)
-                    Text(" / ${formatThousands(kcalGoal.toLong())} kcal", fontSize = 14.sp, color = p.textSecondary, modifier = Modifier.padding(bottom = 6.dp))
+                    Text(formatThousands(totalKcal.roundToInt().toLong()), fontSize = 32.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = (-1).sp, color = p.textPrimary)
+                    Text(" / ${formatThousands(kcalGoal.roundToInt().toLong())} kcal", fontSize = 14.sp, color = p.textSecondary, modifier = Modifier.padding(bottom = 6.dp))
                 }
             }
             Column(horizontalAlignment = Alignment.End) {
                 // Pasarse no es un error que haya que gritar: se dice cuánto, en el mismo sitio.
-                Text(formatThousands(kotlin.math.abs(left)), fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, color = if (left >= 0) p.accentText else p.danger)
-                Text(if (left >= 0) "quedan" else "de más", fontSize = 12.sp, color = p.textSecondary)
+                Text(formatThousands(kotlin.math.abs(left)), fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, color = if (vaSobrado) p.accentText else p.danger)
+                Text(if (vaSobrado) "quedan" else "de más", fontSize = 12.sp, color = p.textSecondary)
             }
         }
-        // Una barra, tres tramos: lo que aporta cada macro sobre el objetivo. Si se pasa, se llena.
+        // Una barra, tres tramos. Lo que se llena es **el progreso real de kcal**, y los colores solo
+        // reparten ese largo según lo que aporta cada macro.
+        //
+        // Antes la barra se dibujaba con `proteinas*4 + carbos*4 + grasas*9` y solo se reescalaba
+        // cuando esa suma pasaba del objetivo. Eso la hacía contradecir al número de encima: la
+        // energía de etiqueta casi nunca coincide con 4/4/9 —la fibra vale 2 kcal/g, el alcohol 7, y
+        // la USDA calcula sus kcal con los factores específicos de Merrill & Watt, no con 4/4/9—, así
+        // que en un día español normal el hueco es de ~137 kcal (8 %) y se leía "2.000 / 2.000" con la
+        // barra al 90 %.
+        //
+        // No se pinta un cuarto tramo con la diferencia porque **puede ser negativa**: en 42 de los 89
+        // alimentos de la tabla de genéricos 4/4/9 da más que las kcal reales (champiñones 28,5 frente
+        // a 22). Reparto por cuota, en cambio, cuadra siempre. Ver doc/13 §D-2.
         val pk = proteins * 4; val ck = carbs * 4; val fk = fat * 9
-        val scale = if (pk + ck + fk > goal) goal / (pk + ck + fk) else 1.0
-        val fr = listOf(pk, ck, fk).map { (it * scale / goal).toFloat() }
+        val macroKcal = pk + ck + fk
+        val lleno = (totalKcal / goal).coerceIn(0.0, 1.0)
+        val cuotas = if (macroKcal > 0.0) listOf(pk, ck, fk).map { it / macroKcal }
+                     else listOf(0.0, 0.0, 0.0)
+        val fr = cuotas.map { (it * lleno).toFloat() }
         val rest = (1f - fr.sum()).coerceAtLeast(0f)
         Row(Modifier.padding(top = 12.dp).fillMaxWidth().height(14.dp).clip(RoundedCornerShape(50)).background(p.track)) {
             listOf(p.macroProtein, p.macroCarbs, p.macroFat).forEachIndexed { i, c ->
@@ -745,7 +792,7 @@ private fun BudgetCard(
                 Text(
                     buildAnnotatedString {
                         append("La pulsera suma ")
-                        withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = p.textPrimary)) { append("${activeCaloriesToday.toInt()} kcal") }
+                        withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = p.textPrimary)) { append("${activeCaloriesToday.roundToInt()} kcal") }
                         append(" de actividad hoy")
                     },
                     fontSize = 12.sp, color = p.textSecondary
@@ -764,8 +811,8 @@ private fun MacroLegend(value: Double, goal: Double, label: String, color: andro
         Column {
             Text(
                 buildAnnotatedString {
-                    withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = p.textPrimary)) { append("${value.toInt()}") }
-                    append(" / ${goal.toInt()} g")
+                    withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = p.textPrimary)) { append("${value.roundToInt()}") }
+                    append(" / ${goal.roundToInt()} g")
                 },
                 fontSize = 12.sp, color = p.textSecondary
             )
@@ -810,7 +857,7 @@ private fun MealTimelineItem(
             Row(Modifier.fillMaxWidth().heightIn(min = 36.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(meal.label, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = p.textPrimary, modifier = Modifier.weight(1f))
                 if (filled) {
-                    Text("${entries.sumOf { it.kcal }.toInt()} kcal", fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, color = p.textPrimary)
+                    Text("${entries.sumOf { it.kcal }.roundToInt()} kcal", fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, color = p.textPrimary)
                     Spacer(Modifier.width(8.dp))
                     if (onScanClick != null) { MealIconButton(Icons.Default.QrCodeScanner, "Escanear", p.track, p.textPrimary, onScanClick); Spacer(Modifier.width(6.dp)) }
                     MealIconButton(Icons.Default.Add, "Añadir a ${meal.label.lowercase()}", p.hero, p.onHero, onAddClick)
@@ -833,7 +880,7 @@ private fun MealTimelineItem(
                                 Text(entry.name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = p.textPrimary)
                                 Text("${entry.grams.toInt()} g${basisSuffix(entry)}", fontSize = 12.sp, color = p.textSecondary)
                             }
-                            Text("${entry.kcal.toInt()} kcal", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = p.textSecondary)
+                            Text("${entry.kcal.roundToInt()} kcal", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = p.textSecondary)
                         }
                     }
                 }
@@ -1130,7 +1177,7 @@ private fun CollectionCard(
                 val totalKcal = collection.items.sumOf { it.kcal }
                 val count = collection.items.size
                 Text(
-                    "$count ${if (count == 1) "alimento" else "alimentos"} · ${totalKcal.toInt()} kcal",
+                    "$count ${if (count == 1) "alimento" else "alimentos"} · ${totalKcal.roundToInt()} kcal",
                     style = MaterialTheme.typography.labelSmall,
                     color = Palette.current.textSecondary
                 )
@@ -1214,7 +1261,7 @@ private fun CollectionEditorSheet(
                                     color = Palette.current.textPrimary
                                 )
                                 Text(
-                                    "${item.grams.toInt()} g${basisSuffix(item)} · ${item.kcal.toInt()} kcal",
+                                    "${item.grams.toInt()} g${basisSuffix(item)} · ${item.kcal.roundToInt()} kcal",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = Palette.current.textSecondary
                                 )
@@ -1344,10 +1391,15 @@ private fun PortionPickerSheet(
     nutritionService: NutritionService,
     initialBasis: String? = null,
     initialYieldId: String? = null,
-    onConfirm: (MealEntry) -> Unit, onBack: () -> Unit, onClose: () -> Unit
+    onConfirm: (MealEntry, String) -> Unit, onBack: () -> Unit, onClose: () -> Unit
 ) {
     var gramsText by remember { mutableStateOf(initialGrams.toInt().toString()) }
     val grams = gramsText.toDoubleOrNull() ?: 0.0
+
+    // Un identificador por apertura de la hoja, no por pulsación: así, si el guardado falla y el
+    // usuario vuelve a pulsar "Añadir", el servidor reconoce el reintento y no crea una segunda fila.
+    // Es el caso real que producía el doble conteo (ver nuevoClientId).
+    val clientId = remember { nuevoClientId() }
 
     // Factor crudo→cocinado. Primero se intenta reconocer el alimento por su nombre; si no se
     // reconoce, el usuario puede elegirlo a mano, que es justo el dato que faltaba. Lo elegido a mano
@@ -1498,6 +1550,42 @@ private fun PortionPickerSheet(
             }
         }
 
+        // `CookingYield` promete por escrito que cuando la conversión se bloquea "se bloquea **y se
+        // avisa**". Se bloqueaba y no se avisaba: el conmutador de base simplemente desaparecía y el
+        // usuario no tenía forma de saber por qué. El caso típico es un vasito de arroz de microondas
+        // llamado solo "Arroz basmati": 158 kcal/100 g, imposible en seco, así que no se le puede
+        // aplicar el factor sin contarlo dos veces.
+        if (alreadyCooked) {
+            Spacer(Modifier.height(12.dp))
+            Surface(
+                shape = MaterialTheme.shapes.small,
+                color = Palette.current.accentSoft,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    if (excludedByName)
+                        "Este producto ya viene cocinado o preparado, así que sus valores son los del " +
+                            "producto tal cual: no hay nada que convertir."
+                    else
+                        "Sus ${sourceKcalPer100.roundToInt()} kcal/100 g son imposibles en seco, así que " +
+                            "este producto ya está cocido y no se le aplica ninguna conversión.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Palette.current.textPrimary,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
+                )
+            }
+        } else if (cookingYield != null && basis == WeighBasis.COOKED && grams > 0) {
+            // La otra pista que el KDoc documentaba y que no existía: el peso en crudo equivalente,
+            // que es la referencia con la que uno compra y congela.
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "≈ ${cookingYield.rawWeightFor(grams, basis).roundToInt()} g " +
+                    "${cookingYield.rawLabel.lowercase()} · ${cookingYield.method}",
+                style = MaterialTheme.typography.bodySmall,
+                color = Palette.current.textSecondary
+            )
+        }
+
         Spacer(Modifier.height(16.dp))
 
         Surface(shape = MaterialTheme.shapes.medium, color = Palette.current.surfaceSunken, modifier = Modifier.fillMaxWidth()) {
@@ -1509,10 +1597,10 @@ private fun PortionPickerSheet(
                     color = Palette.current.textSecondary
                 )
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
-                    NutrientPreview("Calorías",  "${kcal.toInt()}",     "kcal", Palette.current.accentText)
-                    NutrientPreview("Proteínas", "${proteins.toInt()}", "g",    Palette.current.macroProtein)
-                    NutrientPreview("Carbs",     "${carbs.toInt()}",    "g",    Palette.current.macroCarbs)
-                    NutrientPreview("Grasas",    "${fat.toInt()}",      "g",    Palette.current.macroFat)
+                    NutrientPreview("Calorías",  "${kcal.roundToInt()}",     "kcal", Palette.current.accentText)
+                    NutrientPreview("Proteínas", "${proteins.roundToInt()}", "g",    Palette.current.macroProtein)
+                    NutrientPreview("Carbs",     "${carbs.roundToInt()}",    "g",    Palette.current.macroCarbs)
+                    NutrientPreview("Grasas",    "${fat.roundToInt()}",      "g",    Palette.current.macroFat)
                 }
             }
         }
@@ -1539,7 +1627,8 @@ private fun PortionPickerSheet(
                             // factor, decir "crudo" sería afirmar algo que no se sabe.
                             basis = cookingYield?.let { if (basis == WeighBasis.COOKED) "cooked" else "raw" },
                             yieldId = cookingYield?.id
-                        )
+                        ),
+                        clientId
                     )
                 },
                 enabled = grams > 0, modifier = Modifier.weight(2f), shape = MaterialTheme.shapes.small,
@@ -1556,7 +1645,11 @@ private fun PortionPickerSheet(
  * "crudo" en el pollo.
  */
 private fun basisSuffix(entry: MealEntry): String {
-    val basis = entry.basis ?: return ""
+    // Solo "raw" o "cooked" dicen algo. Una cadena vacía caía por el `else` y se mostraba como
+    // "crudo", afirmando una base que nadie había elegido; y "" es exactamente lo que guardan las
+    // columnas cuando no hay base, además de lo que podía colarse por `PUT /nutrition/collections`
+    // antes de que esa ruta validara estos dos campos.
+    val basis = entry.basis?.takeIf { it == "raw" || it == "cooked" } ?: return ""
     // El id guardado manda sobre el nombre: el alimento de referencia pudo elegirse a mano, y entonces
     // el nombre del producto no lo encuentra en el catálogo.
     val cookingYield = cookingYieldById(entry.yieldId) ?: findCookingYield(entry.name) ?: return ""
@@ -1613,10 +1706,10 @@ private fun EditEntrySheet(
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Valores para ${grams.toInt()}g${basisSuffix(entry)}", style = MaterialTheme.typography.bodySmall, color = Palette.current.textSecondary)
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
-                    NutrientPreview("Calorías",  "${kcal.toInt()}",     "kcal", Palette.current.accentText)
-                    NutrientPreview("Proteínas", "${proteins.toInt()}", "g",    Palette.current.macroProtein)
-                    NutrientPreview("Carbs",     "${carbs.toInt()}",    "g",    Palette.current.macroCarbs)
-                    NutrientPreview("Grasas",    "${fat.toInt()}",      "g",    Palette.current.macroFat)
+                    NutrientPreview("Calorías",  "${kcal.roundToInt()}",     "kcal", Palette.current.accentText)
+                    NutrientPreview("Proteínas", "${proteins.roundToInt()}", "g",    Palette.current.macroProtein)
+                    NutrientPreview("Carbs",     "${carbs.roundToInt()}",    "g",    Palette.current.macroCarbs)
+                    NutrientPreview("Grasas",    "${fat.roundToInt()}",      "g",    Palette.current.macroFat)
                 }
             }
         }

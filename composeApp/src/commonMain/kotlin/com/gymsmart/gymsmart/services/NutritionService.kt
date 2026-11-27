@@ -12,9 +12,19 @@ import kotlinx.serialization.Serializable
 
 class NutritionService(private val httpClient: HttpClient) {
 
-    /** Devuelve el id creado por el servidor, o null si falló. Sin el id real, la comida recién
-     * añadida no se puede editar ni borrar hasta recargar la pantalla (ver NUT-2 en el backlog). */
-    suspend fun saveMealRemote(entry: MealEntry, mealType: String, date: String): String? {
+    /**
+     * Devuelve el id creado por el servidor, o null si falló. Sin el id real, la comida recién
+     * añadida no se puede editar ni borrar hasta recargar la pantalla (ver NUT-2 en el backlog).
+     *
+     * [clientId] debe ser **el mismo en los reintentos del mismo guardado** (ver [nuevoClientId]):
+     * es lo que hace que un fallo de red después de que el INSERT haya entrado no acabe en dos filas.
+     */
+    suspend fun saveMealRemote(
+        entry: MealEntry,
+        mealType: String,
+        date: String,
+        clientId: String? = null
+    ): String? {
         return try {
             val response = httpClient.post("${AppConfig.BASE_URL}/nutrition/add") {
                 contentType(ContentType.Application.Json)
@@ -22,7 +32,7 @@ class NutritionService(private val httpClient: HttpClient) {
                     MealEntryRequest(
                         entry.name, entry.grams, entry.kcalPer100,
                         entry.proteinsPer100, entry.carbsPer100, entry.fatPer100,
-                        mealType, date, entry.basis, entry.yieldId
+                        mealType, date, entry.basis, entry.yieldId, clientId
                     )
                 )
             }
