@@ -15,6 +15,37 @@ package com.gymsmart.gymsmart.nutrition
  * ("tortitas de arroz y legumbres" frente a "arroz").
  */
 
+/**
+ * Formas con las que una palabra puede casar con su singular o su plural.
+ *
+ * **Por qué hace falta.** La comparación es por palabra completa, y en español eso rompía la búsqueda:
+ * `"huevo"` no está contenido en `"huevos"`, así que buscar **"huevos"** —la forma natural en que
+ * alguien escribe esa búsqueda— no encontraba el genérico `"Huevo entero"` y devolvía 0, lo que hacía
+ * que `rankFoodResults` lo descartara por completo. Lo mismo con "platanos", "tomates", "yogures" o
+ * "nueces", y `"pechugas de pollo"` devolvía **lista vacía** aunque Open Food Facts hubiera respondido.
+ *
+ * **Por qué un conjunto y no una forma canónica.** No hay una sola regla que sirva: quitar la "s"
+ * resuelve "tomates"→"tomate" pero no "yogures"→"yogur", y quitar "es" resuelve el segundo pero
+ * convierte "tomates" en "tomat". Así que se generan las variantes plausibles y dos palabras casan si
+ * comparten alguna. No es un lematizador, y no pretende serlo: cubre la formación regular del plural
+ * español, que es lo que se teclea al buscar comida.
+ *
+ * El mínimo de longitud evita plegar palabras cortas donde la "s" es parte de la raíz ("gas", "mes").
+ */
+internal fun pluralStems(word: String): Set<String> {
+    if (word.length < 4 || !word.endsWith("s")) return setOf(word)
+    val stems = mutableSetOf(word, word.dropLast(1))          // platanos → platano, tomates → tomate
+    if (word.length >= 5 && word.endsWith("es")) {
+        stems.add(word.dropLast(2))                           // yogures → yogur, flores → flor
+        if (word.endsWith("ces")) stems.add(word.dropLast(3) + "z")  // nueces → nuez, peces → pez
+    }
+    return stems
+}
+
+/** true si las dos palabras son la misma salvo por el número gramatical. */
+private fun mismaPalabra(a: String, b: String): Boolean =
+    a == b || pluralStems(a).any { it in pluralStems(b) }
+
 /** Puntuación de relevancia de [name] para la consulta [query]. Más alto es mejor. */
 fun searchRelevance(name: String?, query: String): Int {
     val n = normalizeFoodName(name ?: return 0).trim()
@@ -22,6 +53,7 @@ fun searchRelevance(name: String?, query: String): Int {
     if (n.isEmpty() || q.isEmpty()) return 0
 
     val terms = q.split(' ').filter { it.isNotEmpty() }
+    val nameWords = n.split(' ').filter { it.isNotEmpty() }
     val padded = " $n "
 
     var score = when {
@@ -33,6 +65,24 @@ fun searchRelevance(name: String?, query: String): Int {
 
     // Todas las palabras de la consulta presentes como palabra completa, aunque estén sueltas.
     if (score == 0 && terms.all { padded.contains(" $it ") }) score = 200
+
+    // Los mismos tres escalones, pero tolerando singular/plural. Van justo por debajo de su
+    // equivalente exacto, así que una coincidencia literal siempre gana a una plegada: buscando
+    // "huevo" sigue saliendo primero "Huevo" y no "Huevos rotos".
+    if (score == 0) {
+        val igual = nameWords.size == terms.size &&
+            nameWords.zip(terms).all { (a, b) -> mismaPalabra(a, b) }
+        val empiezaPor = nameWords.size > terms.size &&
+            nameWords.take(terms.size).zip(terms).all { (a, b) -> mismaPalabra(a, b) }
+        val todasPresentes = terms.all { t -> nameWords.any { mismaPalabra(it, t) } }
+        score = when {
+            igual -> 900          // "huevos" encontrando "Huevo"
+            empiezaPor -> 650     // "huevos" encontrando "Huevo entero"
+            todasPresentes -> 150 // "pechugas de pollo" encontrando "Pechuga de pollo fileteada"
+            else -> 0
+        }
+    }
+
     // Último recurso: aparece dentro de otra palabra ("arrozal"). Vale muy poco, pero no es cero.
     if (score == 0 && terms.all { n.contains(it) }) score = 50
     if (score == 0) return 0

@@ -127,4 +127,86 @@ class FoodSearchRankingTest {
             )
         }
     }
+
+    // ── Singular y plural ────────────────────────────────────────────────────
+    //
+    // Los seis casos que la auditoría del 2026-11-27 (doc/13 §2.1, N-3) midió como roídos: la
+    // comparación era por palabra completa, así que "huevo" no estaba contenido en "huevos" y el
+    // genérico desaparecía de los resultados. Ninguno de los 11 tests anteriores cubría un plural.
+
+    @Test
+    fun buscar_en_plural_encuentra_el_generico_en_singular() {
+        for ((consulta, nombre) in listOf(
+            "huevos" to "Huevo entero",
+            "platanos" to "Platano",
+            "tomates" to "Tomate",
+            "yogures" to "Yogur natural",
+            "lentejas" to "Lentejas",
+            "almendras" to "Almendras"
+        )) {
+            assertTrue(
+                searchRelevance(nombre, consulta) > 0,
+                "buscando '$consulta' debería encontrarse '$nombre'"
+            )
+        }
+    }
+
+    @Test
+    fun buscar_en_singular_encuentra_el_generico_en_plural() {
+        for ((consulta, nombre) in listOf(
+            "lenteja" to "Lentejas",
+            "garbanzo" to "Garbanzos",
+            "espinaca" to "Espinacas",
+            "almendra" to "Almendras",
+            "nuez" to "Nueces",
+            "fresa" to "Fresas"
+        )) {
+            assertTrue(
+                searchRelevance(nombre, consulta) > 0,
+                "buscando '$consulta' debería encontrarse '$nombre'"
+            )
+        }
+    }
+
+    @Test
+    fun una_consulta_de_varias_palabras_en_plural_no_devuelve_lista_vacia() {
+        // El peor caso del informe: devolvía 0 y rankFoodResults lo descartaba entero.
+        assertTrue(searchRelevance("Pechuga de pollo", "pechugas de pollo") > 0)
+        assertTrue(matchingGenerics("pechugas de pollo").isNotEmpty())
+        assertTrue(matchingGenerics("huevos").isNotEmpty())
+        assertTrue(matchingGenerics("nuez").isNotEmpty())
+    }
+
+    @Test
+    fun el_generico_en_plural_gana_a_un_producto_que_solo_menciona_la_palabra() {
+        // El caso concreto del informe: buscando "huevo", "Huevos" puntuaba 44 y se quedaba por
+        // detrás de "Lacasitos huevo" (385). Con el plegado, el alimento de verdad va delante.
+        val generico = searchRelevance("Huevo entero", "huevos") + 250  // + GENERIC_BOOST
+        val ruido = searchRelevance("Lacasitos huevo", "huevos")
+        assertTrue(generico > ruido, "el genérico ($generico) debería ganar al producto compuesto ($ruido)")
+    }
+
+    @Test
+    fun una_coincidencia_literal_gana_siempre_a_una_plegada() {
+        // El plegado no puede desordenar lo que ya funcionaba: los escalones del plural van justo por
+        // debajo de su equivalente exacto.
+        assertTrue(searchRelevance("Huevo entero", "huevo") > searchRelevance("Huevo entero", "huevos"))
+        assertTrue(searchRelevance("Tomate", "tomate") > searchRelevance("Tomate", "tomates"))
+    }
+
+    @Test
+    fun no_se_plegan_palabras_cortas_donde_la_s_es_de_la_raiz() {
+        assertEquals(setOf("gas"), pluralStems("gas"))
+        assertEquals(setOf("mes"), pluralStems("mes"))
+        assertEquals(setOf("arroz"), pluralStems("arroz"))
+    }
+
+    @Test
+    fun el_plegado_cubre_las_tres_formas_del_plural_espanol() {
+        assertTrue("platano" in pluralStems("platanos"))   // + s
+        assertTrue("tomate" in pluralStems("tomates"))     // + s sobre palabra en -e
+        assertTrue("yogur" in pluralStems("yogures"))      // + es
+        assertTrue("nuez" in pluralStems("nueces"))        // z → ces
+        assertTrue("pez" in pluralStems("peces"))
+    }
 }
