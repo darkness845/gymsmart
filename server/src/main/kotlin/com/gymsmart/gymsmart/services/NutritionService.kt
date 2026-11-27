@@ -46,6 +46,10 @@ class NutritionService(private val turso: TursoService) {
         // comidas antiguas (client_id NULL) conviven sin violar la restricción. Mismo ALTER
         // idempotente que arriba: a partir del segundo arranque el error por columna duplicada se
         // ignora a propósito.
+        // El factor de rendimiento realmente aplicado, para que deshacer la conversión no dependa de
+        // que el catálogo siga igual (doc/13 §2.4, I-3). NULL en todo lo anterior, y ahí se sigue
+        // cayendo al catálogo, que es el comportamiento que había.
+        runCatching { turso.execute("ALTER TABLE meals ADD COLUMN yield_factor REAL") }
         runCatching { turso.execute("ALTER TABLE meals ADD COLUMN client_id TEXT") }
         runCatching {
             turso.execute(
@@ -109,33 +113,47 @@ class NutritionService(private val turso: TursoService) {
         val now = System.currentTimeMillis()
         val clientId = req.clientId?.takeIf { it.isNotBlank() }
 
-        // TursoService.execute solo acepta List<String>, así que no hay forma de pasar un NULL. Para
-        // `basis` y `yield_id` da igual (la cadena vacía se vuelve a leer como null en la ruta), pero
-        // para `client_id` **no**: con el índice UNIQUE(user_id, client_id), guardar "" haría que la
-        // segunda comida de un usuario que no manda clientId chocara con la primera y se ignorara en
-        // silencio. Los NULL sí son distintos entre sí en un índice UNIQUE de SQLite, así que cuando
-        // no hay clientId se omite la columna y queda NULL.
-        val columnasBase = "id, user_id, name, grams, kcal_per_100, proteins_per_100, carbs_per_100, " +
-            "fat_per_100, meal_type, date, created_at, basis, yield_id"
-        val valoresBase = listOf(
+        // TursoService.execute solo acepta List<String>, así que no hay forma de pasar un NULL, y hay
+        // dos columnas donde la diferencia entre NULL y "" importa:
+        //
+        // - `client_id`: con el índice UNIQUE(user_id, client_id), guardar "" haría que la segunda
+        //   comida de un usuario que no manda clientId chocara con la primera y se ignorara en
+        //   silencio. Los NULL sí son distintos entre sí en un índice UNIQUE de SQLite.
+        // - `yield_factor`: es REAL, y "" no es un número.
+        //
+        // En las dos, cuando no hay valor se **omite la columna** y queda NULL. En `basis` y
+        // `yield_id` da igual, porque la cadena vacía se vuelve a leer como null en la ruta.
+        val columnas = mutableListOf(
+            "id", "user_id", "name", "grams", "kcal_per_100", "proteins_per_100", "carbs_per_100",
+            "fat_per_100", "meal_type", "date", "created_at", "basis", "yield_id"
+        )
+        val valores = mutableListOf(
             id, userId, req.name, req.grams.toString(), req.kcalPer100.toString(),
             req.proteinsPer100.toString(), req.carbsPer100.toString(),
             req.fatPer100.toString(), req.mealType, req.date, now.toString(),
             req.basis ?: "", req.yieldId ?: ""
         )
-
-        if (clientId == null) {
-            turso.execute(
-                "INSERT INTO meals ($columnasBase) VALUES (${"?, ".repeat(12)}?)",
-                valoresBase
-            )
-            return id
+        req.yieldFactor?.takeIf { it.isFinite() && it > 0.0 }?.let {
+            columnas += "yield_factor"
+            valores += it.toString()
+        }
+        clientId?.let {
+            columnas += "client_id"
+            valores += it
         }
 
+        // INSERT OR IGNORE solo cuando hay clientId: es entonces cuando existe una restricción que
+        // puede saltar y cuando ignorar es lo correcto. Sin él, un INSERT normal, para que un fallo
+        // real no se tape.
+        val verbo = if (clientId != null) "INSERT OR IGNORE" else "INSERT"
         turso.execute(
-            "INSERT OR IGNORE INTO meals ($columnasBase, client_id) VALUES (${"?, ".repeat(13)}?)",
-            valoresBase + clientId
+            "$verbo INTO meals (${columnas.joinToString(", ")}) " +
+                "VALUES (${columnas.joinToString(", ") { "?" }})",
+            valores
         )
+
+        // Sin clientId no hay nada que reconciliar: la fila es siempre nueva.
+        if (clientId == null) return id
 
         // Puede ser el id que acabamos de insertar o el de la fila que ya estaba: en los dos casos es
         // el id correcto que el cliente tiene que usar para editar o borrar esta comida.
@@ -148,7 +166,7 @@ class NutritionService(private val turso: TursoService) {
 
     suspend fun getUserMeals(userId: String, date: String): List<List<String?>> {
         val result = turso.execute(
-            "SELECT name, grams, kcal_per_100, proteins_per_100, carbs_per_100, fat_per_100, meal_type, id, basis, yield_id FROM meals WHERE user_id = ? AND date = ? ORDER BY created_at ASC",
+            "SELECT name, grams, kcal_per_100, proteins_per_100, carbs_per_100, fat_per_100, meal_type, id, basis, yield_id, yield_factor FROM meals WHERE user_id = ? AND date = ? ORDER BY created_at ASC",
             listOf(userId, date)
         )
         return turso.extractRows(result)
@@ -182,7 +200,7 @@ class NutritionService(private val turso: TursoService) {
     suspend fun getFoodHistory(userId: String): List<List<String?>> {
         val result = turso.execute(
             """
-            SELECT name, kcal_per_100, proteins_per_100, carbs_per_100, fat_per_100, basis, yield_id
+            SELECT name, kcal_per_100, proteins_per_100, carbs_per_100, fat_per_100, basis, yield_id, yield_factor
             FROM meals
             WHERE user_id = ? AND id IN (
                 SELECT id FROM meals WHERE user_id = ?
@@ -202,11 +220,22 @@ class NutritionService(private val turso: TursoService) {
     }
 
     suspend fun updateMeal(id: String, userId: String, req: MealEntryRequest) {
+        val factor = req.yieldFactor?.takeIf { it.isFinite() && it > 0.0 }
+        // `yield_factor` es REAL, y pasar "" ahí **no** la deja a NULL: SQLite no puede convertir la
+        // cadena vacía a número, así que la guarda como TEXT '' dentro de una columna numérica
+        // (comprobado). Como aquí no hay nada que parametrizar cuando no hay factor, se escribe NULL
+        // literal en el SQL y la columna queda limpia.
+        val asignacionFactor = if (factor != null) "yield_factor = ?" else "yield_factor = NULL"
         turso.execute(
-            "UPDATE meals SET grams = ?, kcal_per_100 = ?, proteins_per_100 = ?, carbs_per_100 = ?, fat_per_100 = ?, basis = ?, yield_id = ? WHERE id = ? AND user_id = ?",
-            listOf(req.grams.toString(), req.kcalPer100.toString(),
+            "UPDATE meals SET grams = ?, kcal_per_100 = ?, proteins_per_100 = ?, carbs_per_100 = ?, " +
+                "fat_per_100 = ?, basis = ?, yield_id = ?, $asignacionFactor WHERE id = ? AND user_id = ?",
+            listOfNotNull(
+                req.grams.toString(), req.kcalPer100.toString(),
                 req.proteinsPer100.toString(), req.carbsPer100.toString(),
-                req.fatPer100.toString(), req.basis ?: "", req.yieldId ?: "", id, userId)
+                req.fatPer100.toString(), req.basis ?: "", req.yieldId ?: "",
+                factor?.toString(),
+                id, userId
+            )
         )
     }
 

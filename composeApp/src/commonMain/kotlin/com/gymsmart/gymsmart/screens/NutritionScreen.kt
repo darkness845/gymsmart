@@ -1626,7 +1626,11 @@ private fun PortionPickerSheet(
                             // Solo se guardan cuando de verdad se pudo elegir: si el alimento no tiene
                             // factor, decir "crudo" sería afirmar algo que no se sabe.
                             basis = cookingYield?.let { if (basis == WeighBasis.COOKED) "cooked" else "raw" },
-                            yieldId = cookingYield?.id
+                            yieldId = cookingYield?.id,
+                            // El factor se guarda solo cuando de verdad se aplicó. Pesado en crudo no
+                            // se convierte nada, así que guardar un número ahí sería afirmar una
+                            // conversión que no ocurrió.
+                            yieldFactor = cookingYield?.factor?.takeIf { basis == WeighBasis.COOKED }
                         ),
                         clientId
                     )

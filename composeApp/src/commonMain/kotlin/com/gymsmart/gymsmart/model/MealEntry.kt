@@ -14,6 +14,24 @@ import kotlinx.serialization.Serializable
  * su nombre no basta para volver a encontrarlo en el catálogo.
  *
  * Los dos son null en las comidas registradas antes de esta función y en los alimentos sin conversión.
+ *
+ * [yieldFactor] es **el factor numérico que se usó de verdad** al convertir, y existe porque deshacer
+ * la conversión a partir de [yieldId] no es cerrado sobre los datos guardados: depende de que
+ * `COOKING_YIELDS` siga conteniendo ese id con exactamente el mismo valor. Eso abría dos agujeros
+ * reales (doc/13 §2.4, I-3):
+ *
+ * - **Si se corrige un factor** —y la auditoría propone corregir varios—, los alimentos reutilizados
+ *   desde el historial se reconstruirían con el factor nuevo, así que el valor "crudo" recuperado no
+ *   sería el que se registró.
+ * - **Si un id desaparece o se renombra**, `cookingYieldById` devuelve null, se cae al nombre, y si el
+ *   nombre tampoco casa el `?: 1.0` devuelve los valores cocidos haciéndolos pasar por crudos. Al
+ *   volver a marcar "cocido" se aplicaría el factor dos veces.
+ *
+ * Con el factor guardado, deshacer es aritmética pura e independiente del catálogo. [yieldId] y
+ * [basis] se quedan para la etiqueta de la interfaz.
+ *
+ * Es null en todo lo registrado antes de que existiera esta columna; en ese caso se cae al catálogo,
+ * que es lo que había.
  */
 @Serializable
 data class MealEntry(
@@ -25,7 +43,8 @@ data class MealEntry(
     val carbsPer100: Double,
     val fatPer100: Double,
     val basis: String? = null,
-    val yieldId: String? = null
+    val yieldId: String? = null,
+    val yieldFactor: Double? = null
 ) {
     val kcal:     Double get() = kcalPer100     / 100.0 * grams
     val proteins: Double get() = proteinsPer100 / 100.0 * grams
@@ -51,6 +70,8 @@ data class MealEntryRequest(
     val date: String,
     val basis: String? = null,
     val yieldId: String? = null,
+    /** El factor realmente aplicado. Ver [MealEntry.yieldFactor]. */
+    val yieldFactor: Double? = null,
     /** Ver [nuevoClientId]. Hace idempotente el guardado para que un reintento no duplique la fila. */
     val clientId: String? = null
 )

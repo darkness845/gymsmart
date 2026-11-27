@@ -50,7 +50,8 @@ fun Route.nutritionRoutes(nutritionService: NutritionService) {
                 // Las columnas guardan cadena vacía cuando no hay base (ver NutritionService.addMeal),
                 // y son NULL en las comidas registradas antes de que existieran.
                 basis = row.getOrNull(8)?.takeIf { it.isNotBlank() },
-                yieldId = row.getOrNull(9)?.takeIf { it.isNotBlank() }
+                yieldId = row.getOrNull(9)?.takeIf { it.isNotBlank() },
+                yieldFactor = row.getOrNull(10)?.toDoubleOrNull()
             )
             MealEntryWithTarget(entry, row[6] ?: "DESAYUNO")
         }
@@ -94,7 +95,10 @@ fun Route.nutritionRoutes(nutritionService: NutritionService) {
                 // devolverlos a base cruda antes de reutilizarlos; si no, volver a elegir "cocido"
                 // sobre un alimento del historial aplicaría el factor dos veces.
                 "basis"          to (row.getOrNull(5)?.takeIf { it.isNotBlank() } ?: ""),
-                "yieldId"        to (row.getOrNull(6)?.takeIf { it.isNotBlank() } ?: "")
+                "yieldId"        to (row.getOrNull(6)?.takeIf { it.isNotBlank() } ?: ""),
+                // El factor que se aplicó de verdad. Con él, deshacer la conversión no depende de que
+                // el catálogo siga teniendo ese id con el mismo valor (doc/13 §2.4, I-3).
+                "yieldFactor"    to (row.getOrNull(7)?.takeIf { it.toDoubleOrNull() != null } ?: "")
             )
         }
         call.respond(response)

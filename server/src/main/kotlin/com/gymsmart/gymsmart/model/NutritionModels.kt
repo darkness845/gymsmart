@@ -29,6 +29,16 @@ data class MealEntryRequest(
     val basis: String? = null,
     val yieldId: String? = null,
     /**
+     * El factor de rendimiento que se aplicó de verdad al convertir.
+     *
+     * Deshacer la conversión a partir de [yieldId] obliga a volver a buscar el factor en el catálogo,
+     * así que el valor recuperado depende de que el catálogo no haya cambiado. Guardar el número hace
+     * que deshacer sea aritmética pura: `valor × yieldFactor`. Sin esto, corregir un factor cambiaría
+     * retroactivamente lo que el historial devuelve para las comidas ya registradas, y borrar un id
+     * haría que valores cocidos se devolvieran como crudos (doc/13 §2.4, I-3).
+     */
+    val yieldFactor: Double? = null,
+    /**
      * Identificador que genera el **cliente** para este intento de guardado, y que repite si tiene que
      * reintentar. Hace que `POST /nutrition/add` sea idempotente.
      *
@@ -56,7 +66,9 @@ data class MealEntry(
     val carbsPer100: Double,
     val fatPer100: Double,
     val basis: String? = null,
-    val yieldId: String? = null
+    val yieldId: String? = null,
+    /** Ver [MealEntryRequest.yieldFactor]. */
+    val yieldFactor: Double? = null
 )
 
 @Serializable

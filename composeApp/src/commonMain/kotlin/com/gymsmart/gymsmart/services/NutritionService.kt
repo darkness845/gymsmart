@@ -32,7 +32,7 @@ class NutritionService(private val httpClient: HttpClient) {
                     MealEntryRequest(
                         entry.name, entry.grams, entry.kcalPer100,
                         entry.proteinsPer100, entry.carbsPer100, entry.fatPer100,
-                        mealType, date, entry.basis, entry.yieldId, clientId
+                        mealType, date, entry.basis, entry.yieldId, entry.yieldFactor, clientId
                     )
                 )
             }
@@ -96,9 +96,17 @@ class NutritionService(private val httpClient: HttpClient) {
                 // Si se registró en cocido, el factor devuelve los valores a base cruda: cocido fue
                 // "dividir entre el factor", así que lo inverso es multiplicar por él.
                 val toRaw = if (row["basis"] == "cooked") {
-                    // El id guardado manda sobre el nombre: si el usuario eligió el alimento de
-                    // referencia a mano, su nombre no lo encuentra en el catálogo.
-                    (cookingYieldById(row["yieldId"]) ?: findCookingYield(name))?.factor ?: 1.0
+                    // **El factor guardado manda sobre todo lo demás.** Es el que se aplicó de verdad
+                    // al registrar esta comida, así que deshacer con él es exacto aunque el catálogo
+                    // haya cambiado de valor o haya perdido ese id. Sin esto, corregir un factor
+                    // reescribía lo que el historial devolvía para comidas ya registradas, y un id
+                    // borrado hacía que el `?: 1.0` devolviera valores cocidos como si fueran crudos
+                    // —y al volver a marcar "cocido", el factor se aplicaba dos veces (doc/13 §2.4).
+                    //
+                    // El catálogo queda solo como respaldo para las comidas anteriores a la columna.
+                    row["yieldFactor"]?.toDoubleOrNull()?.takeIf { it.isFinite() && it > 0.0 }
+                        ?: (cookingYieldById(row["yieldId"]) ?: findCookingYield(name))?.factor
+                        ?: 1.0
                 } else 1.0
                 Product(
                     product_name = name,
