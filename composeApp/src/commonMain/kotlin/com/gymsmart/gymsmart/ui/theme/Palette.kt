@@ -23,20 +23,16 @@ import org.jetbrains.compose.resources.Font
  * El estilo nuevo de la app (Tarea 3): **Melocotón y chocolate**, la dirección "2e / M1" que eligió
  * el usuario entre las maquetas del lienzo de diseño.
  *
- * ## Por qué esto existe además de [GymSmartColors]
+ * ## Por qué una paleta y no constantes
  *
- * [GymSmartColors] es un `object` de constantes con la paleta oscura antigua, y hay ~950 sitios que
- * lo leen directamente. Unas constantes no pueden cambiar en tiempo de ejecución, así que con ese
- * diseño un interruptor claro/oscuro es imposible. Esta paleta va por otro camino:
+ * El tema anterior (`GymSmartColors`, oscuro, borrado el 2026-11-27 cuando ya no lo leía ninguna
+ * pantalla) era un `object` de constantes, y unas constantes no pueden cambiar en tiempo de ejecución:
+ * con ese diseño un interruptor claro/oscuro era imposible. Esta paleta va por otro camino:
  *
  * - Los colores tienen **nombre de función, no de aspecto** (`hero`, `accentText`, `textSecondary`),
  *   así una versión oscura puede asignar otro color a cada papel sin tocar las pantallas.
  * - Se leen con [Palette.current] a través de un `CompositionLocal`, que es lo que permite cambiar de
  *   paleta en caliente.
- *
- * La migración es **pantalla a pantalla**: cada pantalla que se rediseña se envuelve en
- * [MelocotonTheme] y deja de leer [GymSmartColors]. Cuando no quede ninguna, esto pasa a ser el tema
- * de toda la app y el objeto viejo se borra.
  *
  * **Pendiente**: la variante oscura de Melocotón. No está definida a propósito, porque todavía no se
  * ha diseñado ni aprobado; inventarla aquí sería saltarse el paso que el usuario quiso hacer con

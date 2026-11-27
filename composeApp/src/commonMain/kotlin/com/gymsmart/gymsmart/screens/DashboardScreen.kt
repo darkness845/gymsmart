@@ -42,7 +42,7 @@ import kotlin.time.Clock
 /**
  * Pantalla de inicio, en el estilo Melocotón (Tarea 3, maqueta "M1 · 2e" aprobada por el usuario).
  *
- * Es la primera pantalla migrada a [MelocotonTheme]: no lee nada de `GymSmartColors`, solo
+ * Fue la primera pantalla migrada a [MelocotonTheme]: no lee colores fijos, solo
  * [Palette.current]. Estructura, de arriba abajo: cabecera, saludo, bloque de chocolate con las
  * cifras del día, secciones en lista y Planes.
  *

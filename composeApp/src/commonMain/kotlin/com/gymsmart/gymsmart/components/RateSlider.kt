@@ -17,7 +17,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.gymsmart.gymsmart.nutrition.NutritionMath
-import com.gymsmart.gymsmart.ui.theme.GymSmartColors
+import com.gymsmart.gymsmart.ui.theme.Palette
 import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.math.roundToInt
@@ -54,7 +54,7 @@ fun RateSlider(
     onRateChange: (Double) -> Unit,
     tdee: Double? = null,
     energyFloor: Double = 0.0,
-    colors: RateSliderColors = RateSliderColors.Legacy
+    colors: RateSliderColors = RateSliderColors.melocoton()
 ) {
     val hardMax = NutritionMath.maxRateFor(goal) ?: return
     val band    = NutritionMath.recommendedBandFor(goal) ?: return
@@ -174,15 +174,19 @@ data class RateSliderColors(
     val warning: Color
 ) {
     companion object {
-        /** El tema oscuro antiguo. Lo usa el onboarding hasta que se migre. */
-        val Legacy = RateSliderColors(
-            track = GymSmartColors.Outline,
-            band = GymSmartColors.Success,
-            thumb = GymSmartColors.Primary,
-            text = GymSmartColors.TextPrimary,
-            textSecondary = GymSmartColors.TextSecondary,
-            ok = GymSmartColors.Success,
-            warning = GymSmartColors.Warning
-        )
+        /** Los colores de Melocotón. Perfil y onboarding usan estos, así el deslizador es el mismo en los dos. */
+        @Composable
+        fun melocoton(): RateSliderColors {
+            val p = Palette.current
+            return RateSliderColors(
+                track = p.track,
+                band = p.success.copy(alpha = 0.55f),
+                thumb = p.hero,
+                text = p.textPrimary,
+                textSecondary = p.textSecondary,
+                ok = p.success,
+                warning = p.accentText
+            )
+        }
     }
 }

@@ -37,7 +37,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.gymsmart.gymsmart.components.RateSlider
-import com.gymsmart.gymsmart.components.RateSliderColors
 import com.gymsmart.gymsmart.model.AdaptiveResponse
 import com.gymsmart.gymsmart.model.NutritionTargets
 import com.gymsmart.gymsmart.model.ProfileRequest
@@ -438,16 +437,7 @@ fun ProfileScreen(
                                         ratePct = parseDecimal(goalRate) ?: NutritionMath.defaultRateFor(goal),
                                         onRateChange = { goalRate = it.toString() },
                                         tdee = gasto,
-                                        energyFloor = suelo,
-                                        colors = RateSliderColors(
-                                            track = p.track,
-                                            band = p.success.copy(alpha = 0.55f),
-                                            thumb = p.hero,
-                                            text = p.textPrimary,
-                                            textSecondary = p.textSecondary,
-                                            ok = p.success,
-                                            warning = p.accentText
-                                        )
+                                        energyFloor = suelo
                                     )
                                 }
                             }

@@ -24,7 +24,6 @@ import com.gymsmart.gymsmart.ui.theme.SystemBarsAppearance
 import com.gymsmart.gymsmart.validation.validateAge
 import com.gymsmart.gymsmart.validation.validateGoalRate
 import com.gymsmart.gymsmart.components.RateSlider
-import com.gymsmart.gymsmart.components.RateSliderColors
 import com.gymsmart.gymsmart.nutrition.ActivityBenchmarks
 import com.gymsmart.gymsmart.nutrition.NutritionMath
 import com.gymsmart.gymsmart.validation.parseDecimal
@@ -394,17 +393,7 @@ private fun StepGoal(form: FormState, onChange: (FormState) -> Unit) {
                         ratePct = form.goalRate,
                         onRateChange = { onChange(form.copy(goalRate = it)) },
                         tdee = gasto,
-                        energyFloor = suelo,
-                        // Mismos colores que en el perfil, para que el deslizador sea el mismo en los dos.
-                        colors = RateSliderColors(
-                            track = Palette.current.track,
-                            band = Palette.current.success.copy(alpha = 0.55f),
-                            thumb = Palette.current.hero,
-                            text = Palette.current.textPrimary,
-                            textSecondary = Palette.current.textSecondary,
-                            ok = Palette.current.success,
-                            warning = Palette.current.accentText
-                        )
+                        energyFloor = suelo
                     )
                 }
             }
