@@ -25,11 +25,23 @@ fun Route.foodRoute(foodService: FoodService) {
                 call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Código requerido"))
                 return@get
             }
-            val product = foodService.lookupBarcode(code)
-            if (product != null) {
-                call.respond(product)
-            } else {
-                call.respond(HttpStatusCode.NotFound, mapOf("error" to "Producto no encontrado"))
+            // Tres desenlaces distintos y tres respuestas distintas: antes todo lo que no fuera un
+            // producto válido se contestaba con el mismo 404 "Producto no encontrado", aunque el
+            // producto sí estuviera en Open Food Facts y lo que faltara fueran sus datos.
+            when (val resultado = foodService.lookupBarcode(code)) {
+                is FoodService.BarcodeLookup.Found -> call.respond(resultado.product)
+                FoodService.BarcodeLookup.Unusable -> call.respond(
+                    HttpStatusCode.UnprocessableEntity,
+                    mapOf("error" to "El producto está en Open Food Facts pero sus datos nutricionales no son utilizables")
+                )
+                FoodService.BarcodeLookup.UpstreamFailed -> call.respond(
+                    HttpStatusCode.BadGateway,
+                    mapOf("error" to "Open Food Facts no está disponible ahora mismo")
+                )
+                FoodService.BarcodeLookup.NotFound -> call.respond(
+                    HttpStatusCode.NotFound,
+                    mapOf("error" to "Producto no encontrado")
+                )
             }
         }
     }
