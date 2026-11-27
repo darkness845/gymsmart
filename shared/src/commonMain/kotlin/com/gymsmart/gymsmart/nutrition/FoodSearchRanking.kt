@@ -15,37 +15,6 @@ package com.gymsmart.gymsmart.nutrition
  * ("tortitas de arroz y legumbres" frente a "arroz").
  */
 
-/**
- * Formas con las que una palabra puede casar con su singular o su plural.
- *
- * **Por qué hace falta.** La comparación es por palabra completa, y en español eso rompía la búsqueda:
- * `"huevo"` no está contenido en `"huevos"`, así que buscar **"huevos"** —la forma natural en que
- * alguien escribe esa búsqueda— no encontraba el genérico `"Huevo entero"` y devolvía 0, lo que hacía
- * que `rankFoodResults` lo descartara por completo. Lo mismo con "platanos", "tomates", "yogures" o
- * "nueces", y `"pechugas de pollo"` devolvía **lista vacía** aunque Open Food Facts hubiera respondido.
- *
- * **Por qué un conjunto y no una forma canónica.** No hay una sola regla que sirva: quitar la "s"
- * resuelve "tomates"→"tomate" pero no "yogures"→"yogur", y quitar "es" resuelve el segundo pero
- * convierte "tomates" en "tomat". Así que se generan las variantes plausibles y dos palabras casan si
- * comparten alguna. No es un lematizador, y no pretende serlo: cubre la formación regular del plural
- * español, que es lo que se teclea al buscar comida.
- *
- * El mínimo de longitud evita plegar palabras cortas donde la "s" es parte de la raíz ("gas", "mes").
- */
-internal fun pluralStems(word: String): Set<String> {
-    if (word.length < 4 || !word.endsWith("s")) return setOf(word)
-    val stems = mutableSetOf(word, word.dropLast(1))          // platanos → platano, tomates → tomate
-    if (word.length >= 5 && word.endsWith("es")) {
-        stems.add(word.dropLast(2))                           // yogures → yogur, flores → flor
-        if (word.endsWith("ces")) stems.add(word.dropLast(3) + "z")  // nueces → nuez, peces → pez
-    }
-    return stems
-}
-
-/** true si las dos palabras son la misma salvo por el número gramatical. */
-private fun mismaPalabra(a: String, b: String): Boolean =
-    a == b || pluralStems(a).any { it in pluralStems(b) }
-
 /** Puntuación de relevancia de [name] para la consulta [query]. Más alto es mejor. */
 fun searchRelevance(name: String?, query: String): Int {
     val n = normalizeFoodName(name ?: return 0).trim()
@@ -111,7 +80,7 @@ fun <T> rankFoodResults(
     val scored = ArrayList<Triple<Int, Int, T>>(generics.size + branded.size)
 
     for (g in generics) {
-        val s = searchRelevance(g.name, query)
+        val s = g.relevanceFor(query)
         if (s > 0) scored.add(Triple(s + GENERIC_BOOST, g.name.length, toGeneric(g)))
     }
     for ((name, item) in branded) {
@@ -134,6 +103,20 @@ fun <T> rankFoodResults(
  */
 private const val GENERIC_BOOST = 250
 
+/**
+ * Relevancia de un genérico, contando también sus alias.
+ *
+ * Los alias resuelven lo que el plegado de singular/plural no puede: sinónimos ("beicon" por
+ * "bacon"), regionalismos ("judías" por "alubias"), nombres comerciales y la forma en que de verdad
+ * se busca un alimento ("atún lata" por "Atún en lata al natural"). Se queda con la mejor
+ * coincidencia, así que un alias nunca empeora el resultado de un nombre.
+ */
+fun GenericFood.relevanceFor(query: String): Int =
+    maxOf(
+        searchRelevance(name, query),
+        aliases.maxOfOrNull { searchRelevance(it, query) } ?: 0
+    )
+
 /** Los genéricos que encajan con la consulta, ya filtrados. */
 fun matchingGenerics(query: String): List<GenericFood> =
-    GENERIC_FOODS.filter { searchRelevance(it.name, query) > 0 }
+    GENERIC_FOODS.filter { it.relevanceFor(query) > 0 }

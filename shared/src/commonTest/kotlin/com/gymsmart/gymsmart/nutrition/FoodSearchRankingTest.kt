@@ -118,7 +118,7 @@ class FoodSearchRankingTest {
     @Test
     fun los_genericos_clave_enlazan_con_su_factor_de_cocinado() {
         // Un genérico vale doble: su base es conocida, así que la conversión crudo/cocinado es fiable.
-        for (nombre in listOf("Pechuga de pollo", "Arroz blanco", "Pasta", "Lentejas", "Merluza")) {
+        for (nombre in listOf("Pechuga de pollo", "Arroz blanco", "Pasta", "Lentejas", "Merluza (pescadilla)")) {
             val g = GENERIC_FOODS.firstOrNull { it.name == nombre }
             assertTrue(g != null, "falta el genérico $nombre")
             assertTrue(

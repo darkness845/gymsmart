@@ -16,7 +16,7 @@ import kotlin.test.assertTrue
 class FoodIconsTest {
 
     @Test
-    fun `los 90 alimentos genericos resuelven a un icono concreto`() {
+    fun `todos los alimentos genericos resuelven a un icono concreto`() {
         // Esta es la curación: en vez de escribir el icono al lado de cada genérico y duplicar la
         // tabla, se exige aquí que la tabla los cubra a todos. Si se añade un genérico que ninguna
         // regla reconoce, este test lo caza en el acto.

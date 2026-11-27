@@ -86,7 +86,8 @@ private val ICON_RULES: List<IconRule> = listOf(
         "pollo", "pavo", "pechuga", "muslo", "muslos", "contramuslo", "alitas", "alita")),
     IconRule("🍖", keywords = listOf(// 🍖
         "jamon", "chorizo", "salchichon", "lomo embuchado", "embutido", "fuet", "salami",
-        "mortadela", "cecina", "costilla", "costillas", "cordero", "chuleta", "chuletas")),
+        "mortadela", "cecina", "costilla", "costillas", "cordero", "chuleta", "chuletas",
+        "morcilla", "morcillas")),
     IconRule("🥩", keywords = listOf(// 🥩
         "ternera", "vacuno", "buey", "solomillo", "entrecot", "cerdo", "lomo", "conejo",
         "carne picada", "carne", "filete", "secreto", "presa iberica")),
@@ -139,7 +140,7 @@ private val ICON_RULES: List<IconRule> = listOf(
 
     // ── Verduras ──────────────────────────────────────────────────────────────
     IconRule("🍅", keywords = listOf("tomate", "tomates", "cherry")),                 // 🍅
-    IconRule("🥕", keywords = listOf("zanahoria", "zanahorias")),                     // 🥕
+    IconRule("🥕", keywords = listOf("zanahoria", "zanahorias", "remolacha", "remolachas")),                     // 🥕
     IconRule("🍆", keywords = listOf("berenjena", "berenjenas")),                     // 🍆
     IconRule("🥒", keywords = listOf("pepino", "pepinos", "calabacin", "calabacines")), // 🥒
     IconRule("🍄", keywords = listOf("champinon", "champinones", "seta", "setas", "boletus", "shiitake")), // 🍄
@@ -181,7 +182,7 @@ private val ICON_RULES: List<IconRule> = listOf(
     IconRule("🥜", keywords = listOf(// 🥜
         "almendra", "almendras", "nuez", "nueces", "cacahuete", "cacahuetes", "pistacho",
         "pistachos", "anacardo", "anacardos", "avellana", "avellanas", "pipas", "sesamo",
-        "frutos secos")),
+        "frutos secos", "semilla", "semillas", "chia", "lino", "linaza")),
 
     // ── Grasas ────────────────────────────────────────────────────────────────
     IconRule("🫒", keywords = listOf("aceite", "aceituna", "aceitunas", "oliva")),    // 🫒

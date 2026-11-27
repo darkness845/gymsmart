@@ -1,0 +1,138 @@
+nombre,fdc_id,fuente,base,alias
+Pechuga de pollo,171077,USDA SR Legacy,,
+Muslo de pollo,173627,USDA SR Legacy,,
+Alitas de pollo,173632,USDA SR Legacy,,
+Pechuga de pavo,171098,USDA SR Legacy,,
+Carne picada de pavo,171505,USDA SR Legacy,,
+Carne picada de ternera,174030,USDA SR Legacy,,
+Solomillo de ternera,171803,USDA SR Legacy,,
+Filete de ternera,171804,USDA SR Legacy,,
+Lomo de cerdo,168251,USDA SR Legacy,,
+Solomillo de cerdo,168249,USDA SR Legacy,,
+Panceta de cerdo,167812,USDA SR Legacy,,
+Cordero,172491,USDA SR Legacy,,
+Conejo,172521,USDA SR Legacy,,
+Merluza (pescadilla),173713,USDA SR Legacy,,pescadilla;merluza
+Bacalao,171955,USDA SR Legacy,,
+Atun fresco,173706,USDA SR Legacy,,
+Salmon,175167,USDA SR Legacy,,
+Lubina,175142,USDA SR Legacy,,
+Trucha,173717,USDA SR Legacy,,
+Gambas,175179,USDA SR Legacy,,
+Mejillones,174216,USDA SR Legacy,,
+Calamar,174223,USDA SR Legacy,,
+Pulpo,174218,USDA SR Legacy,,
+Huevo entero,171287,USDA SR Legacy,,
+Clara de huevo,172183,USDA SR Legacy,,
+Leche entera,171265,USDA SR Legacy,,
+Leche desnatada,171269,USDA SR Legacy,,
+Yogur natural,171284,USDA SR Legacy,,
+Yogur griego,171304,USDA SR Legacy,,
+Queso batido tipo cottage,172182,USDA SR Legacy,,cottage;queso batido
+Requeson,171248,USDA SR Legacy,,
+Queso curado tipo cheddar,170899,USDA SR Legacy,,cheddar
+Mozzarella,170845,USDA SR Legacy,,
+Arroz blanco,169756,USDA SR Legacy,,
+Arroz integral,169703,USDA SR Legacy,,
+Pasta,168927,USDA SR Legacy,,
+Avena,169705,USDA SR Legacy,,
+Quinoa,168874,USDA SR Legacy,,
+Cuscus,169699,USDA SR Legacy,,
+Pan integral,172688,USDA SR Legacy,,pan de molde integral;pan integral de molde
+Pan blanco,174926,USDA SR Legacy,,
+Lentejas,172420,USDA SR Legacy,,
+Garbanzos,173756,USDA SR Legacy,,
+Alubias blancas,175202,USDA SR Legacy,,
+Alubias rojas,175193,USDA SR Legacy,,
+Alubias negras,173734,USDA SR Legacy,,
+Guisantes,170419,USDA SR Legacy,,
+Habas secas,175205,USDA SR Legacy,,
+Brocoli,170379,USDA SR Legacy,,
+Espinacas,168462,USDA SR Legacy,,
+Tomate,170457,USDA SR Legacy,,
+Lechuga,169247,USDA SR Legacy,,
+Cebolla,170000,USDA SR Legacy,,
+Pimiento rojo,170108,USDA SR Legacy,,
+Pimiento verde,170427,USDA SR Legacy,,
+Calabacin,169291,USDA SR Legacy,,
+Berenjena,169228,USDA SR Legacy,,
+Zanahoria,170393,USDA SR Legacy,,
+Champinones,169251,USDA SR Legacy,,
+Judias verdes,169961,USDA SR Legacy,,
+Coliflor,169986,USDA SR Legacy,,
+Esparragos,168389,USDA SR Legacy,,
+Pepino,168409,USDA SR Legacy,,
+Ajo,169230,USDA SR Legacy,,
+Patata,170028,USDA SR Legacy,,
+Boniato,168482,USDA SR Legacy,,
+Platano,173944,USDA SR Legacy,,
+Manzana,171688,USDA SR Legacy,,
+Naranja,169917,USDA SR Legacy,,
+Fresas,167762,USDA SR Legacy,,
+Uvas,174683,USDA SR Legacy,,
+Pera,169118,USDA SR Legacy,,
+Sandia,167765,USDA SR Legacy,,
+Melon,169092,USDA SR Legacy,,
+Kiwi,168153,USDA SR Legacy,,
+Pina,169124,USDA SR Legacy,,
+Arandanos,171711,USDA SR Legacy,,
+Aguacate,171705,USDA SR Legacy,,
+Almendras,170567,USDA SR Legacy,,
+Nueces,170187,USDA SR Legacy,,
+Cacahuetes,172430,USDA SR Legacy,,
+Pistachos,170184,USDA SR Legacy,,
+Anacardos,170162,USDA SR Legacy,,
+Crema de cacahuete,172470,USDA SR Legacy,,
+Aceite de oliva,171413,USDA SR Legacy,,
+Mantequilla,173430,USDA SR Legacy,,
+Miel,169640,USDA SR Legacy,,
+Chocolate negro,170273,USDA SR Legacy,,
+Tofu,172475,USDA SR Legacy,,
+Atun en lata al natural,173709,USDA SR Legacy,,atun lata;atun claro;atun natural
+Atun en lata en aceite,173708,USDA SR Legacy,,atun aceite
+Sardinas en lata,175139,USDA SR Legacy,,sardina lata
+Anchoas en aceite,174183,USDA SR Legacy,,anchoa;boqueron en aceite
+Boquerones frescos,174182,USDA SR Legacy,,boqueron;anchoa fresca
+Dorada,173698,USDA SR Legacy,,besugo;pargo
+Jamon cocido,167874,USDA SR Legacy,,jamon york;fiambre de jamon
+Jamon curado,168110,USDA SR Legacy,,jamon serrano;jamon iberico
+Chorizo,173859,USDA SR Legacy,,
+Salchichon,172041,USDA SR Legacy,,salami
+Bacon,168277,USDA SR Legacy,,panceta ahumada;beicon
+Morcilla,172035,USDA SR Legacy,,morcilla de burgos
+Garbanzos de bote,173800,USDA SR Legacy,,garbanzos cocidos;garbanzo tarro
+Alubias blancas de bote,175204,USDA SR Legacy,,judias blancas cocidas;alubia bote
+Alubias rojas de bote,174285,USDA SR Legacy,,judias rojas cocidas
+Pan de barra,172675,USDA SR Legacy,,barra;baguette;pan blanco de barra
+Harina de trigo,168894,USDA SR Legacy,,harina
+Leche semidesnatada,171267,USDA SR Legacy,,leche semi
+Yogur desnatado,170887,USDA SR Legacy,,yogur 0%;yogur natural desnatado
+Yogur natural bajo en grasa,170886,USDA SR Legacy,,yogur semidesnatado
+Queso de untar,173418,USDA SR Legacy,,queso crema;philadelphia
+Queso feta,173420,USDA SR Legacy,,
+Queso de cabra,173433,USDA SR Legacy,,rulo de cabra
+Nata para montar,170859,USDA SR Legacy,,nata;crema de leche
+Yema de huevo,172184,USDA SR Legacy,,yema
+Aceite de girasol,171025,USDA SR Legacy,,
+Mayonesa,171009,USDA SR Legacy,,
+Tomate frito,170054,USDA SR Legacy,,salsa de tomate;tomate triturado
+Aceitunas,169094,USDA SR Legacy,,olivas;aceituna
+Azucar,169655,USDA SR Legacy,,
+Alcachofa,169205,USDA SR Legacy,,
+Puerro,169246,USDA SR Legacy,,
+Acelgas,169991,USDA SR Legacy,,acelga
+Col,169975,USDA SR Legacy,,repollo;berza
+Remolacha,169145,USDA SR Legacy,,
+Maiz dulce,169216,USDA SR Legacy,,maiz
+Mandarina,169105,USDA SR Legacy,,clementina
+Ciruela,169949,USDA SR Legacy,,
+Cerezas,171719,USDA SR Legacy,,cereza;picota
+Higos,173021,USDA SR Legacy,,higo;breva
+Albaricoque,171697,USDA SR Legacy,,damasco
+Datiles,168191,USDA SR Legacy,,datil
+Avellanas,170581,USDA SR Legacy,,avellana
+Semillas de chia,170554,USDA SR Legacy,,chia
+Semillas de lino,169414,USDA SR Legacy,,lino;linaza
+Semillas de sesamo,170150,USDA SR Legacy,,sesamo;ajonjoli
+Proteina de suero en polvo,173180,USDA SR Legacy,,proteina whey;whey;batido de proteinas
+Tempeh,168440,USDA SR Legacy,,

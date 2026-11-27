@@ -1046,6 +1046,11 @@ private fun FoodSearchSheet(
                                             generics = matchingGenerics(query),
                                             branded = branded.map { it.product_name to it },
                                             toGeneric = { g ->
+                                                // La primera medida casera del alimento viaja en los
+                                                // mismos campos que usa un producto de marca para su
+                                                // ración, así que el botón "1 unidad grande · 50 g"
+                                                // sale igual para los dos sin duplicar nada.
+                                                val racion = g.portions.firstOrNull()
                                                 Product(
                                                     product_name = g.name,
                                                     brands = GENERIC_BRAND,
@@ -1054,7 +1059,9 @@ private fun FoodSearchSheet(
                                                         proteins_100g = g.proteinsPer100,
                                                         carbohydrates_100g = g.carbsPer100,
                                                         fat_100g = g.fatPer100
-                                                    )
+                                                    ),
+                                                    servingSize = racion?.label,
+                                                    servingQuantity = racion?.grams?.toDouble()
                                                 )
                                             }
                                         )
@@ -1401,6 +1408,12 @@ private fun PortionPickerSheet(
     // Es el caso real que producía el doble conteo (ver nuevoClientId).
     val clientId = remember { nuevoClientId() }
 
+    // Gramos de una ración según el producto, si los declara y son creíbles. Open Food Facts tiene
+    // raciones absurdas sueltas (un "1 . (350 g)" para un arroz), así que se acota.
+    val racion = product.servingQuantity
+        ?.takeIf { it.isFinite() && it >= 1.0 && it <= 1500.0 }
+        ?.roundToInt()
+
     // Factor crudo→cocinado. Primero se intenta reconocer el alimento por su nombre; si no se
     // reconoce, el usuario puede elegirlo a mano, que es justo el dato que faltaba. Lo elegido a mano
     // manda sobre lo automático.
@@ -1506,7 +1519,9 @@ private fun PortionPickerSheet(
                     value = gramsText,
                     onValueChange = { if (it.length <= 5) gramsText = it.filter { c -> c.isDigit() } },
                     placeholder = { Text("Cantidad", color = Palette.current.textSecondary) },
-                    suffix = { Text("g", color = Palette.current.textSecondary, fontWeight = FontWeight.Bold) },
+                    // "ml" cuando el producto declara sus valores por 100 ml: es el 11,8 % de los
+                    // productos españoles (toda la leche, los caldos) y se pedían en gramos.
+                    suffix = { Text(product.unitLabel, color = Palette.current.textSecondary, fontWeight = FontWeight.Bold) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth().height(58.dp),
@@ -1514,6 +1529,33 @@ private fun PortionPickerSheet(
                     colors = sheetFieldColors(),
                     textStyle = LocalTextStyle.current.copy(color = Palette.current.textPrimary, fontWeight = FontWeight.Bold, fontSize = 18.sp)
                 )
+
+                // Una ración, con el peso que declara el propio producto.
+                //
+                // No son los chips de 50/100/150/200 g que el usuario pidió quitar: aquellos eran
+                // cantidades inventadas, iguales para todo. Esto es el dato del producto —lo trae el
+                // 57 % de los de Open Food Facts en `serving_quantity`— y solo aparece cuando existe.
+                // Es la diferencia más visible frente a una app como Fitia: saber que una rebanada de
+                // ese pan son 28 g sin tener que pesarla.
+                racion?.let { gramosRacion ->
+                    Spacer(Modifier.height(8.dp))
+                    val etiqueta = product.servingSize?.takeIf { it.isNotBlank() && it.length <= 24 }
+                        ?: "1 ración"
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = if (gramsText == gramosRacion.toString()) Palette.current.accent
+                                else Palette.current.surfaceSunken,
+                        modifier = Modifier.clickable { gramsText = gramosRacion.toString() }
+                    ) {
+                        Text(
+                            "$etiqueta · $gramosRacion ${product.unitLabel}",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Palette.current.textPrimary,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
+                        )
+                    }
+                }
             }
 
             // Mismo aspecto que el campo de al lado, pero es un boton: se pulsa y alterna la base.
