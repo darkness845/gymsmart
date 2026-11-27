@@ -4,6 +4,14 @@ Bitácora corta por sesión de trabajo sobre el endurecimiento del proyecto. Ent
 
 ---
 
+## 2026-11-27 — Maquetas de Nutrición y Pesaje; aplicadas N3 y W5
+
+Seis maquetas de cada pantalla en el lienzo de diseño, con los datos reales. El usuario eligió N3
+(línea del día, sin horas) y W5 (pestañas Peso / Análisis IA). Aplicadas: solo cambian la cabecera,
+el selector de días, el resumen y las comidas (Nutrición) y la organización en pestañas (Pesaje); la
+lógica de guardado, búsqueda, escáner, IA y Premium es la de antes. Antes, arreglo de la hoja de
+añadir ejercicio en móviles bajos (commit `b03687e`).
+
 ## 2026-11-26 (cont. 2) — Melocotón en todas las pantallas; commits y push
 
 Estilo aplicado sin rediseñar a Nutrición, Peso, Onboarding, Login, Registro, contraseña (olvidé /
@@ -1093,3 +1101,22 @@ de encontrar fallos y mejoras). Se repartió en cuatro frentes en paralelo: GPS 
   ninguno toca código Android, así que no se añade nada nuevo a la lista de "sin verificar".
 - Con esto se cierra el backlog acordado antes de la pausa. **Pendiente de que el usuario confirme el
   commit**; después, según lo acordado, toca que él pruebe la app en su máquina antes de seguir.
+
+### 2026-11-27 — Tema viejo borrado y AUD-16 cerrado
+
+- El usuario confirmó borrar `GymSmartTheme`/`GymSmartColors`. Se borró `AppTheme.kt` entero (nada más
+  lo usaba); `RateSlider` toma por defecto `RateSliderColors.melocoton()` y se quitaron las dos copias
+  idénticas de colores en perfil y onboarding.
+- AUD-16: el usuario recordó que la comprobación de BBDD ya estaba hecha (lo está desde el 22/11, la
+  tabla del backlog seguía diciendo "pendiente"). Se aplicó la decisión pendiente: `has_wearable` fuera
+  del `INSERT`/`CREATE TABLE` y del modelo del cliente. El campo se sigue aceptando en el servidor por
+  compatibilidad con la app instalada (JSON estricto).
+
+### 2026-11-27 — Notificación de descanso que de verdad llega, e insignia de unión compacta
+
+- El usuario (captura del móvil) pidió mejorar la píldora naranja "Unido con …" y que el fin del
+  descanso llegue como una notificación tipo WhatsApp, no dentro de la app.
+- Diagnóstico del aviso: nunca se pedía `POST_NOTIFICATIONS`; alarma inexacta en Android 14+ por falta
+  de `USE_EXACT_ALARM`; y la pantalla cancelaba la notificación si el contador llegaba a cero con la
+  app abierta. Los tres arreglados; canal nuevo con vibración y visibilidad en bloqueo.
+- Verificado con la batería completa + Android. Sin probar en el móvil.

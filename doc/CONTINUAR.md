@@ -6,9 +6,122 @@
 > [08-backlog-mejoras.md](08-backlog-mejoras.md) (cada hallazgo con su estado).
 > Este documento se actualiza cada vez que se termina algo, no solo al final de la sesión.
 
-**Última actualización**: 2026-11-26 (tarea 7 cerrada en código; **estilo Melocotón aplicado a todas las pantallas en uso**; commits por temas y push hechos a petición del usuario. Pendiente: redesplegar el servidor, probar en el móvil, variante oscura de Melocotón).
+**Última actualización**: 2026-11-27 (**segunda auditoría del día: comité de 5 paneles sobre el registro de alimentos y macros** — solo diagnóstico, nada implementado; ver la sección inmediatamente siguiente). Antes: 2026-11-27 (auditoría del comité multidisciplinar sobre el cálculo de kcal — solo diagnóstico, nada implementado). Antes: 2026-11-27 (N3/W5 y limpieza del tema viejo + AUD-16, sin commitear).
+
+## 🔴 2026-11-27 — Auditoría del registro de alimentos: comité de 5 paneles (sin implementar)
+
+El usuario pidió auditar (no rediseñar) el sistema de registro de alimentos, con el objetivo de
+llegar al nivel de una app profesional de macros (tipo Fitia) con producto español. Se lanzaron 5
+subagentes en paralelo (composición de alimentos, bromatología, macronutrientes, bases de datos
+nutricionales, ingeniería del cálculo) y esta sesión hizo de auditor independiente. Informe completo
+en [13-auditoria-nutricion-2026-11-27.md](13-auditoria-nutricion-2026-11-27.md).
+
+**Lo que manda sobre todo lo demás — `search.pl` de Open Food Facts devuelve 503 el 100 % de las
+veces.** La búsqueda de alimentos de marca está **caída**, y la app degrada en silencio a los 90
+genéricos locales mostrando "Sin resultados", que es un mensaje falso. El servidor no deja rastro en
+los logs porque un 503 no lanza excepción. Verificado por el panel de datos (0/12 al ritmo legal de
+10 req/min) y **reconfirmado de primera mano por esta sesión (3/3 → 503)**, con Search-a-licious y la
+API de producto por EAN respondiendo 200 desde la misma IP. **`OFF-2` en `doc/08` está obsoleto**:
+afirma que el endpoint funciona.
+
+**Lo que está verificado como correcto** (no tocar): los 89 `fdcId` de `GenericFoods.kt` existen, son
+todos SR Legacy y los 4 valores de los 89 coinciden con la API oficial de FoodData Central. No hay
+error de redondeo acumulado. El "deshacer" de la conversión crudo/cocinado es exacto. Las 42
+desviaciones de la tabla frente a 4/4/9 **son correctas** (USDA usa Merrill & Watt, no 4/4/9).
+
+**Solape con la auditoría de kcal de hoy** (declarado en §0.3 del informe): el panel de
+macronutrientes **re-derivó de forma independiente** el C-1 (falta el TEF) y el C-4 (proteína sobre
+peso total) de `doc/12`. Eso sube la confianza en esos dos hallazgos; no son nuevos. Y en los
+multiplicadores de actividad **los dos comités se contradicen**: `doc/12` P1-6 dice "no tocar la
+constante, corregir solo el texto", este comité lo clasifica como error real de −361 kcal/día.
+Dirimido en §D-1: los dos parten del mismo hecho y convergen en la misma conclusión práctica —
+**no se puede corregir sin migrar a la vez el `adaptive_factor` guardado**, que necesita decisión
+explícita del usuario.
+
+**Nuevo y no cubierto por ninguna auditoría anterior**: toda la capa de datos (§2.1), la conversión
+crudo/cocinado (§2.2), la curación de la tabla de genéricos (§2.3) y 10 hallazgos de implementación
+(§2.4). Entre lo más grave: un solo factor de cocción aplicado a los cuatro macros (**+54 % de grasa**
+en carne picada), el 0,78 del pescado que es una **imputación de USDA y no un dato** (salmón: +29 %),
+el ranking que **no plega plurales** ("huevos" pierde el genérico; "pechugas de pollo" devuelve lista
+vacía), **cero validación de rangos** (entran productos con P+C+F = 100,6 g/100 g), el escáner que
+**no filtra los 0 kcal** (escanear un vino registra 0 kcal), y el **doble conteo invisible** cuando
+falla la red tras un INSERT.
+
+**Siguiente paso**: el informe propone un plan en 6 fases (§3). Nada decidido ni implementado — el
+usuario tiene que elegir por dónde empezar. La Fase 0 (parar el incendio de la búsqueda) son horas. Antes: 2026-11-26 (tarea 7 cerrada en código; **estilo Melocotón aplicado a todas las pantallas en uso**; commits por temas y push hechos a petición del usuario. Pendiente: redesplegar el servidor, probar en el móvil, variante oscura de Melocotón).
+
+## 🔎 2026-11-27 — Segunda auditoría del cálculo de kcal: comité de 3 paneles (sin implementar)
+
+El usuario pidió auditar (no rediseñar) el sistema de cálculo energético con un comité de expertos.
+Se lanzaron 3 subagentes en paralelo (metabolismo/gasto, nutrición/macros, peso/autoajuste) y esta
+sesión hizo de auditor crítico para contrastarlos. Resultado completo en
+[12-auditoria-comite-kcal-2026-11-27.md](12-auditoria-comite-kcal-2026-11-27.md).
+
+**Veredicto de fondo: el modelo sigue siendo correcto** (confirma lo ya resuelto en
+[11-auditoria-kcal.md](11-auditoria-kcal.md)). Lo nuevo no son errores de aritmética (barrido de
+~30.000 perfiles sin ninguno) sino: una incoherencia interna real en modo pulsera, falta de
+individualización en los extremos de población (mayores, adolescentes, obesidad severa), y sesgos
+fisiológicos que el autoajuste no filtra (glucógeno/agua al cambiar de objetivo, ciclo menstrual).
+
+**Hallazgos críticos/altos (C-1 a C-6 en el doc), sin implementar, por orden de bloque A propuesto**:
+1. **C-1** 🔴 Modo pulsera no descuenta el TEF (`NutritionMath.kt:97-108`): mismo gasto real sale un
+   10% más bajo que en modo fórmula → en "ganar músculo" el superávit real es ~0 kcal. **Ojo**: tocarlo
+   exige decidir qué hacer con los `adaptive_factor` ya guardados en producción (pueden haber absorbido
+   el sesgo) — necesita confirmación explícita, no solo código.
+2. **C-2** 🔴 Sin suelo absoluto en kcal: mujeres mayores/pequeñas con normopeso pueden caer en rango
+   VLCD (ej. 806 kcal). Propuesta: suelo duro 800 + aviso bajo 1200♀/1500♂.
+3. **C-4** 🟠 Proteína calculada sobre peso total también en obesidad (160 kg → 320 g, 57% de las kcal).
+4. **C-5** 🟠 El autoajuste lee el glucógeno/agua del cambio de objetivo como si fuera gasto real
+   (sesgo simulado +278 kcal/d la primera ventana). Propuesta: `goal_changed_at` + 14 días de gracia.
+5. **C-6** 🟠 Guardar perfil reenvía el peso cargado y se graba como pesaje de hoy (LOCF), inflando el
+   recuento de pesajes del autoajuste sin dato nuevo.
+
+Bloque B (edad en los extremos C-3, ventanas de datos C-7) y Bloque C (tendencia de peso EWMA C-8,
+texto del autoajuste, filtro de Kalman) son de menor prioridad — todo el detalle y las fórmulas
+propuestas están en el doc 12.
+
+**Siguiente paso**: el usuario tiene que decidir si se implementa el Bloque A (y cómo migrar los
+`adaptive_factor` existentes para C-1) antes de tocar código.
 
 ---
+
+## ✅ 2026-11-27 — Aviso de descanso como notificación real + insignia de unión (sin commitear)
+
+Pedido por el usuario antes de GPS-5/6, PERM-1 y ERR-1 (que siguen siendo lo siguiente).
+
+- **Insignia "Unido con"** (lista de ejercicios del día): era una píldora naranja que con nombres de
+  día largos se partía en dos líneas. Ahora es una sola línea sin fondo (icono + texto melocotón
+  oscuro, cortada con "…"); con más de un día, "Unido con N días".
+- **Aviso de fin de descanso**: no salía nunca. Causas encontradas:
+  1. La app **nunca pedía `POST_NOTIFICATIONS`** (Android 13+ las trae apagadas): `notify` fallaba en
+     silencio. Ahora se pide al abrir la sesión de entreno.
+  2. `SCHEDULE_EXACT_ALARM` viene denegado por defecto en Android 14+ → alarma inexacta, minutos de
+     retraso. Se añadió `USE_EXACT_ALARM` (concedido al instalar). **Ojo Play Store**: ver doc 04.
+  3. Con la app delante, la pantalla cancelaba la alarma y pintaba un aviso propio. El usuario no
+     quiere aviso dentro de la app: ahora siempre sale la notificación (en Android; en escritorio/web
+     sigue el aviso de pantalla porque no hay otro).
+  - Canal nuevo `rest_timer_v2` (vibración, visible en bloqueo; el viejo se borra porque los ajustes
+    de un canal no se pueden cambiar), icono monocromo `ic_stat_rest`, tocarla vuelve a la app, y el
+    aviso anterior se quita de la barra al empezar otro descanso.
+- **Sin verificar en dispositivo.** En Xiaomi/HyperOS puede hacer falta activar a mano en Ajustes de
+  la app "Pantalla de bloqueo" y "Notificaciones flotantes".
+
+## ✅ 2026-11-27 — Limpieza: tema viejo fuera y AUD-16 cerrado (sin commitear)
+
+- **Borrado `ui/theme/AppTheme.kt`** (`GymSmartColors`, `GymSmartTheme`, `GymSmartSpacing`,
+  `GymSmartElevation`), con confirmación del usuario. Su último uso era `RateSliderColors.Legacy`;
+  ahora el valor por defecto es `RateSliderColors.melocoton()`, y perfil y onboarding ya no copian los
+  mismos siete colores cada uno.
+- **AUD-16 cerrado.** La columna ya se había comprobado en Turso el 22/11 (existe). Faltaba aplicar la
+  decisión de entonces: `has_wearable` fuera del `INSERT` y del `CREATE TABLE`, `hasWearable` fuera del
+  `ProfileRequest` del cliente. **El servidor sigue aceptando el campo**: su `json()` es estricto y la
+  app instalada lo manda, así que quitarlo daría 400 al guardar perfil y peso. La columna sigue en
+  producción, sin uso; no se ha borrado nada de la BBDD.
+- Verificado: `:shared:jvmTest :server:compileKotlin :composeApp:compileKotlinJvm :composeApp:jvmTest
+  :composeApp:compileDebugKotlinAndroid :composeApp:compileKotlinWasmJs :composeApp:compileKotlinJs`, verde.
+- Siguiente propuesto (Fase 5, punto 8 del orden de ataque, todos comprobados como abiertos en el código
+  hoy): GPS-5, GPS-6, PERM-1, resto de ERR-1.
+
 
 ## 🟡 Segunda lista de mejoras (2026-11-25) — tareas 1-7
 
@@ -238,6 +351,21 @@ el tema oscuro**; solo `TrainingScreen` (inalcanzable, nadie navega a ella; el u
 como está) y los colores por defecto de `RateSlider`. `GymSmartColors` / `GymSmartTheme` siguen en
 `AppTheme.kt` sin uso real: candidatos a borrar cuando se decida. Verificado: batería completa +
 Android + JS + Wasm. Sin verificar en dispositivo.
+
+**Maquetas de Nutrición y Pesaje (2026-11-27)**: seis de cada en el lienzo (páginas "Nutrición — seis
+versiones" y "Pesaje — seis versiones"), con los datos reales de cada pantalla. **Elegidas N3 (sin horas: al
+usuario le dan igual) y W5, y aplicadas (2026-11-27)**:
+- **Nutrición (N3)**: cabecera propia (atrás redondo, fecha del día mirado, refresco redondo si hay
+  pulsera), días en baldosas (L M X J V S D; el mirado en chocolate, hoy con borde melocotón, futuros
+  apagados), tarjeta "Presupuesto de hoy" (comido / objetivo, lo que queda o "de más", una barra
+  partida por macros, leyenda y línea de la pulsera) y las cuatro comidas como línea de tiempo
+  (círculo relleno si hay algo, punteado si no; comida vacía con botón punteado "+ Añadir …" y
+  escáner al lado). Los alimentos muestran gramos y kcal (ya no P/C/G por alimento). Búsqueda,
+  escáner, raciones, colecciones y avisos, sin tocar.
+- **Pesaje (W5)**: cabecera propia y dos pestañas (se guardan al girar): **Peso** (último pesaje con
+  la diferencia con el anterior, "+ Añadir peso" que abre el mismo diálogo de siempre, y la gráfica de
+  siempre con "N días") y **Análisis IA** (la tarjeta de antes, misma lógica de Premium y foto).
+- Verificado: batería completa + Android + JS + Wasm. **Sin commitear. Sin verificar en dispositivo.**
 
 **Lo siguiente**:
 1. ~~Perfil~~ hecho (arriba). Siguiente pantalla a migrar: la elige el usuario. Pendiente de hablar
