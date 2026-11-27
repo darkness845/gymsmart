@@ -55,6 +55,10 @@ enum class WeighBasis { RAW, COOKED }
  * @param minRawKcalPer100 suelo de cordura: por debajo de estas kcal/100 g, el producto **no puede**
  *   estar en base cruda y se bloquea la conversión (ver [looksAlreadyCooked]). `null` significa que
  *   para este alimento no hay un suelo defendible y no se comprueba nada.
+ * @param maxRawKcalPer100 techo de cordura: por encima de estas kcal/100 g el producto tampoco puede
+ *   estar en base cruda, pero por el motivo contrario — está frito, curado, desecado o es un snack.
+ *   Es la mitad que faltaba: la comprobación solo miraba hacia abajo, y por arriba se colaban
+ *   productos reales con errores enormes (ver [looksAlreadyCooked]).
  * @param defaultBasis base que se preselecciona. Las carnes se pesan casi siempre en crudo y los
  *   cereales y legumbres casi siempre ya cocidos, así que el valor por defecto sigue al uso real en
  *   vez de ser el mismo para todo.
@@ -71,8 +75,46 @@ data class CookingYield(
     val keywords: List<String>,
     val excludes: List<String> = emptyList(),
     val minRawKcalPer100: Double? = null,
+    val maxRawKcalPer100: Double? = null,
     val defaultBasis: WeighBasis = WeighBasis.RAW
 )
+
+/**
+ * Techos de cordura, en kcal/100 g, para los alimentos en los que **no hay suelo defendible pero sí
+ * techo**. Esa asimetría es el hallazgo: la dispersión entre marcas impide poner un suelo en carne y
+ * pescado (un fiambre de pollo puede marcar 62 kcal), pero no impide poner un techo, porque ningún
+ * producto crudo de esa familia se acerca a él.
+ *
+ * Cada valor deja un margen amplio sobre el alimento crudo más calórico de su familia en SR Legacy:
+ * - **Patata**: la más calórica cruda es la russet, 79 kcal/100 g. Techo 110.
+ * - **Aves**: el muslo de pollo con piel ronda 150-160 kcal/100 g en crudo. Techo 200.
+ * - **Pescado**: el más graso es el salmón atlántico de piscifactoría, 208. Techo 250.
+ * - **Carne roja y picada**: una picada al 30 % de grasa ronda 300. Techo 340.
+ *
+ * Lo que cierran, comprobado contra el emparejador real con nombres del lineal español:
+ * `Patatas paja` (560 kcal → la app calculaba **747 kcal/100 g**), `Patatas noisette` (180),
+ * `Patatas gajo congeladas` (150), `Tortilla de patatas` (160), `Mojama de atún` (330 → 423),
+ * `Garbanzos tostados` (410 → registraba **89 kcal donde hay 205**) y `Fideos orientales
+ * instantáneos` (450). Ninguno llevaba una palabra que la lista de exclusiones pudiera cazar, y esa
+ * lista ya reconoce en su propio comentario que es una carrera que no se gana.
+ */
+const val MAX_RAW_KCAL_TUBER  = 110.0
+const val MAX_RAW_KCAL_POULTRY = 200.0
+const val MAX_RAW_KCAL_FISH   = 250.0
+const val MAX_RAW_KCAL_MEAT   = 340.0
+
+/**
+ * Techo para los áridos. El más calórico de los que este catálogo reconoce es el garbanzo en seco,
+ * **378 kcal/100 g**; le siguen el cuscús (376) y la pasta (371). Por encima de 400 ya no hay árido
+ * en seco: hay un snack tostado, frito o con grasa añadida, como los `Garbanzos tostados` (~410) que
+ * la app registraba a 89 kcal donde hay 205.
+ *
+ * La banda es más estrecha que la del suelo —22 kcal de margen, frente a los ~85 de abajo— y hay que
+ * decirlo: un snack de legumbre tostada que marcara 390 se colaría. Aun así cierra el caso medido sin
+ * tocar ningún alimento real del catálogo, y la alternativa (no tener techo) deja pasar errores del
+ * 57 %.
+ */
+const val MAX_RAW_KCAL_DRY = 400.0
 
 /**
  * Suelo de cordura para cereales y legumbres en seco, en kcal/100 g.
@@ -105,8 +147,36 @@ const val FAMILY_TUBER = "Tubérculos"
  * - El producto es un **derivado o un preparado** ("bebida de arroz", "nuggets de pollo", "hummus"):
  *   el factor del alimento base no dice nada sobre él.
  *
- * Hacen falta las cuatro formas de cada adjetivo (masculino/femenino, singular/plural) porque la
- * comparación es por palabra completa: "lentejas cocidas" no coincide con "cocido".
+ * Hacen falta las dos formas de género de cada adjetivo porque la comparación es por palabra completa.
+ * El **número** ya no hay que escribirlo: [phraseMatches] plega singular y plural, así que "cocido"
+ * caza también "cocidos" (antes faltaba el plural en 51 de estas 134 entradas, y entre las que
+ * faltaban estaban `rellenos`/`rellenas`, por las que se colaban los pimientos rellenos de carne
+ * picada). Las formas en plural que quedan escritas son inofensivas y se dejan por legibilidad.
+ *
+ * ## Palabras que se han quitado a propósito (2026-11-27)
+ *
+ * Bloqueaban productos **crudos o en seco de altísima rotación** en el lineal español, y el caso
+ * cocinado que pretendían cazar ya lo cubren las comprobaciones numéricas, que no dependen de acertar
+ * con el vocabulario (ver [looksAlreadyCooked]):
+ *
+ * - **`vaporizado`/`vaporizada`** bloqueaba el *arroz vaporizado*, líder de su categoría y que se
+ *   vende **en seco** (~350 kcal/100 g). El vasito de microondas que motivó la exclusión lo caza el
+ *   suelo de 250 kcal, porque ya cocido marca ~158.
+ * - **`preparado`** bloqueaba *"Preparado de carne picada de vacuno y cerdo"*, que es el etiquetado
+ *   legal habitual de la carne picada cruda en Mercadona.
+ * - **`paella`** bloqueaba *"Arroz especial para paella"* y *"Arroz bomba para paella"*, arroz en
+ *   seco. Una paella ya hecha ronda 150 kcal/100 g y la caza el suelo.
+ * - **`sopa`** bloqueaba *"Fideos finos para sopa"*, pasta en seco. Una sopa hecha ronda 40 kcal y la
+ *   caza el suelo.
+ * - **`glaseado`** y sus formas bloqueaban *prácticamente todo el pescado congelado español*, que
+ *   declara el glaseado en la etiqueta. El glaseado es una capa de agua que se aplica al pescado
+ *   **crudo** al congelarlo, así que la palabra no indica cocinado.
+ *
+ * `plancha` y `horno` **se conservan** aunque también producen falsos negativos ("pechuga fileteada
+ * para plancha", "pollo entero para horno"): en aves y carne no hay suelo defendible, así que un
+ * "pollo a la plancha" ya hecho (~165 kcal/100 g) pasaría el techo de 200 y se convertiría mal. El
+ * coste de dejarlas es que a veces no se ofrece el conmutador, que es inocuo; el de quitarlas sería
+ * contar mal, que no lo es.
  */
 private val GLOBAL_EXCLUDES = listOf(
     // Ya cocinado
@@ -121,17 +191,19 @@ private val GLOBAL_EXCLUDES = listOf(
     "salteado", "salteada", "salteados", "salteadas",
     "plancha", "horno", "vapor", "cooked", "boiled",
     // Conservas y platos preparados
-    "conserva", "lata", "bote", "precocinado", "preparado", "caldo", "sopa", "crema", "pure",
-    "salsa", "ensaladilla", "paella", "lasana", "pizza", "croqueta", "croquetas", "albondiga",
+    "conserva", "lata", "bote", "precocinado", "caldo", "crema", "pure",
+    "salsa", "ensaladilla", "lasana", "pizza", "croqueta", "croquetas", "albondiga",
     "albondigas", "empanado", "empanada", "empanados", "empanadas",
     "rebozado", "rebozada", "rebozados", "rebozadas",
     "nuggets", "fingers", "san jacobo", "canelones", "escabeche", "salmuera", "relleno", "rellena",
+    // "empanadilla" no es el plural de "empanada" sino un diminutivo, así que el plegado de número no
+    // lo cubre y hace falta la palabra aparte.
+    "empanadilla",
     // Verificadas una a una como agujeros reales del emparejado (2026-11-24): todas estas pasaban el
     // filtro y acababan convertidas. "prefritas" es el ejemplo de por qué la comparación por palabra
     // completa no basta sola: no coincide con "fritas".
     "prefrito", "prefrita", "prefritos", "prefritas", "bravas", "deluxe",
-    "tarro", "vasito", "vasitos", "microondas", "vaporizado", "vaporizada",
-    "glaseado", "glaseada", "glaseados", "glaseadas", "solucion anadida", "solucion",
+    "tarro", "vasito", "vasitos", "microondas", "solucion anadida", "solucion",
     // Embutidos y fiambres (ya curados o cocidos)
     "fiambre", "loncheado", "loncheada", "lonchas", "pate", "jamon", "chorizo", "salchichon",
     "salchicha", "salchichas", "mortadela", "bacon", "panceta", "embutido", "surimi", "palitos",
@@ -154,30 +226,41 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
 
     CookingYield(
         id = "pollo_muslo",
+        maxRawKcalPer100 = MAX_RAW_KCAL_POULTRY,
         label = "Muslo o contramuslo de pollo",
         family = FAMILY_MEAT,
-        factor = 0.69,
+        factor = 0.68,
         rawLabel = "Crudo",
         cookedLabel = "Cocinado",
         method = "al horno",
-        source = "FoodData Central SR Legacy: \"Chicken, broilers or fryers, dark meat, thigh, meat only, raw\" 121 kcal (173627) ÷ \"cooked, roasted\" 176 kcal (172853)",
+        // Corregido el 2026-11-27. La cita anterior era 172853 descrito como "cooked, roasted", y
+        // comprobado contra el volcado de SR Legacy ese identificador es **"cooked, braised"**:
+        // estofado, no asado, que es además el método que la app mostraba al usuario. El asado de
+        // verdad es 172388.
+        source = "FoodData Central SR Legacy: \"Chicken, broilers or fryers, dark meat, thigh, meat only, raw\" 121 kcal (173627) ÷ \"Chicken, broilers or fryers, thigh, meat only, cooked, roasted\" 179 kcal (172388)",
         keywords = listOf("muslo pollo", "muslos pollo", "contramuslo", "contramuslos", "jamoncito pollo"),
         excludes = listOf("pavo")
     ),
     CookingYield(
         id = "pollo_pechuga",
+        maxRawKcalPer100 = MAX_RAW_KCAL_POULTRY,
         label = "Pechuga de pollo",
         family = FAMILY_MEAT,
-        factor = 0.76,
+        factor = 0.73,
         rawLabel = "Crudo",
         cookedLabel = "Cocinado",
         method = "al horno",
-        source = "FoodData Central SR Legacy: \"Chicken, broiler or fryers, breast, skinless, boneless, meat only, raw\" 120 kcal (171077) ÷ \"cooked, roasted\" 157 kcal (171140)",
+        // Corregido el 2026-11-27, mismo error que en el muslo: 171140 no es "roasted" sino
+        // **"cooked, braised"**. La pechuga asada es 171477, 165 kcal. Y es un caso bonito: los tres
+        // macros dan el mismo cociente (kcal 0,727, proteína 0,725, grasa 0,734), porque asar una
+        // pechuga magra pierde sobre todo agua y casi nada de grasa.
+        source = "FoodData Central SR Legacy: \"Chicken, broiler or fryers, breast, skinless, boneless, meat only, raw\" 120 kcal (171077) ÷ \"Chicken, broilers or fryers, breast, meat only, cooked, roasted\" 165 kcal (171477)",
         keywords = listOf("pechuga pollo", "pollo pechuga", "filete pollo", "filetes pollo", "pollo fileteado"),
         excludes = listOf("pavo")
     ),
     CookingYield(
         id = "pavo_pechuga",
+        maxRawKcalPer100 = MAX_RAW_KCAL_POULTRY,
         label = "Pechuga de pavo (fresca)",
         family = FAMILY_MEAT,
         factor = 0.83,
@@ -193,6 +276,7 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
     ),
     CookingYield(
         id = "pavo_picado",
+        maxRawKcalPer100 = MAX_RAW_KCAL_POULTRY,
         label = "Carne picada de pavo",
         family = FAMILY_MEAT,
         factor = 0.73,
@@ -204,18 +288,37 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
     ),
     CookingYield(
         id = "ternera_picada",
+        maxRawKcalPer100 = MAX_RAW_KCAL_MEAT,
         label = "Carne picada de ternera",
         family = FAMILY_MEAT,
-        factor = 0.73,
+        factor = 0.86,
         rawLabel = "Crudo",
         cookedLabel = "Cocinado",
         method = "a la plancha",
-        source = "USDA Table of Cooking Yields for Meat and Poultry (ARS, 2012): \"Beef, ground, low fat (<12%), patty\", broiled or grilled — 73% (n=40)",
+        // Corregido el 2026-11-27, y es el error más grande que encontró la auditoría.
+        //
+        // El 0,73 anterior venía de la *USDA Table of Cooking Yields*, que publica **rendimiento de
+        // peso**: de 100 g de carne cruda quedan 73 g cocinados. Pero este campo se usa como
+        // **cociente de densidad energética** (`per100For` divide los valores por él), y en una carne
+        // grasa las dos magnitudes no coinciden ni de lejos, porque la grasa gotea mientras el agua se
+        // evapora. Comprobado en el volcado de SR Legacy:
+        //
+        //   90/10 MG: 176 → 217 kcal  ⇒ 0,81      80/20 MG: 254 → 270 kcal  ⇒ 0,94
+        //   85/15 MG: 215 → 250 kcal  ⇒ 0,86      70/30 MG: 332 → 277 kcal  ⇒ 1,20 (!)
+        //
+        // Con 0,73 una hamburguesa de 150 g ya hecha se registraba en 522 kcal cuando la USDA mide
+        // 405: **+117 kcal, un +29 %**. Se adopta 0,86, el de la picada al 15 % de grasa, que es la
+        // franja de la picada mixta española corriente. Y nótese que por encima del 25 % de grasa el
+        // cociente pasa de 1: la carne cocinada es *menos* densa que la cruda.
+        //
+        // Además el 0,73 se citaba con "n=40" y la fila real de esa tabla dice **n=4**.
+        source = "FoodData Central SR Legacy: \"Beef, ground, 85% lean meat / 15% fat, raw\" 215 kcal (171796) ÷ \"patty, cooked, broiled\" 250 kcal (174032). Rango medido según el nivel de grasa: 0,81 (90/10) a 1,20 (70/30)",
         keywords = listOf("carne picada", "ternera picada", "vacuno picada", "picada vacuno", "picada mixta"),
         excludes = listOf("pavo", "pollo")
     ),
     CookingYield(
         id = "ternera_filete",
+        maxRawKcalPer100 = MAX_RAW_KCAL_MEAT,
         label = "Filete o solomillo de ternera",
         family = FAMILY_MEAT,
         factor = 0.79,
@@ -231,6 +334,7 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
     ),
     CookingYield(
         id = "cerdo_lomo",
+        maxRawKcalPer100 = MAX_RAW_KCAL_MEAT,
         label = "Lomo o solomillo de cerdo",
         family = FAMILY_MEAT,
         factor = 0.76,
@@ -243,13 +347,22 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
     ),
     CookingYield(
         id = "cordero",
+        maxRawKcalPer100 = MAX_RAW_KCAL_MEAT,
         label = "Cordero",
         family = FAMILY_MEAT,
-        factor = 0.74,
+        factor = 1.00,
         rawLabel = "Crudo",
         cookedLabel = "Cocinado",
-        method = "al horno",
-        source = "USDA Table of Cooking Yields for Meat and Poultry (ARS, 2012): \"Lamb, retail cuts, roasts, all samples\", baked or roasted — 74% (rango 53–88%)",
+        method = "a la plancha o al horno",
+        // Corregido el 2026-11-27 por el mismo motivo que la carne picada: el 0,74 anterior era un
+        // **rendimiento de peso** usado como cociente de densidad energética. El dato medido de SR
+        // Legacy para cordero picado es 282 → 283 kcal/100 g, es decir **0,996**: la densidad no
+        // cambia prácticamente nada, porque lo que se pierde de grasa compensa lo que se pierde de
+        // agua. Con 0,74, 180 g de cordero hecho se registraban en 686 kcal donde hay ~508.
+        //
+        // Un factor de 1,00 significa "pesarlo crudo o hecho da casi lo mismo", que es la conclusión
+        // honesta para esta carne y no una renuncia a convertir.
+        source = "FoodData Central SR Legacy: \"Lamb, ground, raw\" 282 kcal (174370) ÷ \"Lamb, ground, cooked, broiled\" 283 kcal (172544)",
         keywords = listOf("cordero")
     ),
 
@@ -257,6 +370,7 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
 
     CookingYield(
         id = "gambas",
+        maxRawKcalPer100 = MAX_RAW_KCAL_FISH,
         label = "Gambas o langostinos",
         family = FAMILY_FISH,
         factor = 0.86,
@@ -267,20 +381,57 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
         keywords = listOf("gamba", "gambas", "langostino", "langostinos", "camaron", "camarones")
     ),
     CookingYield(
+        id = "salmon",
+        maxRawKcalPer100 = MAX_RAW_KCAL_FISH,
+        label = "Salmón",
+        family = FAMILY_FISH,
+        factor = 1.01,
+        rawLabel = "Crudo",
+        cookedLabel = "Cocinado",
+        method = "a la plancha o al horno",
+        // El salmón **no se concentra al cocinarse**, y por eso necesita salir del factor genérico del
+        // pescado. Va antes que `pescado` a propósito: el orden decide, y "salmon" está también entre
+        // las palabras de aquél.
+        //
+        // El salmón que se vende en España es de piscifactoría, y ahí la USDA **midió** las dos
+        // entradas: 208 kcal/100 g en crudo y 206 cocinado. Pierde grasa por goteo casi en la misma
+        // proporción en que pierde agua, así que la densidad energética se queda igual. Aplicarle el
+        // 0,78 del pescado blanco era el mayor error del catálogo de pescado: 150 g de salmón hecho se
+        // registraban en 400 kcal donde hay 309 (**+29 %**) y en 25,8 g de grasa donde hay 18,5
+        // (**+39 %**). Mismo patrón, medido, en el coho de piscifactoría (0,899).
+        source = "FoodData Central SR Legacy: \"Fish, salmon, Atlantic, farmed, raw\" 208 kcal (175167) ÷ \"cooked, dry heat\" 206 kcal (175168). El coho de piscifactoría da 0,899 (173715→173716)",
+        keywords = listOf("salmon"),
+        excludes = listOf("ahumado", "ahumada", "noruego ahumado", "pate", "salvaje")
+    ),
+    CookingYield(
         id = "pescado",
-        label = "Pescado",
+        maxRawKcalPer100 = MAX_RAW_KCAL_FISH,
+        label = "Pescado blanco y azul (salvo salmón)",
         family = FAMILY_FISH,
         factor = 0.78,
         rawLabel = "Crudo",
         cookedLabel = "Cocinado",
         method = "a la plancha o al horno",
-        // Un solo factor para todo el pescado no es una simplificación cómoda: es lo que dice el dato.
-        // De las 72 parejas crudo/cocinado-en-seco de pescado que hay en SR Legacy, 45 dan exactamente
-        // 0,78, en especies sin relación entre sí (bacalao 82→105, atún 144→184, merluza 90→116,
-        // salmón salvaje 142→182). La USDA aplica ese rendimiento de forma uniforme al pescado.
-        source = "FoodData Central SR Legacy: 0,78 en 45 de las 72 parejas de pescado cocinado en seco (p. ej. bacalao 171955→171956, atún 173706→173707, merluza 173713→175161, salmón 173686→171998)",
+        // **Aviso sobre de dónde sale este 0,78, corregido el 2026-11-27.** Antes aquí se afirmaba que
+        // "no es una simplificación cómoda: es lo que dice el dato", porque 45 de las 72 parejas de
+        // pescado de SR Legacy dan exactamente 0,78. La cifra es cierta y el razonamiento estaba
+        // invertido: al separar las parejas según si la USDA **midió** la entrada cocinada o la
+        // **imputó**, se ve que en las de 0,78 los tres macros dan el mismo cociente a tres decimales
+        // —bacalao 0,781/0,780/0,779, lubina 0,782/0,780/0,779, trucha 0,779/0,780/0,780—, que es la
+        // huella de haber dividido todos los nutrientes por un único número. El dato no dice 0,78: el
+        // dato **asume** 0,78.
+        //
+        // Donde la USDA sí midió el pescado cocinado, el rango real es 0,685 a 1,05. Se conserva el
+        // 0,78 porque para pescado blanco magro las parejas medidas quedan cerca (eglefino 0,822,
+        // fletán 0,820, abadejo de Alaska 0,685) y es lo mejor que hay; pero es una estimación de la
+        // USDA, no una medición, y el salmón ya tiene entrada propia por quedar fuera de rango.
+        //
+        // Para pescado **hervido o al vapor** —como se hace a diario la merluza en España— no hay base
+        // utilizable: en todo SR Legacy hay una sola pareja de calor húmedo emparejable, y también es
+        // imputada.
+        source = "FoodData Central SR Legacy: 0,78 es el valor que la USDA imputa al pescado cocinado en seco sin medición propia (45 de 72 parejas). Parejas con medición: eglefino 0,822 (171964→174198), fletán 0,820 (174200→174201), abadejo de Alaska 0,685 (173725→173681)",
         keywords = listOf(
-            "merluza", "pescadilla", "bacalao", "atun", "bonito", "salmon", "lubina", "dorada",
+            "merluza", "pescadilla", "bacalao", "atun", "bonito", "lubina", "dorada",
             "trucha", "tilapia", "panga", "perca", "mero", "rape", "lenguado", "caballa",
             "sardina", "sardinas", "boqueron", "boquerones", "emperador", "pez espada", "corvina",
             "rodaballo", "abadejo", "halibut", "fletan", "filete pescado", "lomo bacalao"
@@ -295,6 +446,7 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
 
     CookingYield(
         id = "arroz_integral",
+        maxRawKcalPer100 = MAX_RAW_KCAL_DRY,
         label = "Arroz integral",
         family = FAMILY_GRAIN,
         factor = 2.98,
@@ -307,7 +459,29 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
         defaultBasis = WeighBasis.COOKED
     ),
     CookingYield(
+        id = "arroz_vaporizado",
+        maxRawKcalPer100 = MAX_RAW_KCAL_DRY,
+        label = "Arroz vaporizado",
+        family = FAMILY_GRAIN,
+        factor = 3.04,
+        rawLabel = "En seco",
+        cookedLabel = "Cocido",
+        method = "hervido en agua",
+        // Entrada nueva (2026-11-27). El arroz vaporizado es líder de su categoría en España y
+        // absorbe más agua que el blanco corriente: con 2,81 una ración de 250 g cocidos se infla en
+        // +25 kcal (+8 %) y +6,8 g de hidratos (+11 %).
+        //
+        // Va antes que `arroz_blanco` porque el orden decide. Y nótese que la palabra "vaporizado"
+        // estaba hasta hoy en las exclusiones globales, así que este alimento **no se podía
+        // convertir en absoluto**: la entrada y esa retirada van juntas.
+        source = "FoodData Central SR Legacy: \"Rice, white, long-grain, parboiled, unenriched, dry\" 374 kcal (169758) ÷ \"cooked\" 123 kcal (169759)",
+        keywords = listOf("arroz vaporizado", "arroz sabroz", "arroz parboiled"),
+        minRawKcalPer100 = DRY_FLOOR_KCAL,
+        defaultBasis = WeighBasis.COOKED
+    ),
+    CookingYield(
         id = "arroz_blanco",
+        maxRawKcalPer100 = MAX_RAW_KCAL_DRY,
         label = "Arroz blanco",
         family = FAMILY_GRAIN,
         factor = 2.81,
@@ -321,6 +495,7 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
     ),
     CookingYield(
         id = "pasta",
+        maxRawKcalPer100 = MAX_RAW_KCAL_DRY,
         label = "Pasta",
         family = FAMILY_GRAIN,
         factor = 2.35,
@@ -339,6 +514,7 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
     ),
     CookingYield(
         id = "quinoa",
+        maxRawKcalPer100 = MAX_RAW_KCAL_DRY,
         label = "Quinoa",
         family = FAMILY_GRAIN,
         factor = 3.07,
@@ -352,6 +528,7 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
     ),
     CookingYield(
         id = "couscous",
+        maxRawKcalPer100 = MAX_RAW_KCAL_DRY,
         label = "Cuscús",
         family = FAMILY_GRAIN,
         factor = 3.36,
@@ -365,6 +542,7 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
     ),
     CookingYield(
         id = "bulgur",
+        maxRawKcalPer100 = MAX_RAW_KCAL_DRY,
         label = "Bulgur",
         family = FAMILY_GRAIN,
         factor = 4.12,
@@ -378,6 +556,7 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
     ),
     CookingYield(
         id = "cebada",
+        maxRawKcalPer100 = MAX_RAW_KCAL_DRY,
         label = "Cebada perlada",
         family = FAMILY_GRAIN,
         factor = 2.86,
@@ -394,6 +573,7 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
 
     CookingYield(
         id = "lentejas",
+        maxRawKcalPer100 = MAX_RAW_KCAL_DRY,
         label = "Lentejas",
         family = FAMILY_LEGUME,
         factor = 3.03,
@@ -407,6 +587,7 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
     ),
     CookingYield(
         id = "garbanzos",
+        maxRawKcalPer100 = MAX_RAW_KCAL_DRY,
         label = "Garbanzos",
         family = FAMILY_LEGUME,
         factor = 2.30,
@@ -420,6 +601,7 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
     ),
     CookingYield(
         id = "alubia_blanca",
+        maxRawKcalPer100 = MAX_RAW_KCAL_DRY,
         label = "Alubias blancas",
         family = FAMILY_LEGUME,
         factor = 2.40,
@@ -433,6 +615,7 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
     ),
     CookingYield(
         id = "alubia_roja",
+        maxRawKcalPer100 = MAX_RAW_KCAL_DRY,
         label = "Alubias rojas",
         family = FAMILY_LEGUME,
         factor = 2.62,
@@ -446,6 +629,7 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
     ),
     CookingYield(
         id = "alubia_negra",
+        maxRawKcalPer100 = MAX_RAW_KCAL_DRY,
         label = "Alubias negras",
         family = FAMILY_LEGUME,
         factor = 2.58,
@@ -459,6 +643,7 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
     ),
     CookingYield(
         id = "habas",
+        maxRawKcalPer100 = MAX_RAW_KCAL_DRY,
         label = "Habas secas",
         family = FAMILY_LEGUME,
         factor = 3.10,
@@ -475,13 +660,33 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
 
     CookingYield(
         id = "patata",
+        maxRawKcalPer100 = MAX_RAW_KCAL_TUBER,
         label = "Patata",
         family = FAMILY_TUBER,
-        factor = 0.75,
+        factor = 0.89,
         rawLabel = "Cruda",
-        cookedLabel = "Cocinada",
-        method = "al horno, con piel",
-        source = "FoodData Central SR Legacy: \"Potatoes, white, flesh and skin, raw\" 69 kcal (170028) ÷ \"baked\" 92 kcal (170434)",
+        cookedLabel = "Cocida",
+        method = "hervida",
+        // Corregido el 2026-11-27: antes 0,75, el rendimiento **al horno**.
+        //
+        // El de la patata es el abanico más amplio del catálogo, un 26 % de recorrido según el método
+        // (todo de SR Legacy, partiendo de 77 kcal/100 g en crudo):
+        //
+        //   hervida sin piel 0,92 (170440) · hervida con piel 0,89 (170438)
+        //   al horno 0,83 (170093) · al horno, variedad blanca 0,75 (170028→170434)
+        //   al microondas con piel 0,73 (170094)
+        //
+        // Se elige el de la hervida porque en España se hierve mucho más de lo que se hornea, y
+        // porque el error que corrige es el más grande: con 0,75, una ración de 250 g de patata
+        // cocida se registraba en 257 kcal donde hay 215 (**+19 %**) y con 8,3 g de hidratos de más.
+        // Quien pese patata asada se queda ahora un 16 % corto, que es menos daño y menos frecuente.
+        //
+        // **Por qué no hay dos entradas, una por método.** Se intentó, y no puede funcionar: las
+        // palabras "hervida", "cocida" y "vapor" están en las exclusiones globales —correctamente,
+        // porque un producto que las lleva en el nombre ya tiene sus datos en base cocida—, así que
+        // una entrada con esas palabras clave no se encontraría nunca. Y elegirla a mano tampoco es
+        // posible: esa interfaz no existe todavía. Separar por método exige antes ese selector.
+        source = "FoodData Central SR Legacy: \"Potatoes, flesh and skin, raw\" 77 kcal (170026) ÷ \"Potatoes, boiled, cooked in skin, flesh, without salt\" 87 kcal (170438). Banda real por método: 0,73 (microondas) a 0,92 (hervida sin piel)",
         keywords = listOf("patata", "patatas")
     )
 )
@@ -520,11 +725,52 @@ internal fun normalizeFoodName(name: String): String {
     return sb.toString()
 }
 
-/** true si todas las palabras de [phrase] aparecen como palabra completa en [normalized]. */
-internal fun phraseMatches(normalized: String, phrase: String): Boolean =
-    normalizeFoodName(phrase).split(' ')
+/**
+ * Formas con las que una palabra puede casar con su singular o su plural.
+ *
+ * **Por qué hace falta aquí.** La comparación es por palabra completa, y el KDoc de [GLOBAL_EXCLUDES]
+ * prometía que por eso estaban "las cuatro formas de cada adjetivo (masculino/femenino,
+ * singular/plural)". No estaban: de 134 entradas, **51 no tenían plural**. Y las que faltaban no eran
+ * inocuas — `relleno` y `rellena` estaban sin `rellenos`/`rellenas`, que es exactamente el fallo que
+ * el comentario decía evitar: `"Pimientos rellenos de carne picada"` pasaba el filtro y se convertía
+ * como si fuera carne picada cruda. Igual `pasta.excludes`, con `fresca`/`fresco` pero sin sus
+ * plurales, que dejaba pasar `"Tagliatelle frescos al huevo"`.
+ *
+ * Plegar el número en la comparación lo arregla de una vez y para siempre, en vez de añadir 51
+ * palabras y volver a quedarse corto a la siguiente — que es la conclusión a la que el propio §13.6
+ * del fundamento científico llegaba al admitir que "nunca se acaban las palabras".
+ *
+ * **Por qué un conjunto y no una forma canónica.** No hay una sola regla que sirva: quitar la "s"
+ * resuelve "tomates"→"tomate" pero no "yogures"→"yogur", y quitar "es" resuelve el segundo pero
+ * convierte "tomates" en "tomat". Así que se generan las variantes plausibles y dos palabras casan si
+ * comparten alguna. No es un lematizador: cubre la formación regular del plural español.
+ *
+ * El mínimo de longitud evita plegar palabras cortas donde la "s" es parte de la raíz ("gas", "mes").
+ */
+internal fun pluralStems(word: String): Set<String> {
+    if (word.length < 4 || !word.endsWith("s")) return setOf(word)
+    val stems = mutableSetOf(word, word.dropLast(1))          // platanos → platano, tomates → tomate
+    if (word.length >= 5 && word.endsWith("es")) {
+        stems.add(word.dropLast(2))                           // yogures → yogur, flores → flor
+        if (word.endsWith("ces")) stems.add(word.dropLast(3) + "z")  // nueces → nuez, peces → pez
+    }
+    return stems
+}
+
+/** true si las dos palabras son la misma salvo por el número gramatical. */
+internal fun mismaPalabra(a: String, b: String): Boolean =
+    a == b || pluralStems(a).any { it in pluralStems(b) }
+
+/**
+ * true si todas las palabras de [phrase] aparecen como palabra completa en [normalized], **tolerando
+ * singular y plural** (ver [pluralStems]).
+ */
+internal fun phraseMatches(normalized: String, phrase: String): Boolean {
+    val palabras = normalized.split(' ').filter { it.isNotEmpty() }
+    return normalizeFoodName(phrase).split(' ')
         .filter { it.isNotEmpty() }
-        .all { normalized.contains(" $it ") }
+        .all { termino -> palabras.any { mismaPalabra(it, termino) } }
+}
 
 /**
  * true si el nombre del producto indica que ya viene cocinado o que es un derivado o un preparado, en
@@ -566,8 +812,13 @@ fun findCookingYield(productName: String?): CookingYield? {
  * lo mismo que saber que está bien, pero bloquear sin fundamento sería peor que no bloquear.
  */
 fun CookingYield.looksAlreadyCooked(productKcalPer100: Double): Boolean {
-    val floor = minRawKcalPer100 ?: return false
-    return productKcalPer100 > 0.0 && productKcalPer100 < floor
+    if (productKcalPer100 <= 0.0) return false
+    minRawKcalPer100?.let { if (productKcalPer100 < it) return true }
+    // La comprobación por arriba: un producto demasiado calórico para estar crudo está frito, curado,
+    // desecado o es un snack. Donde no hay suelo defendible sí puede haber techo — ver los constantes
+    // MAX_RAW_KCAL_*, que es donde está explicado por qué esa asimetría no es arbitraria.
+    maxRawKcalPer100?.let { if (productKcalPer100 > it) return true }
+    return false
 }
 
 /** Busca un alimento del catálogo por su [CookingYield.id]. Para recuperar el que se eligió a mano. */

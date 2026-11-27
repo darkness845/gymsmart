@@ -87,12 +87,13 @@ class CookingYieldTest {
 
     @Test
     fun la_carne_cocinada_concentra_las_kcal() {
-        // Pechuga cruda 120 kcal/100 g; con factor 0,76 el cocinado sale 157,9, que es exactamente el
-        // valor que la USDA midió en pechuga asada (157). Es la comprobación de que el factor no está
-        // invertido: cocinar carne SUBE las kcal por 100 g.
+        // Pechuga cruda 120 kcal/100 g; con factor 0,73 el cocinado sale 164,4, que es el valor que
+        // la USDA midió en pechuga **asada** (165). Antes el factor era 0,76 y se comparaba con 157,
+        // que es la pechuga *estofada*: la cita del catálogo estaba equivocada (doc/13 §2.2, C-9).
+        // Es la comprobación de que el factor no está invertido: cocinar carne SUBE las kcal/100 g.
         val yield = findCookingYield("Pechuga de pollo")!!
         val cooked = yield.per100For(120.0, WeighBasis.COOKED)
-        assertClose(157.9, cooked, 1.0)
+        assertClose(165.0, cooked, 1.5)
         assertTrue(cooked > 120.0, "cocinar carne tiene que subir las kcal por 100 g")
     }
 
@@ -108,9 +109,13 @@ class CookingYieldTest {
     @Test
     fun reconoce_pescado_de_varias_especies() {
         // El hueco más grave de la primera versión del catálogo: no había ni un pescado.
-        for (nombre in listOf("Merluza", "Lomos de bacalao", "Salmón fresco", "Lubina", "Filete de panga")) {
+        for (nombre in listOf("Merluza", "Lomos de bacalao", "Lubina", "Filete de panga")) {
             assertEquals("pescado", findCookingYield(nombre)?.id, "no reconoció $nombre")
         }
+        // El salmón tiene entrada propia desde el 2026-11-27: la USDA midió el de piscifactoría y su
+        // densidad energética no cambia al cocinarlo (208 → 206 kcal), así que el 0,78 del pescado
+        // blanco le metía un +29 % (doc/13 §2.2, C-3).
+        assertEquals("salmon", findCookingYield("Salmón fresco")?.id)
     }
 
     @Test
@@ -175,12 +180,20 @@ class CookingYieldTest {
             Triple("Alubias negras", 341.0, 132.0),
             Triple("Habas", 341.0, 110.0),
             Triple("Bacalao", 82.0, 105.0),
-            Triple("Pechuga de pollo", 120.0, 157.0),
-            Triple("Muslo de pollo", 121.0, 176.0),
+            // Los cuatro corregidos el 2026-11-27 contra el volcado de SR Legacy (doc/13 §2.2):
+            // pollo y muslo citaban la entrada "braised" creyendo que era "roasted"; la picada y el
+            // cordero usaban un rendimiento de PESO como si fuera un cociente de energía; y la patata
+            // usaba el del horno donde en España se hierve.
+            Triple("Pechuga de pollo", 120.0, 165.0),   // 171477, asada
+            Triple("Muslo de pollo", 121.0, 179.0),     // 172388, asado
+            Triple("Carne picada", 215.0, 250.0),       // 171796 -> 174032, 85/15 MG
+            Triple("Cordero", 282.0, 283.0),            // 174370 -> 172544, picado
+            Triple("Salmon", 208.0, 206.0),             // 175167 -> 175168, piscifactoria
+            Triple("Arroz vaporizado", 374.0, 123.0),   // 169758 -> 169759
             Triple("Pavo picado", 148.0, 203.0),
             Triple("Solomillo de cerdo", 109.0, 143.0),
             Triple("Gambas", 85.0, 99.0),
-            Triple("Patata", 69.0, 92.0)
+            Triple("Patata", 77.0, 87.0)                // 170026 -> 170438, hervida
         )
         for ((name, raw, cookedEsperado) in casos) {
             val yield = assertNotNull(findCookingYield(name), "no reconoció $name")
@@ -191,12 +204,12 @@ class CookingYieldTest {
     @Test
     fun el_total_de_la_racion_no_depende_de_la_base_elegida() {
         // La invariante de todo esto: la misma comida real tiene las mismas kcal, se pese antes o
-        // después de cocinarla. 100 g de pollo crudo son 76 g de pollo hecho.
+        // después de cocinarla. 100 g de pollo crudo son 73 g de pollo hecho.
         val yield = findCookingYield("Pechuga de pollo")!!
         val kcalPer100Raw = 120.0
 
         val totalPesandoCrudo = yield.per100For(kcalPer100Raw, WeighBasis.RAW) / 100.0 * 100.0
-        val totalPesandoCocinado = yield.per100For(kcalPer100Raw, WeighBasis.COOKED) / 100.0 * 76.0
+        val totalPesandoCocinado = yield.per100For(kcalPer100Raw, WeighBasis.COOKED) / 100.0 * 73.0
 
         assertClose(totalPesandoCrudo, totalPesandoCocinado, 0.5)
     }
@@ -204,8 +217,8 @@ class CookingYieldTest {
     @Test
     fun el_peso_crudo_equivalente_es_coherente() {
         val yield = findCookingYield("Pechuga de pollo")!!
-        // 152 g de pollo hecho vienen de 200 g de crudo (152 / 0,76).
-        assertClose(200.0, yield.rawWeightFor(152.0, WeighBasis.COOKED), 1.0)
+        // 146 g de pollo hecho vienen de 200 g de crudo (146 / 0,73).
+        assertClose(200.0, yield.rawWeightFor(146.0, WeighBasis.COOKED), 1.0)
     }
 
     @Test
@@ -281,12 +294,98 @@ class CookingYieldTest {
         // código real, así que quedan fijados aquí para que no vuelvan.
         val agujeros = listOf(
             "Patatas prefritas congeladas", "Patatas bravas", "Garbanzos en tarro",
-            "Lentejas tarro", "Arroz vaporizado", "Arroz en vasito microondas",
-            "Pechuga de pollo con solucion anadida", "Merluza congelada glaseada"
+            "Lentejas tarro", "Arroz en vasito microondas",
+            "Pechuga de pollo con solucion anadida"
         )
         for (nombre in agujeros) {
             assertNull(findCookingYield(nombre), "sigue abierto el agujero: $nombre")
         }
+    }
+
+    @Test
+    fun dos_de_esos_nueve_agujeros_no_lo_eran_y_ahora_si_se_convierten() {
+        // "Arroz vaporizado" y "Merluza glaseada" estaban en la lista de agujeros tapados, y la
+        // auditoría del 2026-11-27 (doc/13 §2.2, C-7) demostró que eran **falsos negativos**: los dos
+        // son productos crudos o en seco, de altísima rotación, a los que la conversión sí hay que
+        // ofrecerla. El arroz vaporizado se vende en seco y es líder de su categoría; el glaseado es
+        // una capa de agua que se aplica al pescado crudo al congelarlo.
+        //
+        // Lo que de verdad protegía del caso cocinado no era la palabra, sino el número, y ése sigue
+        // en pie (ver el test de abajo).
+        assertNotNull(findCookingYield("Arroz vaporizado"))
+        assertNotNull(findCookingYield("Merluza congelada glaseada"))
+        assertNotNull(findCookingYield("Preparado de carne picada de vacuno y cerdo"))
+        assertNotNull(findCookingYield("Arroz especial para paella"))
+        assertNotNull(findCookingYield("Fideos finos para sopa"))
+    }
+
+    @Test
+    fun el_vasito_de_arroz_lo_sigue_cazando_el_suelo_aunque_el_nombre_no_lo_diga() {
+        // La defensa buena: el número. Un "Arroz vaporizado" que marque 158 kcal/100 g no es arroz en
+        // seco, es un vasito ya cocido, y el suelo lo bloquea aunque el nombre no delate nada.
+        val arroz = findCookingYield("Arroz vaporizado")!!
+        assertTrue(arroz.looksAlreadyCooked(158.0), "un arroz de 158 kcal/100 g ya está cocido")
+        assertFalse(arroz.looksAlreadyCooked(350.0), "un arroz en seco de 350 kcal/100 g sí se convierte")
+    }
+
+    @Test
+    fun el_techo_de_cordura_caza_lo_que_el_suelo_no_puede() {
+        // La comprobación solo miraba hacia abajo, y por arriba se colaban productos reales con
+        // errores enormes (doc/13 §2.2, C-6). Cada caso con las kcal que tiene en el lineal.
+        val casos = listOf(
+            Triple("Patatas paja", 560.0, "patata"),
+            Triple("Patatas noisette", 180.0, "patata"),
+            Triple("Tortilla de patatas", 160.0, "patata"),
+            Triple("Mojama de atun", 330.0, "pescado"),
+            Triple("Garbanzos tostados", 410.0, "garbanzos"),
+            Triple("Fideos orientales instantaneos", 450.0, "pasta")
+        )
+        for ((nombre, kcal, idEsperado) in casos) {
+            val y = findCookingYield(nombre)
+            // Si el nombre ya lo descarta, perfecto; si no, lo tiene que descartar el techo.
+            if (y != null) {
+                assertEquals(idEsperado, y.id, "$nombre cae en la categoría equivocada")
+                assertTrue(
+                    y.looksAlreadyCooked(kcal),
+                    "$nombre ($kcal kcal/100 g) debería bloquearse por el techo"
+                )
+            }
+        }
+    }
+
+    @Test
+    fun el_techo_no_estorba_a_los_alimentos_crudos_normales() {
+        // Cada uno con las kcal que tiene en crudo según la tabla de genéricos.
+        val crudos = listOf(
+            "Pechuga de pollo" to 120.0,
+            "Muslo de pollo" to 121.0,
+            "Carne picada de ternera" to 176.0,
+            "Salmon" to 208.0,
+            "Merluza" to 90.0,
+            "Patata" to 69.0,
+            "Arroz blanco" to 365.0,
+            "Garbanzos" to 378.0,
+            "Avena" to 389.0
+        )
+        for ((nombre, kcal) in crudos) {
+            val y = findCookingYield(nombre) ?: continue
+            assertFalse(
+                y.looksAlreadyCooked(kcal),
+                "$nombre ($kcal kcal/100 g) es un alimento crudo normal y no debería bloquearse"
+            )
+        }
+    }
+
+    @Test
+    fun los_plurales_que_faltaban_en_las_exclusiones_ya_no_hacen_falta() {
+        // El KDoc prometía las cuatro formas de cada adjetivo y faltaba el plural en 51 de 134
+        // entradas. `relleno`/`rellena` estaban sin sus plurales, que es exactamente el fallo que el
+        // comentario decía evitar. Ahora el número lo plega la comparación.
+        assertNull(findCookingYield("Pimientos rellenos de carne picada"))
+        assertNull(findCookingYield("Patatas rellenas de queso"))
+        assertNull(findCookingYield("Empanadillas de carne picada"))
+        assertNull(findCookingYield("Tagliatelle frescos al huevo"))
+        assertNull(findCookingYield("Lentejas cocidas"))
     }
 
     @Test
