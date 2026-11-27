@@ -7,9 +7,13 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
-    <!-- Alarma exacta para el fin del descanso (Tarea C). Desde Android 12 el usuario la concede a
-         mano; si no la concede, RestNotifier cae a una alarma inexacta en vez de fallar. -->
-    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
+    <!-- Alarma exacta para el fin del descanso (Tarea C). SCHEDULE_EXACT_ALARM viene DENEGADO por
+         defecto desde Android 14, y con la alarma inexacta el aviso podía llegar minutos tarde.
+         USE_EXACT_ALARM (Android 13+) se concede solo al instalar. Ojo para Play Store: Google solo lo
+         permite en apps de alarma/temporizador; ver doc/04-produccion-playstore.md. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32"/>
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
+    <uses-permission android:name="android.permission.VIBRATE"/>
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.health.READ_STEPS"/>
     <uses-permission android:name="android.permission.health.READ_ACTIVE_CALORIES_BURNED"/>

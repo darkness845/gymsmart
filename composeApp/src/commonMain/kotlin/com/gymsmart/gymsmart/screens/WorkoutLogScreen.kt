@@ -112,8 +112,10 @@ fun WorkoutLogScreen(
     val restLeft = restStart?.let { restTotal - ((now - it) / 1000).toInt() }
     val resting = restLeft != null && restLeft > -600
     val over = resting && (restLeft ?: 1) <= 0
-    // El contador ha llegado a cero con la app delante: el aviso es el de dentro, no el del sistema.
-    LaunchedEffect(over) { if (over) restNotifier.cancel() }
+    // Ya no se cancela la notificación al llegar a cero con la app delante: el usuario la quiere
+    // siempre, como un mensaje de WhatsApp. Se pide el permiso al entrar para que el primer descanso
+    // ya avise.
+    LaunchedEffect(Unit) { restNotifier.requestPermissionIfNeeded() }
 
     fun updateSets(newSets: List<WorkoutSet>) {
         onSessionChange(session.copy(sets = session.sets + (exercise.id to newSets)))
@@ -464,7 +466,7 @@ fun WorkoutLogScreen(
             Modifier.workoutPage().background(p.background).padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            if (over && !popupOff) {
+            if (over && !popupOff && !restNotifier.showsSystemNotification) {
                 Row(
                     Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(p.accent).clickable(role = Role.Button) { popupOff = true }
                         .padding(horizontal = 14.dp, vertical = 11.dp),

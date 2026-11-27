@@ -35,3 +35,11 @@ nada de esto salvo que el usuario lo pida explícitamente — es una checklist p
 
 Nada de esto es urgente mientras la app sea de uso personal. Este documento existe para que, el día que
 se decida dar el salto, haya una lista clara en vez de descubrir los problemas sobre la marcha.
+
+## `USE_EXACT_ALARM` (añadido 2026-11-27)
+
+El aviso de fin de descanso usa `USE_EXACT_ALARM`, que Android 13+ concede al instalar. Google Play
+solo lo permite en apps cuya función principal sea alarma, temporizador o calendario, y lo revisa.
+Antes de publicar: o justificarlo como temporizador de descanso, o quitarlo y pedir
+`SCHEDULE_EXACT_ALARM` al usuario (Ajustes → Alarmas y recordatorios), aceptando que sin él el
+aviso puede retrasarse.

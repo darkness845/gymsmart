@@ -12,11 +12,11 @@ import androidx.compose.runtime.Composable
  * eso el aviso se **programa en el sistema operativo** al guardar la serie, en vez de depender de que
  * la app siga viva.
  *
- * **Cómo se evita el aviso doble.** Siempre se programa. Si el contador de la pantalla llega a cero
- * con la app delante, la propia pantalla llama a [cancel] y enseña el aviso dentro de la app, así que
- * la notificación del sistema no llega a salir. Si la app estaba en segundo plano no se cancela nada
- * y salta la notificación, que es justo lo que se quiere. En el peor caso salen los dos, que molesta
- * pero no engaña.
+ * **Siempre la notificación del sistema, nunca un aviso dentro de la app** (decisión del usuario,
+ * 2026-11-27): quiere enterarse como de un WhatsApp, encendiendo la pantalla, también con la app
+ * delante. Antes, si el contador llegaba a cero con la app abierta, la pantalla cancelaba la alarma y
+ * pintaba un aviso propio; eso se quitó. Donde no hay notificación del sistema
+ * ([showsSystemNotification] = `false`), la pantalla sigue enseñando su aviso.
  *
  * Solo hace algo real en Android. En el resto de plataformas el gimnasio no es el caso de uso (el
  * escritorio y la web no se llevan al banco de press), así que el aviso de dentro de la app basta.
@@ -27,6 +27,15 @@ interface RestNotifier {
 
     /** Cancela el aviso pendiente, si lo hay. Seguro de llamar aunque no haya ninguno. */
     fun cancel()
+
+    /** `true` si el aviso sale como notificación del sistema; si no, la pantalla pinta el suyo. */
+    val showsSystemNotification: Boolean get() = false
+
+    /**
+     * Pide el permiso de notificaciones si hace falta (Android 13+ las trae apagadas). Se llama al
+     * abrir la sesión, para que el primer descanso ya avise.
+     */
+    fun requestPermissionIfNeeded() {}
 }
 
 @Composable
