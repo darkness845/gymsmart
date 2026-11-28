@@ -5,17 +5,25 @@
 > obligación de verificar contra fuente primaria; esta sesión hizo de auditor independiente,
 > contrastó los informes entre sí y comprobó de primera mano los hallazgos que condicionan el plan.
 >
-> **Estado de implementación** (actualizado el 2026-11-27, después de redactar el informe):
-> - ✅ **Fase 0 completa** — búsqueda migrada a Search-a-licious con hidratación por EAN, 503
->   registrado en los logs, y la app ya distingue "no existe" de "no he podido preguntar".
-> - ✅ **Fase 1 parcial** — filtro de sanidad en el servidor para los dos caminos (búsqueda y
->   escáner), deduplicación, campos nuevos pedidos a OFF, base 100 ml rotulada, y el escáner ya no
->   deja registrar un producto sin datos utilizables. **Pendiente** de la Fase 1: validación de
->   entrada en `/nutrition/add` e idempotencia del guardado.
-> - ⬜ Fases 2 a 5 sin empezar.
+> **Estado de implementación** (actualizado el 2026-11-28):
 >
-> El resto del documento es el diagnóstico tal como se redactó, con una corrección marcada en la
-> Fase 0 (§3) sobre el campo `nutriments` del índice de búsqueda.
+> | Fase | Estado |
+> |---|---|
+> | **0 — Parar el incendio** | ✅ completa |
+> | **1 — Dejar de registrar datos imposibles** | ✅ completa |
+> | **2 — Que la búsqueda encuentre lo que se escribe** | ✅ completa |
+> | **3 — Precisión de la conversión** | ✅ completa |
+> | **4 — La capa curada** | ✅ completa salvo llegar a 300-400 genéricos (van 137, de 89) |
+> | **5 — Cobertura española** | 🟡 parcial: atribución ODbL hecha; CIQUAL no integrada; BEDCA descartada por licencia |
+>
+> **Lo único que no se ha tocado a propósito** son los multiplicadores de actividad y el TEF (§D-1 y
+> C-1 de doc/12): corregirlos exige migrar a la vez el `adaptive_factor` ya guardado, y eso es una
+> decisión del usuario sobre sus datos históricos, no de código.
+>
+> El resto del documento es el diagnóstico tal como se redactó, con **tres correcciones marcadas** de
+> cosas que resultaron inexactas al implementarlas: el campo `nutriments` del índice de búsqueda
+> (§3, Fase 0), el umbral del filtro de sanidad (§3, Fase 1) y la separación de la patata por método
+> (§3, Fase 3).
 >
 > Complementa a [12-auditoria-comite-kcal-2026-11-27.md](12-auditoria-comite-kcal-2026-11-27.md),
 > que cubrió el **gasto energético** (BMR/TDEE/objetivos) el mismo día. Este cubre el **otro lado de
@@ -361,6 +369,15 @@ Ordenado por daño real al usuario, no por elegancia. **Nada de esto está imple
 6. **Filtro de sanidad en el servidor**, en los dos caminos: techo de 902 kcal/100 g (= 100 g de
    grasa pura), cada macro en 0..100, **P+C+F ≤ 101**, y descarte por `data_quality_errors_tags`.
    Medido: 0 falsos positivos sobre 102 productos válidos.
+
+   > **Corrección (2026-11-27, al implementarlo).** El §2.1 de este informe presenta el aceite con
+   > P+C+G = 100,6 g/100 g como uno de los casos que el filtro caza. **Con el umbral en 101 no lo
+   > caza, y se ha decidido que así se quede.** Bajarlo a 100,5 para cogerlo arriesga falsos
+   > positivos que no se han medido, y el daño de ese producto es nulo: 900 kcal con 100 g de grasa
+   > es exactamente lo que es un aceite, y las 0,6 g de proteína son ruido de la etiqueta. Lo que el
+   > filtro tiene que cazar es el coco rallado (105 g) y, sobre todo, la energía que no cuadra con
+   > los macros, que es donde están los errores del 75 % y del 150 %. Hay un test que documenta que
+   > ese caso **se acepta a propósito**, para que nadie lo "arregle" sin saber lo que cuesta.
 7. **Aplicar el filtro de 0 kcal también al escáner** (D-3). Hoy escanear un vino registra 0 kcal.
 8. **Deduplicar** por (nombre, marca) normalizados, quedándose con el de mayor `completeness`.
 9. **Base 100 ml**: rotular "por X ml" cuando `nutrition_data_per == "100ml"`.
@@ -385,6 +402,19 @@ Ordenado por daño real al usuario, no por elegancia. **Nada de esto está imple
     bloquea los vasitos.
 17. **Desdoblar por método**: `patata_hervida` 0,90, `arroz_vaporizado` 3,04, picada por nivel de
     grasa (0,73/0,69/0,63), `pavo_pechuga` → 0,74, salmón de piscifactoría ≈1,0.
+
+    > **Corrección (2026-11-27, al implementarlo).** Separar la patata en dos entradas por método
+    > **no puede funcionar**, y el test de integridad del catálogo fue lo que lo detectó: las
+    > palabras "hervida", "cocida" y "vapor" están en las exclusiones globales —correctamente, porque
+    > un producto que las lleva en el nombre ya tiene sus datos en base cocida— así que una entrada
+    > con esas palabras clave no se encontraría nunca, y elegirla a mano tampoco es posible porque
+    > esa interfaz no existe (lo señala este mismo informe en §2.4, I-6). Se resolvió con **una sola
+    > entrada a 0,89**, el de la hervida, porque en España se hierve más de lo que se hornea y es el
+    > error más grande de los dos. Separar por método exige antes el selector.
+    >
+    > El `arroz_vaporizado` y el salmón sí se desdoblaron. El `pavo_pechuga` se queda en 0,83: el
+    > 0,74 del informe viene de la tabla de rendimientos de peso, que es la magnitud equivocada para
+    > este campo, y SR Legacy no tiene pechuga de pavo *sin piel*, que es la que se vende en España.
 18. **Factores por macro** solo donde ambas entradas tengan `data_points ≥ 5` y la discrepancia
     supere el 10 % (D-4).
 19. **`yield_factor REAL` persistido** (I-3). **Prerrequisito de 17 y 18**: sin él, corregir un

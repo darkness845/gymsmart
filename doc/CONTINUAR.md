@@ -6,7 +6,7 @@
 > [08-backlog-mejoras.md](08-backlog-mejoras.md) (cada hallazgo con su estado).
 > Este documento se actualiza cada vez que se termina algo, no solo al final de la sesión.
 
-**Última actualización**: 2026-11-27 (**segunda auditoría del día: comité de 5 paneles sobre el registro de alimentos y macros** — solo diagnóstico, nada implementado; ver la sección inmediatamente siguiente). Antes: 2026-11-27 (auditoría del comité multidisciplinar sobre el cálculo de kcal — solo diagnóstico, nada implementado). Antes: 2026-11-27 (N3/W5 y limpieza del tema viejo + AUD-16, sin commitear).
+**Última actualización**: 2026-11-28 (**fases 1 a 5 de la auditoría de alimentos implementadas**: 177 tests, verde en los cinco targets, sin commitear al remoto todavía. **El servidor hay que redesplegarlo en Render.** Ver la sección inmediatamente siguiente). Antes: 2026-11-27 (**segunda auditoría del día: comité de 5 paneles sobre el registro de alimentos y macros**). Antes: 2026-11-27 (auditoría del comité multidisciplinar sobre el cálculo de kcal — solo diagnóstico, nada implementado). Antes: 2026-11-27 (N3/W5 y limpieza del tema viejo + AUD-16, sin commitear).
 
 ## 🔴 2026-11-27 — Auditoría del registro de alimentos: comité de 5 paneles (sin implementar)
 
@@ -67,13 +67,36 @@ falla la red tras un INSERT.
   no existe y exige `TURSO_DB_URL`) y se ha desactivado con su motivo escrito, **sin borrarlo**.
   → **Ya se puede añadir `:server:test` a la lista de verificación de CLAUDE.md.**
 
-**Siguiente paso**: resto de la Fase 1 (validar la entrada de `/nutrition/add` e idempotencia del
-guardado, que es el doble conteo invisible) y Fase 2 (plurales en la búsqueda). Las fases 3 a 5 del
-informe siguen sin empezar, y la Fase 3 **es una migración de datos**: hay que persistir
-`yield_factor` antes de corregir ningún factor de cocción.
+**2026-11-28 — las fases 1 a 5 están hechas.** El usuario pidió ejecutarlo todo. Resumen por fase en
+`doc/07` y detalle en el informe; lo que hay que saber para seguir:
 
-**Sin probar en el móvil**: todo lo de esta tanda es servidor y lógica de cliente, pero el servidor
-**hay que redesplegarlo en Render** para que la búsqueda funcione en el dispositivo. Antes: 2026-11-26 (tarea 7 cerrada en código; **estilo Melocotón aplicado a todas las pantallas en uso**; commits por temas y push hechos a petición del usuario. Pendiente: redesplegar el servidor, probar en el móvil, variante oscura de Melocotón).
+- **Fase 1** ✅ idempotencia del guardado (`client_id` + `INSERT OR IGNORE`) y validación de entrada.
+- **Fase 2** ✅ plegado de singular/plural en la búsqueda, aviso al bloquear la conversión, redondeos.
+- **Fase 3** ✅ cuatro factores corregidos contra el volcado de SR Legacy, techo de cordura por
+  familia, y **un factor por macro** con los valores de origen persistidos.
+- **Fase 4** ✅ catálogo de 89 → **137 genéricos**, generador versionado en `tools/`, medidas caseras
+  y alias. Falta solo llegar a los 300-400 que proponía el informe: **se amplía editando
+  `tools/genericos.csv` y regenerando**, no a mano.
+- **Fase 5** 🟡 atribución ODbL hecha. CIQUAL (Licence Ouverte, redistribuible) sin integrar; BEDCA
+  descartada por no tener licencia publicada.
+
+**Lo único que NO se ha tocado, y a propósito**: los multiplicadores de actividad y el TEF del modo
+pulsera (§D-1 del informe y C-1 de `doc/12`). Corregirlos sin migrar a la vez el `adaptive_factor` ya
+guardado **duplicaría la corrección**, y eso es una decisión sobre los datos históricos del usuario.
+Está pendiente de que él decida.
+
+**Tres cosas del informe resultaron inexactas al implementarlas** y están marcadas en él: el campo
+`nutriments` del índice de búsqueda (existe pero no es fiable), el umbral del filtro de sanidad (el
+aceite de 100,6 g se acepta a propósito) y la separación de la patata por método (imposible sin un
+selector que no existe).
+
+**Pendiente de verificar en el móvil**: nada de esto se ha ejecutado en un dispositivo. Y sobre todo,
+**el servidor hay que redesplegarlo en Render**: sin eso la búsqueda sigue caída en el móvil, porque
+todo el arreglo de Open Food Facts vive en el servidor.
+
+**Decisión pequeña que puede querer revertir**: el selector de ración muestra ahora un botón con la
+ración del propio alimento ("1 unidad grande · 50 g"). No son los chips de 50/100/150/200 g que pidió
+quitar —aquellos eran cantidades inventadas e iguales para todo— pero están en el mismo sitio. Antes: 2026-11-26 (tarea 7 cerrada en código; **estilo Melocotón aplicado a todas las pantallas en uso**; commits por temas y push hechos a petición del usuario. Pendiente: redesplegar el servidor, probar en el móvil, variante oscura de Melocotón).
 
 ## 🔎 2026-11-27 — Segunda auditoría del cálculo de kcal: comité de 3 paneles (sin implementar)
 

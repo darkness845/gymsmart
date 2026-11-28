@@ -4,6 +4,34 @@ Bitácora corta por sesión de trabajo sobre el endurecimiento del proyecto. Ent
 
 ---
 
+## 2026-11-28 — Fases 1 a 5 de la auditoría de alimentos
+
+Continuación de la auditoría del día anterior. El usuario pidió ejecutarlo todo.
+
+- **Fase 1**: guardado **idempotente** (`client_id` con índice único por usuario e `INSERT OR
+  IGNORE`), que cierra el doble conteo invisible cuando falla la red tras un INSERT; y validación de
+  entrada en `/nutrition/add` y `/update`, que no tenían ninguna — se aceptaban gramos negativos,
+  `kcalPer100` sin techo, fechas arbitrarias y un `mealType` desconocido que creaba comidas
+  invisibles en pantalla pero contadas por el `SUM` del autoajuste.
+- **Fase 2**: la búsqueda **plega singular y plural** ("huevos", "pechugas de pollo" devolvía lista
+  vacía); aviso cuando la conversión se bloquea, que el código prometía por escrito y no daba; y
+  `roundToInt` en toda la presentación.
+- **Fase 3**: **cuatro factores de cocción corregidos** contra el volcado de SR Legacy, descargado
+  porque la DEMO_KEY de la API da 429. El error de fondo era mezclar *rendimiento de peso* con
+  *cociente de densidad energética*: la picada pasa de 0,73 a 0,86 y el cordero de 0,74 a 1,00. Dos
+  citas eran falsas (171140 y 172853 son `braised`, no `roasted`). El 0,78 del pescado resultó ser
+  **una imputación de la USDA**, no un dato: donde midió, el rango real es 0,685-1,05, y el salmón de
+  piscifactoría (1,01) salió a entrada propia. Techo de cordura por familia. Y **un factor por
+  macro**, con los valores de origen persistidos para que el historial no deshaga con aritmética.
+- **Fase 4**: catálogo de **89 a 137 genéricos** con `tools/gen_genericos.py` + `genericos.csv`
+  versionados (el script que la cabecera prometía y no existía), 44 alimentos con **medidas caseras**
+  de `food_portion.csv`, 42 con alias, y los tres errores de curación corregidos.
+- **Fase 5**: atribución ODbL en la interfaz (bloqueante para Play Store). CIQUAL no integrada;
+  BEDCA descartada por licencia.
+- **Sin tocar a propósito**: multiplicadores de actividad y TEF, que exigen migrar el
+  `adaptive_factor` guardado y son decisión del usuario.
+- 177 tests (desde 130), verde en los cinco targets. **El servidor hay que redesplegarlo en Render.**
+
 ## 2026-11-27 (cont.) — Auditoría del registro de alimentos y Fase 0: la búsqueda vuelve a funcionar
 
 Comité de 5 paneles sobre el registro de alimentos (informe en

@@ -637,8 +637,16 @@ y se concentra, el arroz la absorbe y se diluye.
 
 Es el que documenta la propia USDA: *"nutrient composition of a cooked food may be calculated from the
 uncooked food by applying cooking yield factors to these data to reflect changes in food weights
-resulting from moisture and fat losses during cooking"*. Los nutrientes se conservan; lo que cambia es
-el peso. Siendo `f` el rendimiento (peso cocinado ÷ peso crudo):
+resulting from moisture and fat losses during cooking"*.
+
+> ⚠️ **Corregido el 2026-11-27.** Aquí decía, a continuación de esa cita, *"los nutrientes se
+> conservan; lo que cambia es el peso"*, dando a entender que lo afirmaba la USDA. **No lo afirma, y
+> es falso para la grasa.** La propia publicación de rendimientos define *tres* magnitudes separadas
+> —`Yield`, `Moisture change` y **`Fat change`**— y dice que el NDL aplica *"cooking yields **and/or**
+> nutrient retention factors"*. Al cocinar una carne la grasa gotea y se va; solo el agua se comporta
+> como suponía esa frase. De ahí que desde el 2026-11-27 cada macro tenga su propio factor (§13.9).
+
+Siendo `f` el cociente de densidad energética (kcal/100 g en crudo ÷ kcal/100 g cocinado):
 
 ```
 valor por 100 g en base cocinada = valor por 100 g en base cruda ÷ f
@@ -676,14 +684,28 @@ identificadores de FoodData Central, para poder comprobar cualquier fila.
 
 | Alimento | Factor | Pareja |
 |---|---|---|
-| Muslo de pollo | 0,69 | thigh, meat only: 121 (173627) → roasted 176 (172853) |
-| Pechuga de pollo | 0,76 | breast, skinless boneless: 120 (171077) → roasted 157 (171140) |
-| Pechuga de pavo fresca | 0,83 | turkey breast: 157 (171093) → roasted 189 (171492) |
+| Muslo de pollo | **0,68** | thigh, meat only: 121 (173627) → **roasted 179 (172388)** |
+| Pechuga de pollo | **0,73** | breast, meat only: 120 (171077) → **roasted 165 (171477)** |
+| Pechuga de pavo fresca | 0,83 | turkey breast, meat and skin: 157 (171093) → roasted 189 (171492) |
 | Carne picada de pavo | 0,73 | ground turkey: 148 (171505) → cooked 203 (171506) |
-| Carne picada de ternera | 0,73 | *Tabla de rendimientos 2012*: patty <12 % grasa, grilled — 73 % (n=40) |
+| Carne picada de ternera | **0,86** | **ground beef 85/15: 215 (171796) → patty broiled 250 (174032)** |
 | Filete/solomillo de ternera | 0,79 | tenderloin roast lean: 139 (171765) → roasted 177 (174004) |
 | Lomo/solomillo de cerdo | 0,76 | pork tenderloin lean: 109 (168249) → roasted 143 (168250) |
-| Cordero | 0,74 | *Tabla de rendimientos 2012*: retail roasts — 74 % (rango 53–88 %) |
+| Cordero | **1,00** | **ground lamb: 282 (174370) → broiled 283 (172544)** |
+
+> ⚠️ **Cuatro de estas filas estaban mal y se corrigieron el 2026-11-27** (detalle en
+> [13-auditoria-nutricion-2026-11-27.md](13-auditoria-nutricion-2026-11-27.md) §2.2):
+>
+> - **Pollo y muslo citaban la entrada equivocada.** 171140 y 172853 se describían aquí como
+>   *"roasted"* y en el volcado son **`cooked, braised`**: estofado. El asado es 171477 y 172388. El
+>   método que la app mostraba al usuario ("al horno") venía de un dato de estofado.
+> - **La picada y el cordero mezclaban dos magnitudes distintas.** La *Tabla de rendimientos* publica
+>   **rendimiento de peso** (de 100 g crudos quedan 73 cocinados), pero el factor se usa como
+>   **cociente de densidad energética**. En una carne grasa no coinciden ni de lejos, porque la grasa
+>   gotea mientras el agua se evapora: la picada va de 0,81 (90/10) a 1,20 (70/30) según el nivel de
+>   grasa, y el cordero picado da 0,996. Con 0,73, una hamburguesa de 150 g ya hecha se registraba en
+>   522 kcal donde la USDA mide 405.
+> - De paso, el *"n=40"* que se citaba para la picada era **n=4** en la fila real de esa tabla.
 
 **Pescado y marisco**
 
@@ -692,11 +714,26 @@ identificadores de FoodData Central, para poder comprobar cualquier fila.
 | Pescado (todas las especies) | 0,78 | ver nota abajo |
 | Gambas y langostinos | 0,86 | shrimp: 85 (175179) → cooked 99 (175180) |
 
-Un único factor para todo el pescado no es una simplificación por comodidad: **es lo que dice el dato**.
-De las 72 parejas de pescado cocinado en calor seco que hay en SR Legacy, **45 dan exactamente 0,78**,
-en especies sin ninguna relación entre sí: bacalao 82→105 (171955→171956), atún 144→184
-(173706→173707), merluza 90→116 (173713→175161), salmón salvaje 142→182 (173686→171998). La USDA aplica
-ese rendimiento de forma uniforme al pescado.
+> ⚠️ **Reescrito el 2026-11-27: el razonamiento estaba invertido.** Aquí se decía que un único factor
+> para todo el pescado *"no es una simplificación por comodidad: es lo que dice el dato"*, porque 45
+> de las 72 parejas dan exactamente 0,78. **La cifra es correcta y la conclusión no.**
+>
+> Al separar las parejas según si la USDA **midió** la entrada cocinada o la **imputó**, se ve que en
+> las de 0,78 los tres macros dan el mismo cociente a tres decimales —bacalao 0,781/0,780/0,779,
+> lubina 0,782/0,780/0,779, trucha 0,779/0,780/0,780—, que es la huella de haber dividido *todos* los
+> nutrientes por un único número. **El dato no dice 0,78: el dato asume 0,78.**
+>
+> Donde la USDA sí midió el pescado cocinado, el rango real es **0,685 a 1,05**: eglefino 0,822,
+> fletán 0,820, abadejo de Alaska 0,685, caballa española 0,880, salmón coho de piscifactoría 0,899.
+>
+> Se conserva el 0,78 para el pescado blanco magro, porque las parejas medidas quedan cerca y es lo
+> mejor que hay, pero **es una estimación de la USDA, no una medición**. El **salmón** se salió a una
+> entrada propia por quedar fuera de rango: el de piscifactoría, que es el que se vende en España, da
+> 208 → 206 kcal (**1,01**), y con 0,78 se le metía un +29 % en kcal y un +39 % en grasa.
+>
+> Y no hay base utilizable para pescado **hervido o al vapor**, que es como se hace a diario la
+> merluza en España: en todo SR Legacy hay una sola pareja de calor húmedo emparejable, y también
+> está imputada.
 
 **Cereales y pasta**
 
@@ -765,13 +802,29 @@ no estaba incompleto, estaba **mal de raíz**: nunca se acaban las palabras.
 
 **Qué se hace en su lugar.** Comprobar si las kcal del producto son físicamente posibles para ese
 alimento en seco. Un árido en seco está entre 333 y 378 kcal/100 g (almidón casi sin agua); el mismo
-alimento cocido, entre 83 y 164 (ha absorbido dos o tres veces su peso en agua). **Entre 165 y 333 no
-existe ningún producto de esta familia**, así que el suelo se pone en 250: parte esa franja vacía por
-la mitad y deja ~85 kcal de margen a cada lado. No es un umbral afinado a ojo, es una franja que la
-física deja libre.
+alimento cocido, entre 83 y 164 (ha absorbido dos o tres veces su peso en agua). El suelo se pone en
+**250**, que deja ~85 kcal de margen por abajo y ~83 por arriba.
 
-Por debajo del suelo, la conversión **se bloquea y se avisa**; nunca se corrige el número en silencio.
-El usuario ve que ese producto ya viene cocinado y que debe registrarlo tal cual.
+> ⚠️ **Corregido el 2026-11-27.** Aquí se afirmaba que *"entre 165 y 333 no existe ningún producto de
+> esta familia"* y que por tanto 250 partía *"una franja que la física deja libre"*. **La franja no
+> está vacía**: barriendo SR Legacy aparecen pasta fresca sin cocer a **288 kcal/100 g** (169727) y
+> alubias crudas a **329-330** (royal red y california red). El valor 250 **sobrevive** —ningún
+> producto real encontrado lo cruza— pero su margen por arriba es de 38 kcal, no de 85, y el
+> argumento de la "franja vacía" era falso.
+
+**El techo, que faltaba (añadido el 2026-11-27).** El suelo solo mira hacia abajo, y por arriba se
+colaban productos reales con errores enormes: *patatas paja* (560 kcal/100 g) se convertían a **747**,
+*mojama de atún* (330) a 423, y unos *garbanzos tostados* (410) registraban **89 kcal donde hay 205**.
+Ninguno llevaba una palabra que la lista de exclusiones pudiera cazar. Ahora hay un techo por familia
+—patata 110, aves 200, pescado 250, carne 340, áridos 400— y la asimetría con el suelo no es
+arbitraria: la dispersión entre marcas impide poner un **suelo** en carne y pescado, pero no impide
+poner un **techo**, porque ningún producto crudo de esas familias se le acerca.
+
+Fuera del rango, la conversión **se bloquea y se avisa**; nunca se corrige el número en silencio.
+
+> ⚠️ Esa promesa de *"y se avisa"* era falsa hasta el 2026-11-27: la conversión se bloqueaba y el
+> conmutador de base **desaparecía sin explicación**, porque la variable que lo detectaba se calculaba
+> y no se usaba en ningún sitio. Ahora el aviso existe y distingue el motivo.
 
 **Dónde no se aplica, y por qué.** Solo en cereales y legumbres. Se midieron ~500 productos reales de
 Open Food Facts y en carne, pescado y patata **no hay señal aprovechable**: la dispersión entre marcas
@@ -805,6 +858,55 @@ frescos, que es lo que el catálogo reconoce, pero **no se puede verificar**: Op
 ningún campo que diga en qué base está su tabla nutricional. Las exclusiones por nombre son la
 mitigación, no una garantía; un producto mal nombrado puede colarse. Queda anotado como CRU-1 en
 `doc/08-backlog-mejoras.md`.
+
+### 13.9 Un factor por macronutriente (2026-11-27)
+
+Hasta esta fecha el factor se aplicaba igual a kcal, proteína, grasa e hidratos. Eso es el supuesto
+que §13.2 daba por bueno —"los nutrientes se conservan"— y es falso para la grasa.
+
+Calculando el cociente de cada macro por separado en las 26 parejas del catálogo, **15 divergen más
+del 10 %**:
+
+| Alimento | energía | proteína | grasa | divergencia |
+|---|---|---|---|---|
+| Muslo de pollo | 0,676 | 0,794 | **0,506** | 25 % |
+| Cordero picado | 0,996 | **0,669** | 1,191 | 33 % |
+| Pasta | 2,348 | 2,248 | **1,624** | 31 % |
+| Cebada perlada | 2,862 | **4,385** | 2,636 | 53 % |
+| Gambas | 0,859 | 0,838 | **1,821** | 112 % |
+| Lomo de cerdo | 0,762 | 0,801 | **0,618** | 19 % |
+| Carne picada 85/15 | 0,860 | **0,717** | 0,973 | 17 % |
+
+No se inventa ningún número: cada factor por macro es el cociente de **la misma pareja de la USDA**
+que ya cita la entrada, así que aplicarlo reproduce exactamente el valor que la USDA publica para el
+alimento cocinado, en los cuatro nutrientes y no solo en las kcal. En el muslo de pollo la grasa pasa
+de las 6,1 g/100 g que daba el factor único a las **8,15 medidas**.
+
+Donde la entrada cocinada es una **imputación** de la USDA (el pescado blanco) los cocientes por macro
+son idénticos por construcción y no se definen: separarlos sería reproducir la imputación con más
+decimales.
+
+**Consecuencia en la persistencia.** Reutilizar un alimento del historial exige devolver sus valores a
+base cruda, y eso se hacía multiplicando por el factor. Con uno por macro deja de ser exacto, así que
+la fila guarda ahora **los cuatro valores en la base de origen** y deshacer es leer en vez de
+calcular. Eso además elimina la última dependencia del catálogo: ni el factor ni el `id` tienen que
+seguir existiendo para que el historial sea exacto.
+
+### 13.10 Lo que sigue sin resolver
+
+- **La banda, no el número.** El rendimiento depende del cocinero (tiempo, agua, método) y ningún
+  factor único lo captura. Las bandas reales son arroz 2,52-3,81, cuscús 2,0-3,4, patata 0,73-0,92,
+  cordero 0,53-0,88. El §12 de este documento ya establece que *"cuando la app muestre un número de
+  esta lista, debe presentarse como estimación ajustable, nunca como dato cerrado"*, y **aquí no se
+  está aplicando**: la app muestra un número cerrado.
+- **Separar por método de cocinado** (patata hervida frente a al horno, arroz al dente frente a
+  pasado) exige un selector que no existe. Se intentó resolverlo con entradas separadas y no funciona:
+  las palabras "hervida", "cocida" y "vapor" están en las exclusiones globales —correctamente, porque
+  un producto que las lleva en el nombre ya tiene sus datos en base cocida— así que una entrada con
+  esas palabras clave no se encontraría nunca.
+- **No hay factores de retención de macronutrientes en la USDA.** Se comprobó: la *Table of Nutrient
+  Retention Factors, Release 6* cubre 26 vitaminas, minerales y alcohol, y **cero macros**. La vía
+  "usar retention factors" está cerrada.
 
 ---
 

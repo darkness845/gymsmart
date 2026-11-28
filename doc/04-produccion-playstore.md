@@ -36,6 +36,23 @@ nada de esto salvo que el usuario lo pida explícitamente — es una checklist p
 Nada de esto es urgente mientras la app sea de uso personal. Este documento existe para que, el día que
 se decida dar el salto, haya una lista clara en vez de descubrir los problemas sobre la marcha.
 
+## Atribución de Open Food Facts — ✅ resuelto (2026-11-27)
+
+Los datos de alimentos de marca vienen de Open Food Facts, cuya base está bajo **ODbL** y sus
+contenidos bajo **DbCL**. Permiten el uso comercial, pero obligan a tres cosas: mencionar la licencia,
+atribuir la fuente con enlace, y compartir las obras derivadas de **la base de datos** en las mismas
+condiciones (eso último afecta a una base derivada, no al código de la app; una tabla generada desde
+la USDA, que es dominio público, queda fuera).
+
+Hasta el 2026-11-27 la cadena "Open Food Facts" solo aparecía en comentarios del código, así que la
+atribución **no se cumplía**. Para uso personal es irrelevante; para publicar era un bloqueante.
+Resuelto: el pie de la hoja de búsqueda de alimentos dice *"Datos de alimentos: Open Food Facts
+(ODbL) · USDA FoodData Central"*.
+
+Queda pendiente, y no bloquea: el correo del `User-Agent` (`contact@gymsmart.com`) no es real y la
+política de OFF pide que lo sea. Crear una cuenta de OFF daría además acceso autenticado sin los
+límites de 10 y 15 peticiones por minuto que hoy condicionan la búsqueda.
+
 ## `USE_EXACT_ALARM` (añadido 2026-11-27)
 
 El aviso de fin de descanso usa `USE_EXACT_ALARM`, que Android 13+ concede al instalar. Google Play
