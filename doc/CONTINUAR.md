@@ -294,6 +294,44 @@ aplazar la política de menores (C-3); implementar **solo el Bloque A**.
   con su dirección de sesgo escrita).
 - **Verificado**: los siete targets, todo verde.
 
+### ✅ C-6b — un guardado que no es un pesaje tampoco cambia el peso (2026-11-28, sin commitear)
+
+Señalado por la revisión externa tras cerrar el Bloque A. `recordWeighIn = false` solo impedía escribir
+en `weight_history`, pero el peso del formulario **seguía sobrescribiendo `user_profiles.weight_kg`**,
+que alimenta el BMR y los objetivos. Media invariante, que es la clase de hueco de AUD-1 ("el límite
+existía pero era evadible"). Ahora `upsertProfile` usa `previous.weightKg` cuando el guardado no es un
+pesaje.
+
+- **Severidad acotada**: navegando por la app **no es alcanzable**. `ProfileScreen` usa `remember` (no
+  `rememberSaveable`) con `LaunchedEffect(Unit)`, así que Navigation Compose la destruye al navegar y al
+  volver recarga el perfil fresco. Hace falta que el peso cambie desde fuera de esa sesión de pantalla
+  (otro dispositivo, otra pestaña). Es un agujero latente, no un flujo reproducible.
+- **Efecto de conducta aceptado**: teclear un peso en la tarjeta "Cuerpo y objetivo" y pulsar el botón de
+  "Datos personales" ahora ignora ese peso. Son dos tarjetas con dos botones (líneas 345 y 465), así que
+  es un error del usuario; lo sorprendente era lo de antes.
+- Sin test: `upsertProfile` necesita Turso real y `TursoService` no tiene interfaz.
+
+## 🟠 Hallazgo abierto: el upsert completo deja que cada pantalla pise campios ajenos
+
+Encontrado al verificar C-6b, **no está arreglado** y es el simétrico del anterior, con peor consecuencia.
+
+`POST /profile/save` es un upsert completo, así que todo llamador manda todos los campos.
+`WeightScreen.kt:497` construye su `ProfileRequest` desde su propia copia del perfil
+(`currentProfile?.profile`, cargada con el mismo patrón `remember` + `LaunchedEffect(Unit)`), incluidos
+`goal` y `goalRate`. Si esa copia queda obsoleta, registrar un peso:
+
+1. **revierte el objetivo y el ritmo** del usuario, y
+2. con la Fase 5, hace que `goalChanged` sea `true` → reinicia `goal_changed_at` → **dispara un periodo
+   de gracia espurio de 14 días que desactiva el autoajuste**.
+
+Misma reachability latente que C-6b (requiere copia obsoleta), pero la consecuencia es peor. La causa
+raíz es la forma de la API, así que no se arregla con un parche: las opciones son **(a)** un endpoint
+propio de pesaje (`POST /weight/log`, y el grupo `/weight` ya existe con solo un GET) para que
+`WeightScreen` deje de mandar el perfil entero — **recomendado, es el único llamador que hace eco de un
+perfil que no le pertenece**; **(b)** campos opcionales en `ProfileRequest` y escribir solo los
+presentes; o **(c)** concurrencia optimista mandando `updatedAt` y rechazando si el servidor es más
+nuevo. Pendiente de decisión del usuario.
+
 ## ⚠️ Pendiente antes de dar el Bloque A por terminado
 
 1. **Desplegar las fases 1, 2 y 4 juntas.** Las tres mueven el objetivo en kcal y el reseteo del factor

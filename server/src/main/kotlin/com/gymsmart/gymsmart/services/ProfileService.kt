@@ -295,6 +295,28 @@ class ProfileService(private val turso: TursoService) {
         // segunda fallaba, el perfil ya había quedado escrito sin el autoajuste, perdido sin rastro.
         // Van en un solo `executeBatch` envuelto en BEGIN/COMMIT: si cualquiera de las dos falla, la
         // transacción no llega a confirmarse y el perfil se queda como estaba antes de esta llamada.
+        // ── Un guardado que no es un pesaje no puede cambiar el peso (C-6b) ───
+        //
+        // `recordWeighIn = false` significa "este guardado no es sobre el peso", y hasta ahora eso solo
+        // impedía escribir en `weight_history`: el peso del formulario seguía sobrescribiendo
+        // `user_profiles.weight_kg`, que es lo que alimenta el BMR y los objetivos. Media verdad, y
+        // media invariante es la clase de hueco que ya costó AUD-1 ("el límite existía pero era
+        // evadible").
+        //
+        // El daño necesita un peso **obsoleto** en el formulario, y navegando por la app no es
+        // alcanzable: `ProfileScreen` usa `remember` (no `rememberSaveable`) con `LaunchedEffect(Unit)`,
+        // así que al volver a ella se recrea y recarga el perfil. Queda el caso de que el peso cambie
+        // desde fuera de esa sesión de pantalla —otro dispositivo, otra pestaña— y el de cualquier
+        // pantalla futura que reguarde el perfil sin ser un pesaje. Honrarlo aquí cierra la clase
+        // entera en vez de una instancia.
+        //
+        // **Efecto de conducta aceptado a conciencia**: si alguien teclea un peso nuevo en la tarjeta
+        // "Cuerpo y objetivo" y luego pulsa el botón de "Datos personales", su peso se ignora. Es lo
+        // correcto — esa tarjeta tiene su propio botón justo al lado — y lo sorprendente era lo de
+        // antes, que un botón de datos personales guardara el peso.
+        val effectiveWeightKg =
+            if (!recordWeighIn && previous != null) previous.weightKg else weightKg
+
         // ── Periodo de gracia del autoajuste (C-5) ────────────────────────────
         //
         // Solo cuenta como "cambio de objetivo" tocar `goal` o `goalRate`: cambiar peso, altura o nivel
@@ -338,7 +360,7 @@ class ProfileService(private val turso: TursoService) {
                      updated_at$goalChangedColumn)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?$goalChangedValue)
                 """.trimIndent() to listOf(
-                    userId, weightKg.toString(), heightCm.toString(), age.toString(),
+                    userId, effectiveWeightKg.toString(), heightCm.toString(), age.toString(),
                     sex, activityLevel, goal, goalRate.toString(), now.toString()
                 ) + goalChangedArg,
                 restoreStatement,
@@ -374,18 +396,18 @@ class ProfileService(private val turso: TursoService) {
             if (turso.extractRows(existing).isEmpty()) {
                 turso.execute(
                     "INSERT INTO weight_history (user_id, weight_kg, day, created_at) VALUES (?, ?, ?, ?)",
-                    listOf(userId, weightKg.toString(), today, now.toString())
+                    listOf(userId, effectiveWeightKg.toString(), today, now.toString())
                 )
             } else {
                 turso.execute(
                     "UPDATE weight_history SET weight_kg = ?, created_at = ? WHERE user_id = ? AND day = ?",
-                    listOf(weightKg.toString(), now.toString(), userId, today)
+                    listOf(effectiveWeightKg.toString(), now.toString(), userId, today)
                 )
             }
         }
 
         return UserProfile(
-            userId, weightKg, heightCm, age, sex, activityLevel, goal, goalRate, now,
+            userId, effectiveWeightKg, heightCm, age, sex, activityLevel, goal, goalRate, now,
             goalChangedAt = goalChangedAtToWrite,
             adaptiveTdee = previous?.adaptiveTdee
         )
