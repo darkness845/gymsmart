@@ -259,7 +259,12 @@ fun ProfileScreen(
                                 heightCm = parseDecimal(height)!!,
                                 age = calculatedAge, sex = sex,
                                 activityLevel = activityLevel, goal = goal,
-                                goalRate = if (goal == NutritionMath.GOAL_MAINTAIN) 0.0 else parseDecimal(goalRate)!!
+                                goalRate = if (goal == NutritionMath.GOAL_MAINTAIN) 0.0 else parseDecimal(goalRate)!!,
+                                // C-6: este guardado es un efecto derivado de editar los datos
+                                // personales (la fecha de nacimiento cambia la edad), no un pesaje. El
+                                // peso que viaja es el que estaba cargado en el formulario y puede tener
+                                // días: grabarlo como el pesaje de hoy falsearía la tendencia.
+                                recordWeighIn = false
                             )
                             profileService.saveProfile(request, avgActive).onSuccess { response ->
                                 savedTargets = response.targets
@@ -750,14 +755,19 @@ private fun AdaptiveCard(adaptive: AdaptiveResponse?) {
                 lineHeight = 19.sp,
                 color = p.heroRaised
             )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                "Registra tus comidas y pésate con regularidad: con eso puedo medir tu gasto " +
-                    "real en vez de estimarlo con una fórmula.",
-                fontSize = 12.sp,
-                lineHeight = 17.sp,
-                color = p.heroRaised
-            )
+            // El consejo por defecto ("registra y pésate") solo sirve cuando el problema es que faltan
+            // datos. Durante el periodo de gracia la pausa es deliberada y seguiría igual registrando
+            // todo, así que repetirlo ahí sería pedirle algo que no cambia nada (C-5).
+            if (!adaptive.recalculating) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Registra tus comidas y pésate con regularidad: con eso puedo medir tu gasto " +
+                        "real en vez de estimarlo con una fórmula.",
+                    fontSize = 12.sp,
+                    lineHeight = 17.sp,
+                    color = p.heroRaised
+                )
+            }
         }
     }
 }

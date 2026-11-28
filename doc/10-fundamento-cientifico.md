@@ -59,8 +59,23 @@ TDEE = BMR × multiplicador
 | Activo | 1.725 |
 | Muy activo | 1.9 |
 
-**Esta es la parte más débil de todo el cálculo.** Los multiplicadores son convención heredada, no
-proceden de una validación sólida, y **el salto entre dos escalones contiguos es de 250-350 kcal/día**.
+**Esta es la parte más débil de todo el cálculo.** Los multiplicadores son convención heredada y **el
+salto entre dos escalones contiguos es de 250-350 kcal/día**.
+
+> **Corrección (2026-11-28, P1-6)**: antes esta sección decía que los multiplicadores "no proceden de una
+> validación sólida", a secas. Eso es inexacto en un punto que importa. Los escalones altos están
+> razonablemente alineados con las referencias (FAO/WHO/UNU 2004: sedentario/ligero 1,40-1,69, activo
+> 1,70-1,99, vigoroso 2,00-2,40; IOM 2005: poco activo 1,4-1,59, activo 1,6-1,89, muy activo ≥1,9). El
+> que está fuera es **el 1,2 de "sedentario": queda por debajo de todas ellas**. En estudios con agua
+> doblemente marcada, un adulto sedentario en vida libre casi nunca baja de ~1,4-1,5; un PAL de 1,2
+> corresponde más bien a alguien encamado. Son ~430 kcal/día de infraestimación en el perfil de
+> referencia.
+>
+> **No se cambia la constante**, por dos motivos: el factor del autoajuste (acotado a 0,70-1,30) cubre
+> de sobra esa distancia (1,2 × 1,3 = 1,56), y la gente sobreestima su propio nivel de actividad en
+> sentido contrario (Lichtman 1992, NEJM: +51 % de actividad declarada y −47 % de ingesta declarada), lo
+> que compensa en parte. Pero conviene saber que el sesgo del escalón bajo **tiene dirección conocida**:
+> es seguro para quien quiere perder y produce déficit encubierto para quien quiere ganar.
 
 Consecuencia práctica: un usuario que elige "moderado" (1.55) cuando en realidad es 1.35 arrastra un
 error de ~350 kcal/día **indefinidamente**, y ninguna fórmula lo detecta. Es el equivalente a cuatro
@@ -73,11 +88,33 @@ veces el error de Mifflin, y va en una sola dirección.
 ### 1.3 Gasto total con pulsera
 
 ```
-TDEE = BMR + media_móvil(calorías_activas, 14 días)
+TDEE = (BMR + media_móvil(calorías_activas, 14 días)) / (1 − TEF_FRACTION)
 ```
 
 `ActiveCaloriesBurnedRecord` de Health Connect **excluye el metabolismo basal** por definición, así que
 sumarlo al BMR es semánticamente correcto y no duplica nada.
+
+**Y excluye también la digestión**, que es lo que obliga a dividir por `1 − TEF_FRACTION`. Esta división
+**faltaba hasta el 2026-11-28** (C-1 en [12-auditoria-comite-kcal-2026-11-27.md](12-auditoria-comite-kcal-2026-11-27.md)):
+el PAL de §1.2 incluye el efecto térmico de los alimentos por definición (DRI cap. 4: PAL = TEE/BMR, y
+el TEF está dentro del TEE), la pulsera no lo incluye, y §16.2 ya descontaba el TEF para *mostrar* las
+kcal activas de referencia — pero el cálculo del gasto no lo reponía. Resultado: **el modo pulsera daba
+un 10 % menos de gasto que el modo fórmula para la misma actividad real** (2396 frente a 2662 en el
+perfil de referencia), con las dos caras del fallo que originó toda esta línea de trabajo: en pérdida el
+déficit real llegaba al 32,5 % mientras el sistema informaba 25 %, y en ganancia el superávit quedaba en
++43 kcal, o sea mantenimiento disfrazado.
+
+Que la constante sea la correcta es **comprobable algebraicamente**, y hay un test que lo fija: §16.2
+genera las activas de un nivel como `BMR × (PAL × (1 − TEF) − 1)`, así que al reinyectarlas aquí
+`(BMR + activas) / (1 − TEF) = BMR × PAL` exactamente. Los dos modos coinciden nivel por nivel.
+
+> La forma rigurosa sería `(BMR + activas + 0,10 × Δ) / 0,90`, porque el TEF es el 10 % de lo que se
+> *ingiere* y no de lo que se gasta. Son ~60 kcal de diferencia, y no merece la complejidad frente a una
+> pulsera con ±20-30 % de error (O'Driscoll 2020, BJSM, 60 estudios).
+
+Este camino aplica además el mismo respaldo que el de fórmula (`≥ BMR × 1,2`): antes era la única rama
+sin suelo, así que una pulsera que reportara pocas activas daba un gasto **por debajo** del respaldo
+"no tengo datos" de la rama contigua, y empezar a tener datos bajaba el objetivo 193 kcal.
 
 ⚠️ **Nunca sumar `TotalCaloriesBurnedRecord` directamente**: incluye el basal, y sumarlo sobre el BMR
 duplicaría 1.500-1.800 kcal/día. Si alguna vez hiciera falta usarlo (porque la app compañera no escriba

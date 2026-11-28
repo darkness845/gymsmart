@@ -45,7 +45,12 @@ package com.gymsmart.gymsmart.nutrition
  *   **10 %** del total. Es decir, `BMR x (PAL - 1)` **no son calorías de movimiento**: son
  *   movimiento más digestión.
  * - Health Connect, en cambio, entrega `ActiveCaloriesBurnedRecord`, que es solo actividad: ni
- *   basal ni digestión. Es lo que [NutritionMath.tdee] suma al BMR en modo pulsera.
+ *   basal ni digestión. Es lo que [NutritionMath.tdee] usa en modo pulsera, **devolviéndole el TEF
+ *   que le falta** (`(BMR + activas) / (1 − TEF_FRACTION)`): durante un tiempo lo sumaba al BMR sin
+ *   más, y entonces este archivo descontaba el TEF para mostrar la cifra mientras el cálculo del
+ *   gasto no lo reponía, así que el modo pulsera daba un 10 % menos que el modo fórmula para la
+ *   misma actividad real (C-1). Las dos fórmulas son ahora inversas exactas la una de la otra, y hay
+ *   un test que lo comprueba para todos los niveles.
  *
  * Poner las dos cifras una al lado de la otra sin descontar el TEF le diría al usuario que su
  * pulsera marca sistemáticamente un 10 % menos que el nivel que ha elegido, y la conclusión natural
@@ -68,14 +73,14 @@ package com.gymsmart.gymsmart.nutrition
 object ActivityBenchmarks {
 
     /**
-     * Fracción del gasto total que se va en digerir (efecto térmico de los alimentos).
+     * Efecto térmico de los alimentos. **El valor vive en [NutritionMath.TEF_FRACTION]**, que es quien
+     * calcula el gasto; aquí solo se reexpone para no romper a los llamadores.
      *
-     * El 10 % es la cifra de consenso para una dieta mixta (National Academies, *DRI*, cap. 4:
-     * *"typically accounting for ~10% of total daily energy expenditure"*). Varía con la composición
-     * de la dieta —la proteína sale más cara de digerir— pero no lo suficiente como para justificar
-     * pedirle al usuario datos que no tiene.
+     * Se movió al arreglar C-1: tener dos sitios donde el proyecto opina sobre el TEF fue precisamente
+     * lo que permitió que un archivo afirmara que el PAL lo incluye mientras el otro construía el gasto
+     * de la pulsera como si no existiera.
      */
-    const val TEF_FRACTION = 0.10
+    const val TEF_FRACTION = NutritionMath.TEF_FRACTION
 
     /**
      * Pasos diarios orientativos del nivel [activityLevel], ya formateados para la interfaz, o `null`

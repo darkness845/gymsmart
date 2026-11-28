@@ -59,6 +59,7 @@ import com.gymsmart.gymsmart.nutrition.cookingYieldById
 import com.gymsmart.gymsmart.nutrition.isExcludedFromCooking
 import com.gymsmart.gymsmart.nutrition.looksAlreadyCooked
 import com.gymsmart.gymsmart.nutrition.Macro
+import com.gymsmart.gymsmart.nutrition.NutritionMath
 import com.gymsmart.gymsmart.nutrition.GENERIC_BRAND
 import com.gymsmart.gymsmart.nutrition.matchingGenerics
 import com.gymsmart.gymsmart.nutrition.rankFoodResults
@@ -601,6 +602,14 @@ private fun NutritionScreenContent(
                                     "⚠ Con tu gasto actual no puedo darte un déficit seguro, así que te " +
                                         "dejo en mantenimiento (${t.targetKcal} kcal). Para perder grasa " +
                                         "desde aquí, lo que toca es aumentar el gasto, no comer menos."
+                                // Ahora hay dos suelos y el motivo no es el mismo: atribuir el suelo
+                                // absoluto a "tu masa magra" sería el mismo error que AUD-2, nombrar un
+                                // límite que no es el que mordió.
+                                t.energyFloorHit && t.energyFloor <= NutritionMath.ABSOLUTE_FLOOR_KCAL.toInt() ->
+                                    "⚠ Tu ritmo se ha limitado por seguridad: no bajamos de " +
+                                        "${t.energyFloor} kcal al día en ningún caso. Avanzarás a " +
+                                        "${formatRate(t.effectiveRate)} en vez de " +
+                                        "${formatRate(t.requestedRate)} por semana."
                                 t.energyFloorHit ->
                                     "⚠ Tu ritmo se ha limitado por seguridad: no bajamos de ${t.energyFloor} " +
                                         "kcal, el mínimo para tu masa magra estimada. Avanzarás a " +
@@ -656,6 +665,32 @@ private fun NutritionScreenContent(
                             "⚠ Con este objetivo calórico, el reparto de macros no es realista: la " +
                                 "proteína y la grasa ocupan casi todas las kcal y apenas queda sitio " +
                                 "para carbohidratos. Puede ser momento de revisar el ritmo elegido.",
+                            modifier = Modifier.padding(12.dp),
+                            color = Palette.current.accentText,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
+            // Objetivo de pérdida por debajo del umbral clínico de su sexo (C-2). No es un error del
+            // cálculo ni un límite que haya mordido: el objetivo es el que se pidió. Lo que avisa es que
+            // con tan poca comida cubrir los micronutrientes es difícil, y eso antes se emitía en
+            // silencio. Texto en tono informativo, no de advertencia de seguridad, porque puede ser
+            // perfectamente razonable en un cuerpo pequeño.
+            targets?.takeIf { it.belowSoftFloor }?.let { t ->
+                item {
+                    Spacer(Modifier.height(16.dp))
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        color = Palette.current.accentText.copy(alpha = 0.12f),
+                        shape = MaterialTheme.shapes.small
+                    ) {
+                        Text(
+                            "ℹ Tu objetivo (${t.targetKcal} kcal) queda por debajo de las " +
+                                "${t.softFloorKcal} kcal que las guías usan como " +
+                                "referencia para dietas de pérdida. Puede ser correcto para tu " +
+                                "complexión, pero con tan pocas calorías cuesta cubrir vitaminas y " +
+                                "minerales: prioriza alimentos densos en nutrientes, o ve más despacio.",
                             modifier = Modifier.padding(12.dp),
                             color = Palette.current.accentText,
                             style = MaterialTheme.typography.bodySmall

@@ -27,7 +27,15 @@ data class ProfileRequest(
     val goalRate:      Double,
     // Ya no se usa (AUD-16): nada leía la columna has_wearable. Se sigue aceptando porque el JSON del
     // servidor es estricto y las apps ya instaladas lo mandan; quitarlo les daría un 400 al guardar.
-    @Suppress("unused") val hasWearable: Boolean = false
+    @Suppress("unused") val hasWearable: Boolean = false,
+    /**
+     * Si este guardado debe registrar [weightKg] como el pesaje de hoy (C-6).
+     *
+     * El valor por defecto es `true` a propósito: las apps ya instaladas no mandan este campo y tienen
+     * que seguir comportándose igual que hasta ahora. Solo el camino que sabe que su peso es arrastrado
+     * (el reguardado al editar los datos personales) manda `false` explícitamente.
+     */
+    val recordWeighIn: Boolean = true
 )
 
 /** Respuesta común de perfil + objetivos, para no repetir el mapeo en cada endpoint. */
@@ -92,6 +100,8 @@ private fun profilePayload(profile: UserProfile, targets: NutritionMath.TargetRe
             put("noSafeDeficit",  targets.noSafeDeficit)
             put("lowBmiGuard",    targets.lowBmiGuard)
             put("macrosDegraded", targets.macrosDegraded)
+            put("belowSoftFloor", targets.belowSoftFloor)
+            put("softFloorKcal", targets.softFloorKcal)
         }
     }
 
@@ -163,6 +173,9 @@ fun Route.profileRoutes(
                     call.respond(HttpStatusCode.OK, buildJsonObject {
                         put("adjusted", false)
                         put("reason", result.reason)
+                        // Distingue "estoy esperando a propósito" de "te faltan registros" (C-5): el
+                        // consejo de la tarjeta es distinto en cada caso.
+                        put("recalculating", result.recalculating)
                     })
 
                 is NutritionMath.AdaptiveResult.Adjusted -> {
@@ -250,7 +263,8 @@ fun Route.profileRoutes(
                 sex           = req.sex,
                 activityLevel = req.activityLevel,
                 goal          = req.goal,
-                goalRate      = req.goalRate
+                goalRate      = req.goalRate,
+                recordWeighIn = req.recordWeighIn
             )
             // Igual que en /profile/me: sin esto, el resumen que ve el usuario justo después de
             // guardar se calculaba siempre con 0 de actividad, así que a los usuarios de pulsera les

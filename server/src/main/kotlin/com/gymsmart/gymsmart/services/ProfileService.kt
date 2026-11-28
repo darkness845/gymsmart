@@ -42,7 +42,19 @@ data class UserProfile(
      * Y hace innecesaria la invalidación: no hay que borrarlo al cambiar de actividad u objetivo, porque
      * se reescala solo.
      */
-    val adaptiveFactor: Double? = null
+    val adaptiveFactor: Double? = null,
+    /**
+     * Cuándo se cambió por última vez el **objetivo o el ritmo**, para el periodo de gracia del
+     * autoajuste (C-5, [NutritionMath.ADAPTIVE_GOAL_CHANGE_GRACE_DAYS]).
+     *
+     * Solo lo mueven `goal` y `goalRate`: cambiar el peso, la altura o el nivel de actividad no desplaza
+     * glucógeno ni agua, así que no hay motivo para descartar medidas por eso.
+     *
+     * `null` en los perfiles que existían antes de esta columna. Se trata como **"sin gracia"**: se mide
+     * como se medía hasta ahora en vez de bloquear el autoajuste durante dos semanas a quien ya llevaba
+     * tiempo con su objetivo puesto.
+     */
+    val goalChangedAt: Long? = null
 )
 
 typealias NutritionTargets = NutritionMath.TargetResult
@@ -59,6 +71,47 @@ class ProfileService(private val turso: TursoService) {
     // más simple que una transacción distribuida contra Turso.
     private val adaptiveLocks = ConcurrentHashMap<String, Mutex>()
     private fun adaptiveLockFor(userId: String): Mutex = adaptiveLocks.computeIfAbsent(userId) { Mutex() }
+
+    /**
+     * Migraciones de **datos** que no son autolimitadas, con su registro de aplicadas.
+     *
+     * Las migraciones de esquema de [initTable] son idempotentes *por construcción*: un
+     * `ALTER TABLE ADD COLUMN` falla a partir del segundo arranque y el `runCatching` se come el error,
+     * y los `UPDATE` que hay son convergentes (tras convertir, la fila deja de entrar en el `WHERE`).
+     * Por eso ninguna necesitaba registro.
+     *
+     * Una migración de datos como "pon `adaptive_factor` a NULL una vez" **no es de esa clase**: se
+     * ejecuta con éxito todas las veces. `initTable()` corre en cada arranque del servidor
+     * (`Application.kt:48`) y en el plan gratuito de Render el servicio se duerme y arranca en frío
+     * constantemente, así que sin registro el reseteo borraría cada pocas horas un factor recién medido
+     * y el autoajuste quedaría desactivado para siempre, **sin que nada avisara**.
+     *
+     * **El registro no puede ser una columna de `user_profiles`**: `upsertProfile` usa
+     * `INSERT OR REPLACE`, que borra la fila y la reinserta, así que cualquier columna fuera de su lista
+     * vuelve a NULL — es la trampa que obliga a existir a `restoreStatement`. Un centinela ahí se
+     * reiniciaría en el primer guardado de perfil y el reseteo volvería a dispararse en el siguiente
+     * arranque. De ahí una tabla propia, que además le sirve a la siguiente migración no convergente.
+     */
+    private suspend fun applyOnce(id: String, statements: List<Pair<String, List<String>>>) {
+        val yaAplicada = turso.execute(
+            "SELECT id FROM schema_migrations WHERE id = ?",
+            listOf(id)
+        )
+        if (turso.extractRows(yaAplicada).isNotEmpty()) return
+
+        // El marcador se inserta **en la misma transacción** que los cambios: si la red falla a mitad,
+        // no se confirma ni el cambio ni el marcador, y el próximo arranque lo reintenta. Al revés
+        // (marcar primero, o marcar aparte) una migración podría quedar marcada sin haberse aplicado.
+        turso.executeBatch(
+            listOf("BEGIN IMMEDIATE" to emptyList<String>()) +
+                statements +
+                listOf(
+                    "INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)" to
+                        listOf(id, System.currentTimeMillis().toString()),
+                    "COMMIT" to emptyList()
+                )
+        )
+    }
 
     suspend fun initTable() {
         turso.execute(
@@ -87,6 +140,10 @@ class ProfileService(private val turso: TursoService) {
         // para que se componga con ella en vez de sustituirla (AUD-3). Los perfiles que ya tenían
         // `adaptive_tdee` derivan su factor en la primera lectura, no hace falta migrar el dato aquí.
         runCatching { turso.execute("ALTER TABLE user_profiles ADD COLUMN adaptive_factor REAL") }
+        // Periodo de gracia del autoajuste tras cambiar de objetivo (C-5). Idempotente igual que las de
+        // arriba: el `ALTER` falla a partir del segundo arranque y el `runCatching` se come el error.
+        // Las filas que ya existían se quedan en NULL, que se interpreta como "sin gracia".
+        runCatching { turso.execute("ALTER TABLE user_profiles ADD COLUMN goal_changed_at INTEGER") }
 
         // Migración de unidades de goal_rate (2026-11): antes guardaba kcal/día con signo (-400, +500)
         // y ahora guarda % de peso corporal por semana (-0.75, +0.375). Sin esto, un perfil antiguo
@@ -141,6 +198,37 @@ class ProfileService(private val turso: TursoService) {
                 """.trimIndent()
             )
         }
+
+        // ── Migraciones de datos con registro (ver applyOnce) ─────────────────
+        turso.execute(
+            """
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+                id         TEXT    PRIMARY KEY,
+                applied_at INTEGER NOT NULL
+            )
+            """.trimIndent()
+        )
+
+        // C-1: al corregir el TEF en modo pulsera, el gasto estimado sube ~10% para la misma actividad.
+        // Un `adaptive_factor` medido con la fórmula vieja ya puede haber absorbido parte de ese sesgo
+        // (compensándolo con un factor por encima de 1 sin que nadie lo supiera), así que conservarlo
+        // aplicaría la corrección dos veces. Se descarta y se vuelve a medir desde cero — decisión
+        // explícita del usuario (2026-11-28), frente a la alternativa de dejarlo converger solo en 4-8
+        // semanas. `adaptive_tdee` se borra también porque `adaptiveFactorFor` deriva de él un factor
+        // cuando no hay uno guardado: dejarlo vivo reconstruiría la corrección que se quiere soltar.
+        //
+        // En `runCatching` para que un fallo de red no impida arrancar el servidor. Si falla, el
+        // marcador no se escribe y se reintenta en el próximo arranque; mientras tanto el estado es
+        // "factor viejo todavía puesto", que es degradado pero no peligroso — está acotado a 0,70-1,30 y
+        // se corrige solo con las mezclas semanales.
+        runCatching {
+            applyOnce(
+                "c1_tef_wearable_reset_adaptive_factor",
+                listOf(
+                    "UPDATE user_profiles SET adaptive_factor = NULL, adaptive_tdee = NULL" to emptyList()
+                )
+            )
+        }
     }
 
     suspend fun initWeightHistoryTable() {
@@ -188,7 +276,8 @@ class ProfileService(private val turso: TursoService) {
         sex:           String,
         activityLevel: String,
         goal:          String,
-        goalRate:      Double
+        goalRate:      Double,
+        recordWeighIn: Boolean = true
     ): UserProfile {
         val now = System.currentTimeMillis()
 
@@ -206,6 +295,30 @@ class ProfileService(private val turso: TursoService) {
         // segunda fallaba, el perfil ya había quedado escrito sin el autoajuste, perdido sin rastro.
         // Van en un solo `executeBatch` envuelto en BEGIN/COMMIT: si cualquiera de las dos falla, la
         // transacción no llega a confirmarse y el perfil se queda como estaba antes de esta llamada.
+        // ── Periodo de gracia del autoajuste (C-5) ────────────────────────────
+        //
+        // Solo cuenta como "cambio de objetivo" tocar `goal` o `goalRate`: cambiar peso, altura o nivel
+        // de actividad no mueve glucógeno ni agua, así que descartar medidas por eso sería tirar datos
+        // buenos. Un perfil nuevo también arranca el periodo: su objetivo se acaba de fijar.
+        //
+        // El ritmo se compara con epsilon y no con `!=`: es un Double que viaja como texto, y una
+        // diferencia de redondeo que disparara un periodo de gracia espurio dejaría al usuario sin
+        // autoajuste durante dos semanas sin ningún motivo.
+        val goalChanged = previous == null ||
+            previous.goal != goal ||
+            kotlin.math.abs(previous.goalRate - goalRate) > 1e-9
+        val goalChangedAtToWrite: Long? = if (goalChanged) now else previous?.goalChangedAt
+
+        // `INSERT OR REPLACE` borra la fila entera, así que una columna que no esté en la lista vuelve a
+        // NULL — es la misma trampa que obliga a existir a `restoreStatement`. Por eso `goal_changed_at`
+        // va **dentro** del INSERT y no en una restauración aparte: una segunda sentencia que hay que
+        // acordarse de mantener sincronizada es exactamente el tipo de fragilidad que ya costó un bug
+        // aquí. Y como los args de Turso no admiten NULL, cuando no hay valor que escribir se elige la
+        // variante de SQL que no menciona la columna — mismo patrón que `saveAdaptiveTdee`.
+        val goalChangedColumn = if (goalChangedAtToWrite != null) ", goal_changed_at" else ""
+        val goalChangedValue  = if (goalChangedAtToWrite != null) ", ?" else ""
+        val goalChangedArg    = listOfNotNull(goalChangedAtToWrite?.toString())
+
         val restoreStatement = previous?.adaptiveTdee?.let { tdee ->
             if (previous.adaptiveFactor != null) {
                 "UPDATE user_profiles SET adaptive_tdee = ?, adaptive_updated_at = ?, adaptive_factor = ? WHERE user_id = ?" to
@@ -221,12 +334,13 @@ class ProfileService(private val turso: TursoService) {
                 "BEGIN IMMEDIATE" to emptyList(),
                 """
                 INSERT OR REPLACE INTO user_profiles
-                    (user_id, weight_kg, height_cm, age, sex, activity_level, goal, goal_rate, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (user_id, weight_kg, height_cm, age, sex, activity_level, goal, goal_rate,
+                     updated_at$goalChangedColumn)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?$goalChangedValue)
                 """.trimIndent() to listOf(
                     userId, weightKg.toString(), heightCm.toString(), age.toString(),
                     sex, activityLevel, goal, goalRate.toString(), now.toString()
-                ),
+                ) + goalChangedArg,
                 restoreStatement,
                 "COMMIT" to emptyList()
             )
@@ -243,7 +357,13 @@ class ProfileService(private val turso: TursoService) {
         // El seguimiento de cintura se eliminó (decisión del usuario, 2026-11-23: medirla era pereza
         // para el día a día); la columna `waist_cm` se deja sin tocar en la BBDD (no es destructivo
         // borrarla, pero tampoco hace falta) y simplemente ya no se escribe ni se lee desde aquí.
-        run {
+        // C-6: ese "SIEMPRE" era cierto respecto a *si el peso cambió*, pero no respecto a *si el
+        // usuario se ha pesado*. El formulario de perfil reenvía el peso que tenía cargado también
+        // cuando lo que se edita son los datos personales, y ese valor puede tener días: grabarlo como
+        // el pesaje de hoy mete un dato arrastrado (LOCF) que aplana la pendiente del autoajuste y
+        // encima cuenta para su mínimo de 8 pesajes sin aportar ninguna medida nueva. `recordWeighIn`
+        // distingue los dos casos; AUD-12 sigue intacto para todos los caminos que sí son un pesaje.
+        if (recordWeighIn) {
             val today = java.time.LocalDate.now().toString()
 
             // Evitar duplicado del mismo día
@@ -266,13 +386,14 @@ class ProfileService(private val turso: TursoService) {
 
         return UserProfile(
             userId, weightKg, heightCm, age, sex, activityLevel, goal, goalRate, now,
+            goalChangedAt = goalChangedAtToWrite,
             adaptiveTdee = previous?.adaptiveTdee
         )
     }
 
     suspend fun getProfile(userId: String): UserProfile? {
         val result = turso.execute(
-            "SELECT user_id, weight_kg, height_cm, age, sex, activity_level, goal, goal_rate, updated_at, adaptive_tdee, adaptive_updated_at, adaptive_factor FROM user_profiles WHERE user_id = ?",
+            "SELECT user_id, weight_kg, height_cm, age, sex, activity_level, goal, goal_rate, updated_at, adaptive_tdee, adaptive_updated_at, adaptive_factor, goal_changed_at FROM user_profiles WHERE user_id = ?",
             listOf(userId)
         )
         val row = turso.extractRows(result).firstOrNull() ?: return null
@@ -288,7 +409,8 @@ class ProfileService(private val turso: TursoService) {
             updatedAt     = row[8]?.toLongOrNull()   ?: 0L,
             adaptiveTdee  = row.getOrNull(9)?.toDoubleOrNull(),
             adaptiveUpdatedAt = row.getOrNull(10)?.toLongOrNull() ?: 0L,
-            adaptiveFactor = row.getOrNull(11)?.toDoubleOrNull()
+            adaptiveFactor = row.getOrNull(11)?.toDoubleOrNull(),
+            goalChangedAt  = row.getOrNull(12)?.toLongOrNull()
         )
     }
 
@@ -424,6 +546,29 @@ class ProfileService(private val turso: TursoService) {
         val profile = getProfile(userId)
             ?: return NutritionMath.AdaptiveResult.NotEnoughData("Sin perfil")
 
+        val hoy = java.time.LocalDate.now()
+
+        // Periodo de gracia tras cambiar de objetivo (C-5): los primeros días de un déficit nuevo mueven
+        // glucógeno y agua, no grasa, y `measuredTdee` los lee como gasto a 7700 kcal/kg (+278 kcal/día
+        // de sesgo, medido con Montecarlo) — suficiente para que el primer ajuste empuje en dirección
+        // contraria a la correcta. La aritmética vive en `AdaptiveWindow`, que sí se puede testear.
+        //
+        // **Va antes que el enfriamiento** a propósito: la gracia dura 14 días y el enfriamiento 7, así
+        // que al revés el usuario vería "ya ajustado esta semana" y el mensaje le cambiaría a mitad de
+        // la espera por otro motivo. El de la gracia explica mejor lo que pasa y cubre todo el periodo.
+        val ventana = AdaptiveWindow.compute(hoy, profile.goalChangedAt, windowDays)
+        if (ventana is AdaptiveWindow.Result.InGrace) {
+            return NutritionMath.AdaptiveResult.NotEnoughData(
+                "Has cambiado tu objetivo hace poco, así que estoy volviendo a medir tu gasto. " +
+                    "Faltan ${ventana.daysLeft} días: los primeros de un cambio mueven agua y " +
+                    "glucógeno, no grasa, y medir ahí daría un resultado falso.",
+                recalculating = true
+            )
+        }
+        val medible = ventana as AdaptiveWindow.Result.Measurable
+        val since = medible.since
+        val effectiveWindowDays = medible.windowDays
+
         val sinceLast = System.currentTimeMillis() - profile.adaptiveUpdatedAt
         if (profile.adaptiveTdee != null && sinceLast < ADAPTIVE_COOLDOWN_MS) {
             val diasRestantes = ((ADAPTIVE_COOLDOWN_MS - sinceLast) / (24.0 * 60 * 60 * 1000)).toInt() + 1
@@ -432,7 +577,6 @@ class ProfileService(private val turso: TursoService) {
             )
         }
 
-        val since = java.time.LocalDate.now().minusDays(windowDays.toLong())
         val weighIns = getWeightHistoryRaw(userId)
             .mapNotNull { (day, kg) ->
                 runCatching { java.time.LocalDate.parse(day) }.getOrNull()?.let { it to kg }
@@ -484,7 +628,7 @@ class ProfileService(private val turso: TursoService) {
                 avgDailyIntakeKcal = intakeInWindow.average(),
                 weightChangeKg     = slopeKgPerDay * spanDays,
                 previousTdee       = anchor,
-                windowDays         = windowDays
+                windowDays         = effectiveWindowDays
             )
         )
 

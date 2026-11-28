@@ -52,7 +52,24 @@ del panel 2 no encontró ninguno) sino tres familias de problema:
 
 ---
 
-## 🔴 C-1 (CRÍTICO) — Modo pulsera: falta el TEF, y el error empuja justo donde ya dolía
+## ✅ C-1 (CRÍTICO) — Modo pulsera: falta el TEF — RESUELTO (Fase 4, 2026-11-28)
+
+> Implementado como se propone abajo, más tres cosas que la propuesta no contemplaba:
+>
+> 1. **`TEF_FRACTION` se movió a `NutritionMath`**, porque tener dos archivos opinando sobre el TEF es
+>    lo que permitió el fallo. Con un solo dueño no puede reabrirse.
+> 2. **La migración NO puede usar un centinela en `user_profiles`** (que era el plan): `INSERT OR
+>    REPLACE` lo borraría en el primer guardado de perfil y el reseteo volvería a dispararse, matando un
+>    factor legítimo. Se hizo con una tabla `schema_migrations` propia y un `applyOnce` transaccional,
+>    validado contra SQLite local (reseteo → nueva medición → segundo arranque en frío → el factor
+>    sobrevive).
+> 3. **El suelo `bmr × 1,2` se aplica también en esta rama** (P1-2), que era la única sin él.
+>
+> **Verificación independiente de las cifras del informe**: con el perfil real del usuario y 450 kcal
+> activas, el objetivo viejo de ganar (2566) era un superávit real de +60 kcal frente al gasto verdadero
+> (2505) en vez de los +311 pedidos, y el de perder (1691) era un déficit real del 32,5 % informado como
+> 25 %. Las dos cifras del informe se reproducen exactamente por un camino de cálculo distinto.
+
 
 **De dónde viene**: P1-1, confirmado sin discrepancia por los dos expertos del panel 1 tras debatirlo.
 
@@ -97,7 +114,20 @@ código, y necesita tu confirmación explícita antes de tocar la BBDD — por a
 
 ---
 
-## 🔴 C-2 (CRÍTICO) — No hay suelo absoluto en kcal: mujeres mayores y pequeñas pueden caer en rango de VLCD
+## ✅ C-2 (CRÍTICO) — No hay suelo absoluto en kcal — RESUELTO (Fase 1, 2026-11-28)
+
+> **Resuelto en parte, y conviene saber en qué parte.** Se añadió `ABSOLUTE_FLOOR_KCAL = 800` (suelo
+> duro) y el aviso `belowSoftFloor`/`softFloorKcal` (1200♀/1500♂, no bloqueante), más la corrección de
+> `energyFloor` para que informe del suelo aplicado y no del crudo, y la propagación del suelo nuevo a
+> `effectiveMaxRateFor` para no reintroducir AUD-5.
+>
+> **Medido tras implementarlo**: el suelo absoluto solo muerde con masa magra estimada por debajo de
+> ~26,7 kg (mujeres), así que **los dos casos que motivaron el hallazgo quedan por encima de él** (806 y
+> 866 kcal los sigue gobernando la disponibilidad energética). Lo que esos perfiles reciben ahora es el
+> **aviso**, no un objetivo distinto. La causa de fondo de esos objetivos bajos sigue abierta y está en
+> el Bloque B: el suelo de disponibilidad energética no resta el gasto de ejercicio (P2-5) y
+> `lowBmiGuard` usa un umbral de adulto también en mayores (C-3b).
+
 
 **De dónde viene**: P2-1.
 
@@ -143,7 +173,21 @@ hallazgo C-2 (IMC 19-20) reciben hoy déficit pleno porque no caen bajo el umbra
 
 ---
 
-## 🟠 C-4 (ALTO) — La proteína se calcula sobre peso total también en obesidad
+## ✅ C-4 (ALTO) — La proteína se calcula sobre peso total también en obesidad — RESUELTO (Fase 2, 2026-11-28)
+
+> **Resuelto, pero no como proponía este informe.** El tope es por **masa magra**
+> (`min(2,0 × peso, 2,6 × max(magra, 0,40 × peso))`), no por peso-a-IMC-25: el IMC no distingue músculo
+> de grasa, y el tope por IMC recortaba 18 g a un hombre de 90 kg/180 cm que es el usuario objetivo de la
+> app, no un obeso. El 2,6 sale de hacer explícito el supuesto de composición que los 2,0 g/kg ya
+> llevaban dentro, así que cae dentro de Helms por construcción. Resultados: 160 kg 320 → 184 g,
+> 150 kg → 156 g, 90 kg musculado → 178 g, usuario real sin cambio.
+>
+> **Las dos banderas que este informe pedía añadir a `macrosDegraded` se descartaron tras medirlas**: el
+> techo del 35% de kcal marca como degradado el perfil real del usuario (37,2% con un corte normal,
+> porque la fracción de kcal mide el déficit y no la proteína) y el mínimo de 130 g de carbohidratos da
+> falso positivo en cuerpos pequeños. Y sobre todo, ya no hay patología que detectar: el tope aguas
+> arriba la impide. El invariante de barrido "nunca más de 3,1 g/kg de masa magra" sustituye a la bandera.
+
 
 **De dónde viene**: P2-4.
 
@@ -169,7 +213,16 @@ caen por debajo de 130 g.
 
 ---
 
-## 🟠 C-5 (ALTO) — El autoajuste lee el glucógeno/agua del cambio de objetivo como si fuera gasto
+## ✅ C-5 (ALTO) — El autoajuste lee el glucógeno/agua del cambio de objetivo como gasto — RESUELTO (Fase 5, 2026-11-28)
+
+> Implementado con 14 días de gracia (no los 10 propuestos), columna `goal_changed_at` que solo mueven
+> `goal` y `goalRate`, y `null` tratado como "sin gracia" para no castigar a los perfiles existentes. La
+> aritmética de fechas se extrajo a `AdaptiveWindow` para poder testearla sin Turso (7 tests, con los
+> dos bordes). Dos cosas que no estaban en el informe y aparecieron al integrarlo: la gracia tiene que
+> comprobarse **antes** del enfriamiento (si no, el mensaje cambia a mitad de la espera), y la tarjeta
+> del perfil daba el consejo "registra tus comidas" también durante la gracia, donde es falso — de ahí
+> el flag `recalculating`.
+
 
 **De dónde viene**: P1-3 y P3-1 — mismo fenómeno fisiológico visto desde dos ángulos (el endocrinólogo
 lo acepta como limitación en la dirección de pérdida; el estadístico lo cuantifica y confirma que en
@@ -199,7 +252,16 @@ fórmula de partida ya era exacta).
 
 ---
 
-## 🟠 C-6 (MEDIO) — Pesos "arrastrados" se graban como pesajes reales
+## ✅ C-6 (MEDIO) — Pesos "arrastrados" se graban como pesajes reales — RESUELTO (Fase 3, 2026-11-28)
+
+> **Resuelto, pero no con el arreglo que propone este informe.** La propuesta de abajo ("escribir solo
+> si el valor difiere del último") habría deshecho AUD-12, que quitó esa condición a propósito porque
+> eliminar los días de peso estable de la muestra infla la pendiente de la regresión. La distinción
+> correcta no es *si el peso cambió* sino *si el usuario se ha pesado*: `ProfileRequest.recordWeighIn`,
+> `true` en onboarding, guardado físico y alta de peso, `false` solo en el reguardado derivado de editar
+> los datos personales. Pendiente de comprobar en el móvil (no hay forma de testear `upsertProfile` sin
+> Turso real).
+
 
 **De dónde viene**: P3-6.
 

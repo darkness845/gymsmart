@@ -28,6 +28,23 @@ object NutritionMath {
      */
     const val KCAL_PER_KG = 7700.0
 
+    /**
+     * Fracción del gasto total que se va en digerir (efecto térmico de los alimentos).
+     *
+     * El 10% es la cifra de consenso para una dieta mixta (National Academies, *DRI*, cap. 4:
+     * *"typically accounting for ~10% of total daily energy expenditure"*). Varía con la composición de
+     * la dieta —la proteína sale más cara de digerir— pero no lo suficiente como para justificar pedirle
+     * al usuario datos que no tiene.
+     *
+     * **Vivía en [ActivityBenchmarks] y se movió aquí al arreglar C-1**, y el motivo es el propio
+     * hallazgo: el proyecto afirmaba en un archivo que el PAL incluye el TEF y que la pulsera no, y en
+     * el otro construía el gasto de la pulsera como si no existiera. Teniendo la constante un solo
+     * dueño —el que calcula el gasto— esa divergencia no puede volver a abrirse en silencio. Además
+     * `ActivityBenchmarks` ya dependía de `NutritionMath`, así que la referencia inversa dejaba las dos
+     * dependiendo la una de la otra.
+     */
+    const val TEF_FRACTION = 0.10
+
     const val GOAL_LOSE     = "lose_fat"
     const val GOAL_GAIN     = "gain_muscle"
     const val GOAL_MAINTAIN = "maintain"
@@ -101,8 +118,40 @@ object NutritionMath {
             // colapsara al BMR y el déficit desapareciera entero. Mientras no haya histórico (los
             // primeros días, o si Health Connect no devuelve nada) se asume sedentario, que es la
             // estimación conservadora, y el autoajuste corrige después con datos reales.
-            if (avgActiveKcal > 0) bmr + avgActiveKcal
-            else                   bmr * activityMultiplier("sedentary")
+            if (avgActiveKcal > 0) {
+                // **El TEF (C-1).** `bmr + activas` omitía la digestión y daba un gasto un 10% más bajo
+                // que el modo fórmula **para la misma actividad real**: 2396 frente a 2662 en el perfil
+                // de referencia. Las consecuencias eran las dos caras del fallo que originó toda esta
+                // línea de trabajo: en pérdida, el tope del 25% se aplicaba sobre un gasto bajo y el
+                // déficit real llegaba al 32,5%; en ganancia, el superávit quedaba en +43 kcal, o sea
+                // mantenimiento disfrazado ("quiero ganar y no gano").
+                //
+                // `ActiveCaloriesBurnedRecord` es gasto por movimiento: no incluye basal (por eso se
+                // suma al BMR sin duplicar) **ni digestión**. El PAL del modo fórmula sí la incluye, por
+                // definición (DRI cap. 4: PAL = TEE/BMR, con el TEF dentro del TEE). Así que para que
+                // los dos modos midan lo mismo hay que devolver el TEF que a la pulsera le falta.
+                //
+                // La comprobación de que la constante es la correcta es algebraica, no empírica, y hay
+                // un test que la fija: `ActivityBenchmarks.activeKcalFor` genera las activas de un nivel
+                // como `BMR × (PAL × (1 − TEF) − 1)`, así que al reinyectarlas aquí
+                // `(BMR + activas) / (1 − TEF) = BMR × PAL` **exactamente**. Los dos modos coinciden.
+                //
+                // La forma rigurosa sería `(BMR + activas + 0,10 × Δ)/0,90`, porque el TEF es el 10% de
+                // lo que se *ingiere* y no de lo que se gasta; son ~60 kcal de diferencia y no merece
+                // la complejidad frente a una pulsera con ±20-30% de error (O'Driscoll 2020).
+                //
+                // El suelo sedentario se aplica también aquí (P1-2): antes esta rama era la única sin
+                // él, así que una pulsera que reportara pocas activas daba un gasto **por debajo** del
+                // respaldo "no tengo datos" de la rama de al lado — empezar a tener datos bajaba el
+                // objetivo 193 kcal. Tras el arreglo del TEF casi nunca muerde (hace falta que las
+                // activas sean menores que el 8% del BMR), pero la incoherencia no debe quedar abierta.
+                max(
+                    (bmr + avgActiveKcal) / (1.0 - TEF_FRACTION),
+                    bmr * activityMultiplier("sedentary")
+                )
+            } else {
+                bmr * activityMultiplier("sedentary")
+            }
         } else {
             bmr * activityMultiplier(activityLevel)
         }
@@ -150,6 +199,46 @@ object NutritionMath {
     const val EA_FLOOR_MALE   = 25.0
 
     /**
+     * Suelo **absoluto** de ingesta, en kcal/día, por debajo del cual no se emite ningún objetivo.
+     *
+     * 800 kcal es el umbral de las dietas de muy bajas calorías (VLCD), que NICE CG189 reserva a
+     * supervisión médica. La app no tiene forma de ofrecer esa supervisión, así que no debe emitir un
+     * objetivo ahí jamás, por mucho que la disponibilidad energética lo permita.
+     *
+     * **Es una red, no el arreglo de fondo** (C-2 en doc/12-auditoria-comite-kcal-2026-11-27.md). Solo
+     * muerde donde el propio suelo de disponibilidad energética cae por debajo de 800, es decir con una
+     * masa magra estimada por debajo de ~26,7 kg en mujeres y ~32 kg en hombres: cuerpos diminutos, o
+     * datos mal introducidos. Los casos que motivaron el hallazgo (mujer de 80 años y 42 kg → 806 kcal;
+     * de 75 años y 45 kg → 866) quedan **por encima** de este suelo y los sigue gobernando
+     * [energyAvailabilityFloor]; lo que les llega es el aviso de [SOFT_FLOOR_FEMALE].
+     *
+     * La causa de fondo de esos objetivos bajos es que el suelo de disponibilidad energética no resta el
+     * gasto de ejercicio y que [TargetResult.lowBmiGuard] usa un umbral de adulto (IMC 18,5) también en
+     * mayores — las dos están en el Bloque B del plan, sin abordar todavía.
+     */
+    const val ABSOLUTE_FLOOR_KCAL = 800.0
+
+    /**
+     * Umbrales de **aviso** (no bloqueantes) para un objetivo de pérdida, en kcal/día.
+     *
+     * Vienen de AHA/ACC/TOS 2013 (Jensen et al.), que sitúa las dietas de pérdida en 1200-1500 kcal en
+     * mujeres y 1500-1800 en hombres. **Es un criterio distinto** al de [EA_FLOOR_FEMALE]: ese marco
+     * protege la función endocrina y mide kcal por kg de masa magra; este mide si es realista cubrir los
+     * micronutrientes con tan poca comida. Son compatibles y pueden discrepar, y §7.1 de
+     * doc/10-fundamento-cientifico.md descartaba este marco confundiéndolo con el otro.
+     *
+     * Avisan en vez de bloquear a propósito: por debajo de 1200 kcal un objetivo puede seguir siendo
+     * razonable (la mujer de 50 kg sedentaria sale a 1126 con un déficit de solo el 21% y disponibilidad
+     * energética de 30), así que recortarlo sería peor que advertirlo. Lo que no es aceptable es emitirlo
+     * **en silencio**, que es lo que pasaba hasta ahora.
+     */
+    const val SOFT_FLOOR_FEMALE = 1200
+    const val SOFT_FLOOR_MALE   = 1500
+
+    /** Umbral de aviso que corresponde a este sexo. Ver [SOFT_FLOOR_FEMALE]. */
+    fun softFloorFor(sex: String): Int = if (sex == "male") SOFT_FLOOR_MALE else SOFT_FLOOR_FEMALE
+
+    /**
      * % de grasa corporal estimado a partir del IMC (Deurenberg 1991).
      *
      * ⚠️ **Convención, con error grande en el individuo** (±5 puntos de grasa es normal). No sirve para
@@ -192,6 +281,20 @@ object NutritionMath {
         val threshold = if (sex == "male") EA_FLOOR_MALE else EA_FLOOR_FEMALE
         return threshold * leanMassEstimate(sex, weightKg, heightCm, age)
     }
+
+    /**
+     * El suelo de seguridad que de verdad gobierna: **el más restrictivo** de los dos que existen, el
+     * de disponibilidad energética y el absoluto de [ABSOLUTE_FLOOR_KCAL].
+     *
+     * Se combinan con `max` porque los dos son cotas inferiores por motivos distintos (función
+     * endocrina y suficiencia de micronutrientes), así que respetar los dos significa respetar el mayor.
+     *
+     * **Sigue siendo un suelo "en crudo"**: no está acotado al mantenimiento. Quien lo use para fijar un
+     * objetivo tiene que aplicarle después el `min(…, gasto)` que impide que un suelo alto convierta una
+     * pérdida en superávit — ver [computeTargets].
+     */
+    fun safetyFloor(sex: String, weightKg: Double, heightCm: Double, age: Int): Double =
+        max(energyAvailabilityFloor(sex, weightKg, heightCm, age), ABSOLUTE_FLOOR_KCAL)
 
     // ── Ritmo ─────────────────────────────────────────────────────────────────
 
@@ -321,7 +424,11 @@ object NutritionMath {
      * lo que el cálculo no entrega. Con esto, el extremo del deslizador vuelve a ser el tope de verdad.
      *
      * @param tdee gasto con el que se va a calcular (ya sea de fórmula o medido).
-     * @param energyFloor suelo de [energyAvailabilityFloor] para este cuerpo.
+     * @param energyFloor suelo de [energyAvailabilityFloor] para este cuerpo. **El suelo absoluto de
+     *   [ABSOLUTE_FLOOR_KCAL] se aplica aquí dentro**, así que quien llame no tiene que conocerlo: las
+     *   pantallas pasan solo el de disponibilidad energética y siguen obteniendo el tope correcto. Si
+     *   este parámetro no absorbiera el suelo absoluto, el extremo del deslizador volvería a prometer un
+     *   ritmo que [computeTargets] no entrega — que es exactamente AUD-5.
      * @return la magnitud máxima, o `null` en mantenimiento (que no tiene ritmo). Puede ser **0.0** si
      *   no queda margen ninguno, que es el caso de `noSafeDeficit`.
      */
@@ -338,7 +445,8 @@ object NutritionMath {
             tdee * MAX_SURPLUS_FRACTION
         } else {
             // El suelo puede morder antes que el tope porcentual, así que manda el más restrictivo.
-            min(tdee * MAX_DEFICIT_FRACTION, max(0.0, tdee - energyFloor))
+            val floor = max(energyFloor, ABSOLUTE_FLOOR_KCAL)
+            min(tdee * MAX_DEFICIT_FRACTION, max(0.0, tdee - floor))
         }
         return min(hard, abs(rateForDailyDelta(maxDelta, weightKg)))
     }
@@ -378,9 +486,17 @@ object NutritionMath {
         val effectiveRate:  Double,
         /** True si el gasto usado viene de medición real y no de la fórmula (§5). */
         val tdeeIsMeasured: Boolean,
-        /** El suelo por disponibilidad energética (§7.2) mordió: el objetivo es ese suelo. */
+        /** Un suelo de seguridad mordió: el objetivo es ese suelo. Ver [energyFloor]. */
         val energyFloorHit: Boolean,
-        /** El suelo calculado para este cuerpo, para poder explicarlo en la interfaz. */
+        /**
+         * El suelo que **de verdad gobernó** el objetivo, para poder nombrarlo en la interfaz.
+         *
+         * Antes devolvía el suelo en crudo, sin acotar al mantenimiento, así que la interfaz podía
+         * decir "no bajamos de 2025 kcal" junto a un objetivo de 1925: un suelo por encima del número
+         * al que acompaña no es información, es una contradicción a la vista del usuario. Ahora es el
+         * valor ya acotado, el mismo que entra en el `max` final del objetivo, de modo que
+         * `energyFloor <= targetKcal` se cumple siempre.
+         */
         val energyFloor:    Int,
         /** Arrastre del día realmente aplicado, ya acotado y ya filtrado por modo pulsera. */
         val appliedCarryOver: Int,
@@ -406,7 +522,28 @@ object NutritionMath {
          * debajo del gramaje objetivo (AUD-17). Cuadrar las kcal no es lo mismo que ser un reparto
          * razonable — esto avisa cuando deja de serlo.
          */
-        val macrosDegraded: Boolean
+        val macrosDegraded: Boolean,
+        /**
+         * El objetivo de pérdida queda por debajo del umbral de aviso de su sexo
+         * ([SOFT_FLOOR_FEMALE] / [SOFT_FLOOR_MALE]): es emitible, pero hay que decirlo (C-2).
+         *
+         * **No bloquea nada** y no implica que el objetivo esté mal: por debajo de 1200 kcal puede
+         * haber un déficit perfectamente razonable en un cuerpo pequeño. Lo que señala es que cubrir
+         * los micronutrientes con esa cantidad de comida es difícil, lo que es una conversación que
+         * merece tener en vez de un número emitido en silencio.
+         *
+         * Solo se activa cuando hay **déficit real**: avisar a quien está en mantenimiento de que su
+         * mantenimiento es bajo no es útil, es ruido sobre un plan que no recorta nada.
+         */
+        val belowSoftFloor: Boolean,
+        /**
+         * El umbral de aviso contra el que se comparó, en kcal ([SOFT_FLOOR_FEMALE] / [SOFT_FLOOR_MALE]).
+         *
+         * Viaja en el resultado, igual que [energyFloor], para que la interfaz pueda nombrar la cifra
+         * sin conocer el sexo ni volver a derivarla. Una interfaz que recalcula un umbral por su cuenta
+         * es una segunda fuente de verdad que puede divergir del cálculo que de verdad se aplicó.
+         */
+        val softFloorKcal:  Int
     )
 
     /**
@@ -493,7 +630,10 @@ object NutritionMath {
         //
         // Va al final a propósito: un suelo aplicado antes del delta deja caminos por los que el
         // objetivo final acaba por debajo de él.
-        val floorRaw = energyAvailabilityFloor(sex, weightKg, heightCm, age)
+        // El más restrictivo de los dos suelos de seguridad: disponibilidad energética y el absoluto de
+        // 800 kcal (C-2). Siguen siendo *un* suelo desde aquí abajo, así que toda la lógica de
+        // acotación al mantenimiento, `noSafeDeficit` y el `max` final no cambia por tener dos.
+        val floorRaw = safetyFloor(sex, weightKg, heightCm, age)
 
         // **El suelo nunca empuja por encima del mantenimiento.** Sin esta guarda, un suelo alto
         // convierte "perder grasa" en un superávit: el usuario pediría adelgazar y la app le mandaría
@@ -537,7 +677,18 @@ object NutritionMath {
         val limited = abs(sustainedDelta - requestedDelta) > RATE_LIMIT_DEADBAND_KCAL
         val flooredHit = directional < floor - 1e-9
 
-        val macros = macrosFor(targetKcal, weightKg, goal)
+        // Aviso de objetivo bajo (C-2). Se mide sobre el objetivo **sostenido**, no sobre el del día:
+        // el arrastre de la pulsera puede hundir un día concreto por debajo del umbral sin que el plan
+        // lo esté, y avisar por eso sería ruido que aparece y desaparece según la actividad de ayer.
+        val belowSoft = signFor(goal) < 0 && sustainedTarget < softFloorFor(sex)
+
+        // La masa magra se aporta para acotar la proteína en obesidad severa (C-4). Es la misma
+        // estimación que ya alimenta el suelo de disponibilidad energética, con su mismo nivel de
+        // confianza — y aquí, además, con un suelo que impide que su saturación hunda el objetivo.
+        val macros = macrosFor(
+            targetKcal, weightKg, goal,
+            leanMassKg = leanMassEstimate(sex, weightKg, heightCm, age)
+        )
 
         return TargetResult(
             bmr              = bmrValue.roundToInt(),
@@ -553,11 +704,13 @@ object NutritionMath {
             effectiveRate    = achievedRate,
             tdeeIsMeasured   = measuredTdee != null,
             energyFloorHit   = flooredHit,
-            energyFloor      = floorRaw.roundToInt(),
+            energyFloor      = floor.roundToInt(),
             appliedCarryOver = (targetKcal - sustainedTarget).roundToInt(),
             noSafeDeficit    = noSafeDeficit,
             lowBmiGuard      = lowBmiGuard,
-            macrosDegraded   = macros.degraded
+            macrosDegraded   = macros.degraded,
+            belowSoftFloor   = belowSoft,
+            softFloorKcal    = softFloorFor(sex)
         )
     }
 
@@ -569,26 +722,97 @@ object NutritionMath {
         val degraded: Boolean = false
     )
 
+    // ── Objetivo de proteína (§6, C-4) ────────────────────────────────────────
+
+    /** g/kg de peso total en déficit. Morton 2018 sitúa la meseta en 1,6; este valor la supera. */
+    const val PROTEIN_PER_KG_DEFICIT = 2.0
+
+    /** g/kg de peso total en mantenimiento y ganancia. */
+    const val PROTEIN_PER_KG_BASE = 1.8
+
+    /**
+     * Fracción de masa magra que los valores por peso total asumen implícitamente.
+     *
+     * [PROTEIN_PER_KG_DEFICIT] no salió de la nada: §6 lo justifica como la traducción de los
+     * 2,3-3,1 g/kg **de masa magra** de Helms 2014 "para un 20% de grasa". O sea que la cifra por peso
+     * total ya lleva dentro una suposición sobre la composición corporal de quien la recibe. Esta
+     * constante la hace explícita (0,77 ≈ 23% de grasa, el extremo prudente de esa suposición) para
+     * poder detectar a quién no se le aplica.
+     *
+     * Con ella, el objetivo en déficit pasa a ser `min(2,0 × peso, 2,0/0,77 × magra)` = `min(2,0 × peso,
+     * 2,6 × magra)`, y ese 2,6 cae dentro del rango de Helms en vez de ser un número elegido a mano.
+     *
+     * **Por qué 0,77 y no 0,80** (que sería el 20% literal de §6): a 0,80 el tope empieza a morder con
+     * cualquier grasa estimada por encima del 20%, que es la mitad de la población adulta, y recortaría
+     * 22 g a un hombre de 95 kg que no tiene ningún problema. El objetivo de C-4 es la cola de obesidad
+     * severa, no reescribir el objetivo de proteína de todo el mundo.
+     */
+    const val PROTEIN_ASSUMED_LEAN_FRACTION = 0.77
+
+    /**
+     * Suelo de masa magra, como fracción del peso, **solo para el cálculo de proteína**.
+     *
+     * Existe porque [bodyFatPctEstimate] (Deurenberg) está extrapolado fuera de su rango de validación
+     * (IMC 14-41) y satura en el 70% de grasa a partir de IMC ~58, lo que afirma que una persona es 30%
+     * masa magra — fisiológicamente imposible: ni en obesidad severa se baja del ~40%. Sin este suelo,
+     * una mujer de 150 kg recibiría 117 g de proteína (0,78 g/kg) por culpa de una masa magra estimada
+     * de 45 kg cuando la real ronda 60-70.
+     *
+     * **Se aplica solo aquí, a propósito.** Corregir [bodyFatPctEstimate] en su origen subiría también
+     * el suelo por disponibilidad energética: en esa misma mujer pasaría de 1350 a 2025 kcal, por encima
+     * de su tope del 25%, y le recortaría el déficit de 642 a 542 kcal/día. Eso rompería los 500-750
+     * kcal de déficit que AHA/ACC/TOS 2013 recomienda precisamente en obesidad, que la auditoría dio por
+     * bueno de forma expresa. Un arreglo que mejora una cifra y empeora otra no es un arreglo.
+     */
+    const val PROTEIN_MIN_LEAN_FRACTION = 0.40
+
+    /**
+     * Objetivo de proteína en gramos.
+     *
+     * El valor por kg de peso total se acota por masa magra ([PROTEIN_ASSUMED_LEAN_FRACTION]), porque en
+     * obesidad severa el peso total produce cifras que cuadran las kcal pero no son un reparto: un
+     * hombre de 160 kg recibía **320 g, el 57% de sus calorías**, dejando 102 g de carbohidratos (C-4).
+     * Las guías coinciden en que ahí la proteína se calcula sobre peso ajustado o masa magra, no sobre el
+     * peso real (ISSN 2017, ASPEN).
+     *
+     * @param leanMassKg masa magra estimada. Si es `null` no hay tope y se usa solo el peso total, que
+     *   es el comportamiento histórico. [computeTargets] siempre la aporta, así que el camino de
+     *   producción siempre lleva el tope; el parámetro es opcional para poder usar esta función con
+     *   un peso y nada más.
+     */
+    fun proteinTargetG(weightKg: Double, goal: String, leanMassKg: Double? = null): Double {
+        val perKg = if (goal == GOAL_LOSE) PROTEIN_PER_KG_DEFICIT else PROTEIN_PER_KG_BASE
+        val byWeight = perKg * weightKg
+        val lean = leanMassKg ?: return byWeight
+        // El suelo impide que una masa magra imposible (Deurenberg saturado) hunda la proteína.
+        val leanFloored = max(lean, PROTEIN_MIN_LEAN_FRACTION * weightKg)
+        return min(byWeight, perKg / PROTEIN_ASSUMED_LEAN_FRACTION * leanFloored)
+    }
+
     /**
      * Reparto de macronutrientes (§6).
      *
-     * Proteína: 2,0 g/kg en déficit, 1,8 g/kg en el resto. Ambos valores caen dentro
-     * de los rangos respaldados (Morton 2018 sitúa la meseta en 1,6 g/kg; Helms 2014 pide 2,3-3,1 g/kg
-     * de masa magra en déficit, que para un 20% de grasa equivale a los 2,0 g/kg de peso total).
+     * Proteína: ver [proteinTargetG] — por kg de peso total, acotada por masa magra cuando se aporta.
      *
      * Antes los carbohidratos se recortaban a 0 con `coerceAtLeast(0)` cuando proteína y grasa se
      * pasaban del objetivo, y **los macros dejaban de sumar las kcal en silencio**. Ahora el exceso se
      * absorbe bajando primero la grasa (hasta un 15% de las kcal, por función hormonal) y solo después
      * la proteína, de modo que el reparto siempre cuadra.
+     *
+     * @param leanMassKg masa magra estimada, para acotar la proteína. Ver [proteinTargetG].
      */
-    fun macrosFor(targetKcalRaw: Double, weightKg: Double, goal: String): Macros {
+    fun macrosFor(
+        targetKcalRaw: Double,
+        weightKg:      Double,
+        goal:          String,
+        leanMassKg:    Double? = null
+    ): Macros {
         // Un objetivo negativo o no finito no tiene reparto posible, y sin esta guarda producía macros
         // negativos (grasa de −17 g) que además dejaban de sumar (AUD-15). Las ramas correctoras de
         // abajo no se disparan con un objetivo negativo, porque `remaining` ya sale negativo de otro modo.
         val targetKcal = if (targetKcalRaw.isFinite()) max(0.0, targetKcalRaw) else 0.0
 
-        val proteinPerKg = if (goal == GOAL_LOSE) 2.0 else 1.8
-        var proteinKcal = weightKg * proteinPerKg * 4.0
+        var proteinKcal = proteinTargetG(weightKg, goal, leanMassKg) * 4.0
         var fatKcal = targetKcal * 0.25
 
         var remaining = targetKcal - proteinKcal - fatKcal
@@ -596,7 +820,7 @@ object NutritionMath {
         // grasa y, si no bastaba, proteína por debajo del gramaje objetivo. El reparto final cuadra
         // siempre (eso ya estaba resuelto y probado), pero cuadrar no es ser razonable — 0 g de
         // carbohidratos y proteína al 85% de las kcal no es un plan que deba pasar sin aviso (AUD-17).
-        val degraded = remaining < 0.0
+        val didNotFit = remaining < 0.0
         if (remaining < 0) {
             val minFatKcal = targetKcal * 0.15
             fatKcal = max(minFatKcal, targetKcal - proteinKcal)
@@ -607,11 +831,31 @@ object NutritionMath {
             remaining = 0.0
         }
 
+        // ── Dos banderas adicionales que se probaron y se DESCARTARON (C-4) ──
+        //
+        // La auditoría pedía ampliar `degraded` para que también saltara con "proteína por encima del 35%
+        // de las kcal" (techo del AMDR) o "carbohidratos por debajo de 130 g" (RDA del IOM), porque los
+        // 320 g de un hombre de 160 kg cuadraban las kcal y pasaban sin ninguna bandera. Se implementaron
+        // las dos, se midieron contra perfiles reales, y las dos dan **falsos positivos sin aportar
+        // ningún verdadero positivo**:
+        //
+        // - **Techo del 35%**: el perfil real del usuario (75,5 kg, objetivo 1625) sale a 151 g, que son
+        //   el **37,2%** de sus kcal. Es un corte de libro, y marcarlo como "reparto no realista" sería
+        //   exactamente el aviso alarmante por nada de AUD-20, en la pantalla que más se mira. La causa
+        //   es que la fracción de kcal sube cuando las kcal bajan: mide el déficit, no la proteína.
+        // - **Mínimo de 130 g de carbohidratos**: una mujer de 50 kg con objetivo de 1126 kcal sale a
+        //   114 g, perfectamente razonable para su tamaño. El umbral no escala con el cuerpo.
+        //
+        // Y sobre todo: **ya no hay patología que detectar**. El tope de [proteinTargetG] acota la
+        // proteína a 2,6 g/kg de masa magra, que es el extremo de Helms 2014, así que los 4,5 g/kg que
+        // motivaron el hallazgo no pueden volver a ocurrir. La bandera sobraba porque el arreglo está
+        // aguas arriba — prevenir es mejor que avisar.
+
         return Macros(
             proteinG = (proteinKcal / 4.0).roundToInt(),
             carbsG   = (remaining / 4.0).roundToInt(),
             fatG     = (fatKcal / 9.0).roundToInt(),
-            degraded = degraded
+            degraded = didNotFit
         )
     }
 
@@ -672,6 +916,24 @@ object NutritionMath {
      * doc/11-auditoria-kcal.md). Con 14 días / 8 pesajes esa desviación baja a ~154 kcal/d, por debajo
      * del error que ya se acepta en el multiplicador de actividad (~350 kcal/d).
      */
+    /**
+     * Días que se dejan pasar tras cambiar de objetivo o de ritmo antes de volver a medir el gasto (C-5).
+     *
+     * Al empezar o cambiar un déficit se mueven 1-1,5 kg de **glucógeno y su agua** con muy poca energía
+     * real (cada gramo de glucógeno arrastra ~3 g de agua; Hall 2008). [measuredTdee] no distingue esa
+     * agua de la grasa: aplica 7700 kcal/kg a todo el cambio de peso, así que la lee como gasto.
+     *
+     * Medido con Montecarlo sobre 3.000 trayectorias: una caída de 1,5 kg en la primera ventana sesga el
+     * gasto medido en **+278 kcal/día**, y el factor guardado queda con +261 kcal de error en la semana 4
+     * — es decir, **peor que no ajustar nada**. En ganancia el signo se invierte (el glucógeno sube con
+     * los carbohidratos) y el superávit sale recortado, reproduciendo el síntoma "no gano".
+     *
+     * Con 14 días de gracia, ese sesgo de la semana 4 baja a +186, y a +7 si la fórmula de partida ya
+     * era buena. Se eligen 14 y no los 10 del informe por coherencia con el resto de constantes
+     * `ADAPTIVE_*`, que ya usan ese número, y porque es el extremo prudente de lo que midió el panel.
+     */
+    const val ADAPTIVE_GOAL_CHANGE_GRACE_DAYS = 14
+
     const val ADAPTIVE_MIN_LOGGED_DAYS = 14
     const val ADAPTIVE_MIN_WEIGH_INS   = 8
     const val ADAPTIVE_MIN_SPAN_DAYS   = 14
@@ -725,8 +987,19 @@ object NutritionMath {
     }
 
     sealed class AdaptiveResult {
-        /** No hay datos suficientes: se sigue usando la fórmula y se dice que es una estimación. */
-        data class NotEnoughData(val reason: String) : AdaptiveResult()
+        /**
+         * No hay datos suficientes: se sigue usando la fórmula y se dice que es una estimación.
+         *
+         * @param recalculating `true` cuando la medición está **pausada a propósito** (periodo de gracia
+         *   tras cambiar de objetivo, C-5) y no porque al usuario le falten registros. La interfaz tiene
+         *   que distinguirlo: su consejo por defecto es "registra tus comidas y pésate con regularidad",
+         *   que durante la gracia es un consejo falso — el usuario puede estar registrando todo y la
+         *   pausa seguiría. Decirle que haga algo que no cambia nada es la familia de fallo de AUD-2.
+         */
+        data class NotEnoughData(
+            val reason: String,
+            val recalculating: Boolean = false
+        ) : AdaptiveResult()
 
         data class Adjusted(
             val newTdee:      Double,

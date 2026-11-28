@@ -128,8 +128,186 @@ Bloque B (edad en los extremos C-3, ventanas de datos C-7) y Bloque C (tendencia
 texto del autoajuste, filtro de Kalman) son de menor prioridad — todo el detalle y las fórmulas
 propuestas están en el doc 12.
 
-**Siguiente paso**: el usuario tiene que decidir si se implementa el Bloque A (y cómo migrar los
-`adaptive_factor` existentes para C-1) antes de tocar código.
+**Decisiones del usuario (2026-11-28)**: resetear los `adaptive_factor` guardados al corregir C-1;
+aplazar la política de menores (C-3); implementar **solo el Bloque A**.
+
+### ✅ Fase 1 del Bloque A — C-2, suelo absoluto y aviso de objetivo bajo (2026-11-28, sin commitear)
+
+- **`ABSOLUTE_FLOOR_KCAL = 800`**: suelo duro, combinado con el de disponibilidad energética por `max`
+  (manda el más restrictivo) en el nuevo helper `NutritionMath.safetyFloor()`. Toda la lógica posterior
+  (acotación al mantenimiento, `noSafeDeficit`, el `max` final) no cambia por tener dos suelos.
+- **Aviso `belowSoftFloor` + `softFloorKcal`** (1200♀/1500♂, AHA/ACC/TOS 2013): no bloquea, solo informa.
+  Se mide sobre el objetivo **sostenido** (no el del día, que el arrastre de la pulsera mueve) y **solo
+  con déficit real** — avisar en mantenimiento sería ruido sobre un plan que no recorta nada.
+- **`effectiveMaxRateFor` aprende el suelo nuevo**: si no, el extremo del `RateSlider` volvería a
+  prometer un ritmo que el cálculo no entrega, que es AUD-5 otra vez. Se aplica **dentro** de la
+  función, así que las pantallas siguen pasando solo el suelo de disponibilidad energética.
+- **`energyFloor` pasa a informar del suelo aplicado**, no del crudo: antes la UI podía escribir "no
+  bajamos de 2025" junto a un objetivo de 1925. Ahora `energyFloor <= targetKcal` siempre, con test.
+- **El aviso de la UI distingue qué suelo mordió**: atribuir el suelo absoluto a "tu masa magra
+  estimada" sería nombrar un límite que no es el que actuó (la familia de AUD-2).
+- **Alcance real del suelo absoluto, medido**: solo muerde con masa magra estimada < ~26,7 kg (mujeres).
+  Los casos del informe quedan por encima y los sigue gobernando la disponibilidad energética (mujer de
+  80 a/42 kg → 806 kcal, verificado en test). **Es una red para la cola, no el arreglo de los objetivos
+  bajos** — la causa de fondo (suelo sin restar ejercicio, `lowBmiGuard` con umbral de adulto) está en
+  el Bloque B, sin abordar.
+- **7 tests nuevos** (55 en `NutritionMathTest`): suelo absoluto en el barrido, `energyFloor` nunca por
+  encima del objetivo, el caso donde muerde (40 kg/85 a → 800) y el que no (42 kg/80 a → 806), el aviso
+  con y sin déficit, y que el tope del deslizador coincide con lo que entrega el cálculo.
+- **Verificado**: `:shared:jvmTest :server:compileKotlin :composeApp:compileKotlinJvm
+  :composeApp:jvmTest :composeApp:compileDebugKotlinAndroid :composeApp:compileKotlinWasmJs
+  :composeApp:compileKotlinJs`, todo verde. Sin verificar en dispositivo (el texto del aviso nuevo).
+
+### ✅ Fase 2 del Bloque A — C-4, proteína acotada por masa magra (2026-11-28, sin commitear)
+
+- **`proteinTargetG(peso, objetivo, magra)`** nueva: `min(perKg × peso, perKg/0,77 × max(magra, 0,40 ×
+  peso))`. En déficit eso es `min(2,0 × peso, 2,6 × magra)`, y ese 2,6 **no es un número elegido a
+  mano**: sale de hacer explícito el supuesto que la cifra por peso total ya llevaba dentro (§6 justifica
+  los 2,0 g/kg como la traducción de los 2,3-3,1 g/kg de masa magra de Helms "para un 20% de grasa").
+- **Por qué 0,77 y no 0,80**: a 0,80 el tope muerde con cualquier grasa estimada >20% —media población
+  adulta— y recortaría 22 g a un hombre de 95 kg sin ningún problema. C-4 es la cola de obesidad severa.
+- **Por qué no el tope por IMC 25 que proponía el panel**: el IMC no distingue músculo de grasa y esta es
+  una app de gimnasio. A un hombre de 90 kg/180 cm (IMC 27,8) le recortaría de 180 a 162 g tratándolo de
+  obeso; por masa magra se queda en 178 g. Verificado con números.
+- **Suelo `PROTEIN_MIN_LEAN_FRACTION = 0,40`**, solo en el camino de la proteína: Deurenberg está
+  extrapolado (válido hasta IMC 41) y satura en 70% de grasa, afirmando 30% de masa magra, que es
+  imposible. Sin el suelo, una mujer de 150 kg recibiría 117 g (0,78 g/kg); con él, 156 g.
+  **No se corrige `bodyFatPctEstimate` en su origen a propósito**: subiría también el suelo de
+  disponibilidad energética de esa mujer de 1350 a 2025 kcal, por encima de su tope del 25%, recortando
+  su déficit de 642 a 542 kcal/día y rompiendo los 500-750 kcal que AHA 2013 recomienda en obesidad —
+  que la propia auditoría dio por bueno. Medido antes de decidirlo.
+- **Resultados medidos** (perder, ritmo por defecto): hombre 160 kg 320 g → **184 g** (2,6 g/kg de magra,
+  32,7% de kcal, 238 g de carbohidratos); mujer 150 kg → **156 g**; hombre 90 kg musculado → **178 g**
+  (sin castigo); usuario real 75,5 kg → **151 g, sin cambio**.
+- **Se descartaron las dos banderas que la auditoría pedía añadir a `macrosDegraded`**, después de
+  implementarlas y medirlas: el techo del 35% de kcal marcaba como "reparto no realista" **el perfil real
+  del usuario** (1625 kcal, 151 g = 37,2%, que es un corte de libro) — la fracción de kcal mide el
+  déficit, no la proteína — y el mínimo de 130 g de carbohidratos daba falso positivo en la mujer de
+  50 kg (114 g, razonable para su tamaño). Ninguna aportaba un verdadero positivo: **el tope aguas arriba
+  ya impide la patología**, así que no hay nada que detectar. Decisión fijada con un test.
+- **5 tests nuevos** (60 en `NutritionMathTest`): los cuatro perfiles de arriba, el invariante de barrido
+  "la proteína nunca pasa de 3,1 g/kg de masa magra" (el que de verdad cierra C-4, sustituyendo a la
+  bandera), que el tope nunca *sube* la proteína, y que un corte normal no dispara el aviso de degradado.
+- **Verificado**: los siete targets de siempre, todo verde.
+
+### ✅ Fase 3 del Bloque A — C-6, no grabar pesos arrastrados como pesajes (2026-11-28, sin commitear)
+
+- **`ProfileRequest.recordWeighIn: Boolean = true`** en cliente y servidor. `upsertProfile` solo escribe
+  en `weight_history` si viene `true`.
+- **Solo uno de los cuatro caminos cambia.** Localizados todos los que construyen un `ProfileRequest`:
+  onboarding (`OnboardingScreen.kt:181`), guardado físico (`ProfileScreen.kt:285`) y alta de peso
+  (`WeightScreen.kt:497`) **sí** son pesajes y se quedan en `true` — en los tres el usuario está
+  confirmando su peso, aunque no lo cambie, y registrar los días sin cambio es deliberado (AUD-12). El
+  que pasa a `false` es el reguardado derivado de **editar los datos personales**
+  (`ProfileScreen.kt:257`), donde el peso que viaja es el que estaba cargado y puede tener días.
+- **AUD-12 queda intacto**: lo que se distingue no es "el peso cambió o no", es "el usuario se ha pesado
+  o no". El arreglo que proponía el panel ("escribir solo si el valor difiere") sí habría deshecho
+  AUD-12, y por eso se descartó al planificar.
+- **El `true` por defecto es la parte delicada**: el JSON del servidor es `Json.Default` (estricto), y las
+  apps ya instaladas no mandan el campo. Si el defecto fuera `false` dejarían de registrar pesajes **en
+  silencio** y el autoajuste se quedaría sin datos sin avisar. **3 tests nuevos** en
+  `server/.../routes/ProfileRequestTest.kt` (primeros tests de la capa de rutas) fijan exactamente eso:
+  cuerpo de app vieja → `true`, campo respetado cuando se manda, y cuerpo sin `hasWearable` tampoco falla.
+- **Lo que NO está verificado**: que al editar los datos personales deje de aparecer una fila en
+  `weight_history`. `upsertProfile` necesita Turso real y `TursoService` es una clase concreta sin
+  interfaz, así que cubrirlo exigiría introducir una abstracción solo para el test — más cambio que el
+  arreglo. **Queda pendiente de comprobar en el móvil.**
+- **Verificado**: `:shared:jvmTest :server:test :composeApp:compileKotlinJvm :composeApp:jvmTest
+  :composeApp:compileDebugKotlinAndroid :composeApp:compileKotlinWasmJs :composeApp:compileKotlinJs`.
+
+### ✅ Fase 5 del Bloque A — C-5, periodo de gracia tras cambiar de objetivo (2026-11-28, sin commitear)
+
+- **Columna `goal_changed_at`** (`ALTER TABLE` idempotente, igual que las de arriba) + campo en
+  `UserProfile`. **Solo la mueven `goal` y `goalRate`**: cambiar peso, altura o actividad no desplaza
+  glucógeno, así que descartar medidas por eso sería tirar datos buenos. El ritmo se compara **con
+  epsilon**, no con `!=`: es un Double que viaja como texto, y una diferencia de redondeo que disparara
+  una gracia espuria dejaría al usuario sin autoajuste dos semanas sin motivo.
+- **`null` = sin gracia**: los perfiles anteriores a la columna se miden como antes, en vez de bloquear
+  el autoajuste dos semanas a quien ya llevaba tiempo con su objetivo puesto.
+- **La columna va DENTRO del `INSERT OR REPLACE`**, no en un `restoreStatement`. Es la misma trampa que
+  obliga a existir a `restoreStatement` (el REPLACE borra la fila y toda columna fuera de la lista vuelve
+  a NULL) y la que habría roto el centinela de la Fase 4 si se hubiera puesto en esta tabla. Como los
+  args de Turso no admiten NULL, cuando no hay valor se elige la variante de SQL que no menciona la
+  columna — mismo patrón que `saveAdaptiveTdee`.
+- **`ADAPTIVE_GOAL_CHANGE_GRACE_DAYS = 14`** (no los 10 del informe: coherencia con el resto de
+  constantes `ADAPTIVE_*` y extremo prudente de lo medido).
+- **La cobertura se mide sobre la ventana efectiva**, no sobre los 28 nominales. Sin esto, un cambio hace
+  16 días dejaría 2 días útiles de 28 → cobertura 7% → el mensaje culparía al usuario de no registrar
+  comidas que sí registró.
+- **`AdaptiveWindow` nuevo** (`server/.../services/AdaptiveWindow.kt`): la aritmética de fechas extraída
+  a una función pura para poder testearla sin Turso. **7 tests**, incluidos los dos bordes (gracia que
+  vence hoy, cambio hoy mismo), el caso nulo y un barrido de 0 a 120 días.
+- **Dos cosas que aparecieron al revisar la integración:**
+  1. **La gracia va antes del enfriamiento.** Al revés, el usuario veía "ya ajustado esta semana" (7
+     días) y el mensaje le cambiaba a mitad de la espera por otro motivo. La gracia dura 14 y explica
+     mejor lo que pasa, así que cubre todo el periodo con un solo mensaje.
+  2. **`recalculating: Boolean`** nuevo en `NotEnoughData` y en la respuesta. La tarjeta del perfil
+     remataba *todo* "no hay ajuste" con "registra tus comidas y pésate con regularidad", que durante la
+     gracia es un **consejo falso**: el usuario puede estar registrando todo y la pausa seguiría igual.
+     Es la familia de AUD-2 (decirle algo que contradice lo que hace el cálculo), así que ese consejo se
+     suprime cuando la pausa es deliberada.
+- **Consecuencia que conviene saber**: tras cambiar de objetivo pasan ~28 días hasta que el autoajuste
+  puede volver a ajustar (14 de gracia + 14 de ventana mínima). Es el precio de no medir agua.
+- **Verificado**: los siete targets. Sin verificar en dispositivo: el texto de la tarjeta en gracia.
+
+### ✅ Fase 4 del Bloque A — C-1, TEF en modo pulsera + reseteo del factor (2026-11-28, sin commitear)
+
+**Bloque A completo.** Esta era la fase que más kcal/día mueve.
+
+- **`tdee()` en modo pulsera**: `(bmr + activas) / (1 − TEF_FRACTION)`, con el suelo `bmr × 1,2` que
+  antes solo tenía la rama de al lado (P1-2: sin él, empezar a tener datos de pulsera podía *bajar* el
+  objetivo 193 kcal respecto al respaldo "no tengo datos").
+- **`TEF_FRACTION` se movió de `ActivityBenchmarks` a `NutritionMath`**. No es cosmético: el hallazgo
+  existía precisamente porque dos archivos opinaban sobre el TEF y uno lo descontaba para *mostrar* la
+  cifra mientras el otro no lo reponía al *calcular* el gasto. Con un solo dueño —el que calcula— esa
+  divergencia no puede reabrirse en silencio. Además `ActivityBenchmarks` ya dependía de
+  `NutritionMath`, así que la referencia inversa dejaba las dos dependiendo la una de la otra.
+- **La corrección es comprobable algebraicamente, no a ojo**: `activeKcalFor` genera las activas como
+  `BMR × (PAL × (1 − TEF) − 1)`, así que reinyectarlas da `(BMR + activas)/(1 − TEF) = BMR × PAL`
+  **exactamente**. Hay un test nuevo que lo verifica **nivel por nivel**: si alguien cambia una de las
+  dos fórmulas sin la otra, se cae.
+- **Un test existente afirmaba el fallo** (`con datos de pulsera el gasto es basal mas actividad media`,
+  `assertClose(bmr + 600, …)`). Reescrito, con el motivo del cambio de expectativa escrito dentro.
+- **Efecto medido** (perfil real del usuario, 450 kcal activas): gasto estimado **2255 → 2505**.
+  - *Ganar músculo*: el objetivo viejo (2566) era un superávit real de **+60 kcal** frente al gasto
+    verdadero de 2505, no los +311 que se pedían. Es literalmente "quiero ganar y no gano". Ahora: 2817,
+    +311 reales.
+  - *Perder grasa*: el objetivo viejo (1691, ya recortado por el tope) era un déficit real del **32,5 %**
+    mientras el sistema informaba 25 %. Ahora: 1883, un 24,8 % real. **Reproduce exactamente las dos
+    cifras que afirmaba la auditoría**, calculadas por un camino independiente.
+- **Migración con tabla `schema_migrations`** (`id` + `applied_at`) y helper `applyOnce`, que mete los
+  cambios y el marcador en **una sola transacción** `BEGIN IMMEDIATE`/`COMMIT`: si la red falla a mitad,
+  no se confirma ninguno de los dos y el próximo arranque reintenta. Al revés, una migración podría
+  quedar marcada sin haberse aplicado.
+- **Por qué NO un centinela en `user_profiles`** (era el plan inicial, y lo habría roto): `upsertProfile`
+  usa `INSERT OR REPLACE`, que borra la fila, así que el centinela volvería a NULL en el primer guardado
+  de perfil y el reseteo se dispararía otra vez en el siguiente arranque — borrando un factor legítimo de
+  semanas. Es la misma trampa que obliga a existir a `restoreStatement`.
+- **Validado contra SQLite local** (no contra producción): reseteo en el primer arranque → el autoajuste
+  guarda un factor nuevo → **segundo arranque en frío y el factor sobrevive**. Comprobado en la misma
+  prueba que `goal_changed_at` sobrevive al `INSERT OR REPLACE` (por ir dentro de la lista) y que el
+  marcador sobrevive porque vive en otra tabla.
+- **Documentación científica actualizada**: §1.3 de `doc/10` ahora lleva la fórmula correcta con el
+  porqué, y §1.2 corrige la afirmación inexacta que señaló P1-6 (los multiplicadores altos **sí** están
+  alineados con FAO/WHO e IOM; el que queda fuera es el 1,2 de sedentario, por debajo de todas las
+  referencias de agua doblemente marcada — se deja igual porque el factor del autoajuste lo cubre, pero
+  con su dirección de sesgo escrita).
+- **Verificado**: los siete targets, todo verde.
+
+## ⚠️ Pendiente antes de dar el Bloque A por terminado
+
+1. **Desplegar las fases 1, 2 y 4 juntas.** Las tres mueven el objetivo en kcal y el reseteo del factor
+   tiene que caer con el último cambio de fórmula; si no, el factor pasa un tiempo compensando una
+   fórmula que ya no existe. Las fases 3 y 5 son independientes.
+2. **La migración corre sola en el primer arranque tras desplegar** y borra `adaptive_factor` y
+   `adaptive_tdee` de producción (autorizado por el usuario el 2026-11-28). Tras eso, el autoajuste
+   necesita ~2 semanas de datos para volver a tener una corrección.
+3. **Probar en el móvil** lo que no se puede verificar aquí: el aviso de objetivo bajo (Fase 1), que
+   editar los datos personales ya no cree una fila en `weight_history` (Fase 3), y el texto de la tarjeta
+   durante el periodo de gracia (Fase 5).
+4. **Nada está commiteado**, y siguen los 11 commits previos sin subir.
+Las fases 1, 2 y 4 van en el **mismo despliegue**: las tres mueven el objetivo en kcal y el reseteo del
+factor tiene que caer con el último cambio de fórmula.
 
 ---
 

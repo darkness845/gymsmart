@@ -1,6 +1,7 @@
 package com.gymsmart.gymsmart.nutrition
 
 import kotlin.math.abs
+import kotlin.math.roundToInt
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -307,9 +308,36 @@ class NutritionMathTest {
     // ── Modo pulsera ──────────────────────────────────────────────────────────
 
     @Test
-    fun `con datos de pulsera el gasto es basal mas actividad media`() {
+    fun `con datos de pulsera el gasto es basal mas actividad media mas digestion`() {
+        // **Este test afirmaba `bmr + 600` y era el fallo C-1 escrito como expectativa.** Las calorías
+        // activas de la pulsera no incluyen el efecto térmico de los alimentos, pero el PAL del modo
+        // fórmula sí (DRI cap. 4), así que sumarlas sin más daba un gasto un 10% más bajo que el modo
+        // fórmula para la misma actividad real: déficit del 32,5% donde el sistema informaba 25%, y
+        // superávit de +43 kcal donde se pedía ganar músculo.
         val bmr = NutritionMath.bmr("male", 70.0, 175.0, 22)
-        assertClose(bmr + 600.0, NutritionMath.tdee(bmr, NutritionMath.ACTIVITY_WEARABLE, 600.0))
+        assertClose(
+            (bmr + 600.0) / (1.0 - NutritionMath.TEF_FRACTION),
+            NutritionMath.tdee(bmr, NutritionMath.ACTIVITY_WEARABLE, 600.0)
+        )
+        // Y sigue siendo más que la suma cruda, que es lo que se corrigió.
+        assertTrue(NutritionMath.tdee(bmr, NutritionMath.ACTIVITY_WEARABLE, 600.0) > bmr + 600.0)
+    }
+
+    @Test
+    fun `los dos modos dan el mismo gasto para la misma actividad real`() {
+        // La comprobación de que el factor del TEF es exactamente el correcto, y no un número puesto a
+        // ojo, es algebraica: `activeKcalFor` genera las activas de un nivel descontando el TEF, así que
+        // al reinyectarlas en `tdee` el resultado tiene que reproducir `BMR × PAL` **exactamente**. Si
+        // alguien cambia una de las dos fórmulas sin la otra, este test se cae.
+        val bmr = NutritionMath.bmr("male", 75.0, 178.0, 30)
+        for (nivel in NutritionMath.ALL_ACTIVITY_LEVELS) {
+            val activas = ActivityBenchmarks.activeKcalFor(nivel, bmr) ?: continue  // pulsera: no aplica
+            val porFormula = NutritionMath.tdee(bmr, nivel)
+            val porPulsera = NutritionMath.tdee(bmr, NutritionMath.ACTIVITY_WEARABLE, activas)
+            assertClose(
+                porFormula, porPulsera, tolerance = 0.5
+            )
+        }
     }
 
     @Test
@@ -385,6 +413,102 @@ class NutritionMathTest {
             assertEquals(r.tdee, r.targetKcal, "Sin déficit seguro el objetivo debe ser el mantenimiento en $p")
             assertClose(0.0, r.effectiveRate)
         }
+    }
+
+    // ── Suelo absoluto y aviso de objetivo bajo (C-2) ─────────────────────────
+
+    @Test
+    fun `ningun objetivo baja del suelo absoluto`() = sweep { p, r ->
+        // El único test de "objetivo absurdo" que había solo exigía `targetKcal > 0`, que acepta 1 kcal.
+        // Un objetivo por debajo de 800 es rango de VLCD y no debe emitirse nunca sin supervisión.
+        // Se acota al gasto por el mismo motivo que el resto de suelos: en un cuerpo cuyo mantenimiento
+        // ya esté por debajo de 800, el suelo no puede inventarse un superávit.
+        val minimo = minOf(NutritionMath.ABSOLUTE_FLOOR_KCAL, r.tdee.toDouble())
+        assertTrue(
+            r.targetKcal >= minimo - 1,
+            "Objetivo ${r.targetKcal} por debajo del suelo absoluto $minimo (gasto ${r.tdee}) en $p"
+        )
+    }
+
+    @Test
+    fun `el suelo informado nunca queda por encima del objetivo`() = sweep { p, r ->
+        // `energyFloor` devolvía el suelo en crudo, sin acotar al mantenimiento, así que la interfaz
+        // podía escribir "no bajamos de X" junto a un objetivo menor que X.
+        assertTrue(
+            r.energyFloor <= r.targetKcal,
+            "Suelo informado ${r.energyFloor} por encima del objetivo ${r.targetKcal} en $p"
+        )
+    }
+
+    @Test
+    fun `el suelo absoluto muerde solo en cuerpos diminutos`() {
+        // Mujer de 85 años y 40 kg: la disponibilidad energética daría 756 kcal, por debajo de 800.
+        val diminuta = NutritionMath.computeTargets(
+            sex = "female", weightKg = 40.0, heightCm = 145.0, age = 85,
+            activityLevel = "sedentary", goal = NutritionMath.GOAL_LOSE, ratePct = -1.0
+        )
+        assertEquals(800, diminuta.targetKcal, "El suelo absoluto debería gobernar este objetivo")
+        assertTrue(diminuta.energyFloorHit, "Y debería señalarse que un suelo mordió")
+
+        // Mujer de 80 años y 42 kg (el caso del informe): aquí gobierna la disponibilidad energética,
+        // 806 kcal, que ya está por encima del suelo absoluto. Es la prueba de que el suelo absoluto es
+        // una red para la cola y no el arreglo de estos objetivos bajos.
+        val delInforme = NutritionMath.computeTargets(
+            sex = "female", weightKg = 42.0, heightCm = 148.0, age = 80,
+            activityLevel = "sedentary", goal = NutritionMath.GOAL_LOSE, ratePct = -1.0
+        )
+        assertEquals(806, delInforme.targetKcal, "Debería gobernar la disponibilidad energética, no el suelo absoluto")
+    }
+
+    @Test
+    fun `avisa de un objetivo de perdida por debajo del umbral clinico`() {
+        val pequena = NutritionMath.computeTargets(
+            sex = "female", weightKg = 42.0, heightCm = 148.0, age = 80,
+            activityLevel = "sedentary", goal = NutritionMath.GOAL_LOSE, ratePct = -1.0
+        )
+        assertTrue(pequena.belowSoftFloor, "806 kcal está por debajo de los 1200 de aviso en mujeres")
+
+        // El perfil real del usuario: 1625 kcal, por encima de los 1500 de aviso en hombres. Este es el
+        // caso que no debe generar ruido, porque es el que de verdad usa la app.
+        val usuario = NutritionMath.computeTargets(
+            sex = "male", weightKg = 75.5, heightCm = 184.0, age = 21,
+            activityLevel = "sedentary", goal = NutritionMath.GOAL_LOSE, ratePct = -0.75
+        )
+        assertFalse(usuario.belowSoftFloor, "Un objetivo de ${usuario.targetKcal} kcal no debería avisar")
+    }
+
+    @Test
+    fun `el aviso de objetivo bajo no se dispara sin deficit`() {
+        // Mantenimiento en un cuerpo diminuto: el objetivo es bajo porque su gasto es bajo, no porque se
+        // esté recortando nada. Avisar ahí sería ruido sobre un plan que no quita ni una kcal.
+        val mantiene = NutritionMath.computeTargets(
+            sex = "female", weightKg = 40.0, heightCm = 145.0, age = 85,
+            activityLevel = "sedentary", goal = NutritionMath.GOAL_MAINTAIN, ratePct = 0.0
+        )
+        assertTrue(mantiene.targetKcal < NutritionMath.SOFT_FLOOR_FEMALE, "Este gasto debería ser bajo")
+        assertFalse(mantiene.belowSoftFloor, "Mantenimiento no debería avisar de objetivo bajo")
+    }
+
+    @Test
+    fun `el deslizador no promete mas alla del suelo absoluto`() {
+        // Si `effectiveMaxRateFor` no conociera el suelo absoluto, el extremo del deslizador prometería
+        // un ritmo que `computeTargets` no entrega — que es exactamente AUD-5.
+        val sex = "female"; val peso = 40.0; val altura = 145.0; val edad = 85
+        val bmr = NutritionMath.bmr(sex, peso, altura, edad)
+        val gasto = NutritionMath.tdee(bmr, "sedentary")
+        val suelo = NutritionMath.energyAvailabilityFloor(sex, peso, altura, edad)
+
+        val topeDeslizador = NutritionMath.effectiveMaxRateFor(
+            NutritionMath.GOAL_LOSE, peso, gasto, suelo
+        )!!
+        val alcanzado = abs(
+            NutritionMath.computeTargets(
+                sex = sex, weightKg = peso, heightCm = altura, age = edad,
+                activityLevel = "sedentary", goal = NutritionMath.GOAL_LOSE,
+                ratePct = -topeDeslizador
+            ).effectiveRate
+        )
+        assertClose(topeDeslizador, alcanzado, tolerance = 0.02)
     }
 
     @Test
@@ -479,6 +603,112 @@ class NutritionMathTest {
         // El perfil real del usuario (75,5 kg / 1800 kcal) no debería activarlo.
         val sano = NutritionMath.macrosFor(1800.0, 75.5, NutritionMath.GOAL_LOSE)
         assertTrue(!sano.degraded, "No debería marcarse degradado: $sano")
+    }
+
+    // ── Proteína acotada por masa magra (C-4) ─────────────────────────────────
+
+    @Test
+    fun `la proteina en obesidad severa se acota por masa magra`() {
+        // Hombre de 160 kg / 175 cm: el caso del informe. Antes recibía 2,0 × 160 = 320 g, el 57% de sus
+        // kcal, dejando 102 g de carbohidratos. Ahora el tope por masa magra lo deja en ~184 g, que son
+        // 2,6 g/kg de su masa magra estimada — dentro de los 2,3-3,1 de Helms 2014.
+        val r = NutritionMath.computeTargets(
+            sex = "male", weightKg = 160.0, heightCm = 175.0, age = 40,
+            activityLevel = "sedentary", goal = NutritionMath.GOAL_LOSE, ratePct = -0.75
+        )
+        assertTrue(r.proteinG in 170..195, "Proteína fuera de lo esperado: ${r.proteinG} g")
+        assertTrue(r.carbsG > 150, "Los carbohidratos siguen desplazados: ${r.carbsG} g")
+        assertFalse(r.macrosDegraded, "Ya no debería ser un reparto degradado: $r")
+
+        // Y el reparto resultante ya es presentable: antes 57% de las kcal en proteína, ahora ~33%.
+        assertTrue(
+            r.proteinG * 4.0 / r.targetKcal < 0.40,
+            "La proteína sigue ocupando demasiadas kcal: ${r.proteinG} g de ${r.targetKcal} kcal"
+        )
+    }
+
+    @Test
+    fun `el suelo de masa magra evita que Deurenberg saturado hunda la proteina`() {
+        // Mujer de 150 kg / 160 cm: Deurenberg satura en 70% de grasa y afirma 45 kg de masa magra, que
+        // es imposible. Sin el suelo del 40% la proteína caería a ~117 g (0,78 g/kg); con él sube a ~156.
+        val r = NutritionMath.computeTargets(
+            sex = "female", weightKg = 150.0, heightCm = 160.0, age = 40,
+            activityLevel = "sedentary", goal = NutritionMath.GOAL_LOSE, ratePct = -0.75
+        )
+        assertTrue(r.proteinG in 145..165, "Proteína fuera de lo esperado: ${r.proteinG} g")
+
+        // Y la prueba de que es el suelo lo que actúa. El suelo se aplica dentro de `proteinTargetG`, así
+        // que no se puede esquivar llamándola: se reproduce aquí la aritmética sin suelo y se comprueba
+        // que el resultado real queda muy por encima.
+        val magraSaturada = NutritionMath.leanMassEstimate("female", 150.0, 160.0, 40)
+        val sinSuelo = NutritionMath.PROTEIN_PER_KG_DEFICIT /
+            NutritionMath.PROTEIN_ASSUMED_LEAN_FRACTION * magraSaturada
+        assertClose(45.0, magraSaturada, tolerance = 0.5)   // Deurenberg saturado: 30% de 150 kg
+        assertTrue(sinSuelo < 120.0, "Sin suelo debería dar ~117 g, dio $sinSuelo")
+        assertTrue(
+            r.proteinG > sinSuelo + 30,
+            "El suelo debería subir la proteína: ${sinSuelo.roundToInt()} → ${r.proteinG}"
+        )
+    }
+
+    @Test
+    fun `el tope por masa magra no castiga a quien esta musculado ni al usuario real`() {
+        // Hombre de 90 kg / 180 cm: IMC 27,8, así que un tope por IMC 25 le recortaría de 180 a 162 g
+        // tratándolo como obeso. Por masa magra apenas se le toca: es el usuario objetivo de la app.
+        val musculado = NutritionMath.computeTargets(
+            sex = "male", weightKg = 90.0, heightCm = 180.0, age = 30,
+            activityLevel = "active", goal = NutritionMath.GOAL_LOSE, ratePct = -0.5
+        )
+        assertTrue(musculado.proteinG >= 172, "Recorte excesivo a un perfil musculado: ${musculado.proteinG} g")
+
+        // El perfil real del usuario: el tope no debe moverlo ni un gramo.
+        val usuario = NutritionMath.computeTargets(
+            sex = "male", weightKg = 75.5, heightCm = 184.0, age = 21,
+            activityLevel = "sedentary", goal = NutritionMath.GOAL_LOSE, ratePct = -0.75
+        )
+        assertEquals(151, usuario.proteinG, "El usuario real no debería notar el tope")
+    }
+
+    @Test
+    fun `el tope nunca sube la proteina por encima del valor por peso total`() = sweep { p, r ->
+        val porPeso = NutritionMath.proteinTargetG(p.body.weightKg, p.goal)
+        assertTrue(
+            r.proteinG <= porPeso.roundToInt(),
+            "El tope subió la proteína (${r.proteinG} g > ${porPeso.roundToInt()} g) en $p"
+        )
+    }
+
+    @Test
+    fun `la proteina nunca pasa del extremo de Helms por masa magra`() = sweep { p, r ->
+        // Este es el invariante que de verdad cierra C-4, y sustituye a la bandera que se descartó: la
+        // patología (4,5 g/kg de masa magra) ya no puede ocurrir, así que no hace falta detectarla.
+        // El suelo del 40% es parte del tope, así que el divisor tiene que ser el mismo que usa el
+        // cálculo, no la estimación cruda de Deurenberg.
+        val magra = maxOf(
+            NutritionMath.leanMassEstimate(p.sex, p.body.weightKg, p.body.heightCm, p.body.age),
+            NutritionMath.PROTEIN_MIN_LEAN_FRACTION * p.body.weightKg
+        )
+        val porMagra = r.proteinG / magra
+        assertTrue(
+            porMagra <= 3.1,
+            "Proteína a ${"%.2f".format(porMagra)} g/kg de masa magra, por encima de Helms, en $p"
+        )
+    }
+
+    @Test
+    fun `el aviso de reparto degradado no se dispara en un corte normal`() {
+        // Se probó marcar degradado cuando la proteína pasa del 35% de las kcal (techo del AMDR) y se
+        // descartó: el perfil real del usuario sale al 37,2% con un corte de libro, y el aviso habría
+        // aparecido en la pantalla que más se mira. Este test fija esa decisión para que no vuelva.
+        val usuario = NutritionMath.computeTargets(
+            sex = "male", weightKg = 75.5, heightCm = 184.0, age = 21,
+            activityLevel = "sedentary", goal = NutritionMath.GOAL_LOSE, ratePct = -0.75
+        )
+        assertTrue(
+            usuario.proteinG * 4.0 / usuario.targetKcal > 0.35,
+            "Este perfil debería pasar del 35% de kcal en proteína: $usuario"
+        )
+        assertFalse(usuario.macrosDegraded, "Y aun así no es un reparto degradado: $usuario")
     }
 
     @Test

@@ -10,7 +10,22 @@ data class ProfileRequest(
     val sex:           String,
     val activityLevel: String,
     val goal:          String,
-    val goalRate:      Double
+    val goalRate:      Double,
+    /**
+     * Si este guardado debe registrar [weightKg] como el pesaje de hoy (C-6).
+     *
+     * `true` por defecto, que es lo que corresponde a la mayoría de los caminos: el onboarding, el
+     * guardado de datos físicos y el alta de peso son todos acciones en las que el usuario está
+     * confirmando su peso, aunque no lo haya cambiado — y registrar los días sin cambio es deliberado
+     * (AUD-12): quitarlos de la muestra inflaba la pendiente del autoajuste.
+     *
+     * Se manda `false` desde el reguardado que dispara **editar los datos personales**: ahí el peso que
+     * viaja es el que estaba cargado en el formulario, puede tener días, y el usuario no ha tocado nada
+     * relacionado con su peso. Grabarlo como el pesaje de hoy mete un valor arrastrado (LOCF) en la
+     * muestra: aplana la tendencia y además cuenta para el mínimo de 8 pesajes del autoajuste sin
+     * aportar ninguna medida nueva.
+     */
+    val recordWeighIn: Boolean = true
 )
 
 @Serializable
@@ -42,9 +57,9 @@ data class NutritionTargets(
     val effectiveRate:  Double  = 0.0,
     /** El gasto viene de medición real (autoajuste) y no de la fórmula. */
     val tdeeIsMeasured: Boolean = false,
-    /** El suelo por disponibilidad energética mordió: el objetivo **es** ese suelo. */
+    /** Un suelo de seguridad mordió: el objetivo **es** ese suelo. */
     val energyFloorHit: Boolean = false,
-    /** El suelo calculado para este cuerpo, en kcal, para poder nombrarlo en el aviso. */
+    /** El suelo que gobernó el objetivo, en kcal, para nombrarlo en el aviso. Nunca lo supera. */
     val energyFloor:    Int     = 0,
     /** Arrastre del día realmente aplicado, ya acotado y filtrado por modo pulsera. */
     val appliedCarryOver: Int   = 0,
@@ -56,7 +71,15 @@ data class NutritionTargets(
     /** Ya está en bajo peso y pide más déficit: el objetivo se cae a mantenimiento (AUD-8). */
     val lowBmiGuard:    Boolean = false,
     /** El reparto de macros no cupo en el objetivo y tuvo que recortar grasa/proteína (AUD-17). */
-    val macrosDegraded: Boolean = false
+    val macrosDegraded: Boolean = false,
+    /**
+     * El objetivo de pérdida queda por debajo del umbral clínico de su sexo (1200♀/1500♂): se emite
+     * igual, pero se avisa (C-2). No implica que esté mal, sino que cubrir los micronutrientes con esa
+     * cantidad de comida es difícil.
+     */
+    val belowSoftFloor: Boolean = false,
+    /** El umbral con el que se comparó [belowSoftFloor], en kcal, para nombrarlo en el aviso. */
+    val softFloorKcal:  Int     = 0
 )
 
 /** Respuesta de `POST /profile/adaptive` (autoajuste). */
@@ -74,7 +97,13 @@ data class AdaptiveResponse(
      */
     val newTargetKcal: Int?   = null,
     val previousTdee: Int?    = null,
-    val deltaKcal:    Int?    = null
+    val deltaKcal:    Int?    = null,
+    /**
+     * La medición está pausada **a propósito** (periodo de gracia tras cambiar de objetivo, C-5), no por
+     * falta de registros del usuario. Cambia el consejo que se le da: durante la gracia, "registra tus
+     * comidas y pésate" no serviría de nada porque la pausa seguiría igual.
+     */
+    val recalculating: Boolean = false
 )
 
 @Serializable
