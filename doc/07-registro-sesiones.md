@@ -1183,3 +1183,6 @@ de encontrar fallos y mejoras). Se repartió en cuatro frentes en paralelo: GPS 
 - El usuario eligió ping solo de 8:00 a 1:00 con un bot externo (cron-job.org), configurado por él.
   Se llegó a escribir un workflow de GitHub Actions y se borró sin subir: el repo pasará a privado y el
   usuario no lo había pedido.
+- Configurado por el usuario en cron-job.org con `*/5 0,8-23 * * *` (Europe/Madrid). Prueba: 21 min
+  sin tráfico propio → 0,17 s de respuesta (antes, 44 s). Una primera prueba falló porque el bot aún no
+  existía (malentendido: "ya hice" se refería a compilar).

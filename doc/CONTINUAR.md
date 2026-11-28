@@ -349,10 +349,11 @@ factor tiene que caer con el último cambio de fórmula.
 
 ---
 
-## 🟡 2026-11-28 — Bot que mantiene despierto Render de 8:00 a 1:00 (lo configura el usuario)
+## ✅ 2026-11-28 — Bot que mantiene despierto Render de 8:00 a 1:00 (configurado y verificado)
 
-Decisión del usuario: un bot externo (cron-job.org) que llama a `/health` cada 10 min entre las 8:00 y
-la 1:00 hora de Madrid. **Nada en el repo**: el usuario va a hacer el repositorio privado y no quiere
+Bot externo en la cuenta de cron-job.org del usuario: llama a `/health` con `*/5 0,8-23 * * *` en zona
+Europe/Madrid (cada 5 min, de 8:00 a 0:55). **Verificado**: tras 21 min sin otro tráfico, `/health`
+contestó en 0,17 s (sin bot: 44 s, el arranque en frío). **Nada en el repo**: el usuario va a hacer el repositorio privado y no quiere
 GitHub Actions (se llegó a crear `.github/workflows/keep-awake.yml` y se borró sin subirlo).
 Contexto: Render apaga el plan gratis a los 15 min sin tráfico (despertar ≈ 40 s medidos), da 750 h/mes
 por cuenta, y su personal llama "abuso" a mantenerlo despierto; con horario son ~530 h/mes.
