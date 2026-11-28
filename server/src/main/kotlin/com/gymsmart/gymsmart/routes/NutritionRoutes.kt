@@ -98,7 +98,13 @@ fun Route.nutritionRoutes(nutritionService: NutritionService) {
                 "yieldId"        to (row.getOrNull(6)?.takeIf { it.isNotBlank() } ?: ""),
                 // El factor que se aplicó de verdad. Con él, deshacer la conversión no depende de que
                 // el catálogo siga teniendo ese id con el mismo valor (doc/13 §2.4, I-3).
-                "yieldFactor"    to (row.getOrNull(7)?.takeIf { it.toDoubleOrNull() != null } ?: "")
+                "yieldFactor"    to (row.getOrNull(7)?.takeIf { it.toDoubleOrNull() != null } ?: ""),
+                // Y mejor aún: los valores en la base de origen. Con ellos el cliente no deshace
+                // nada, solo lee, que es lo único exacto desde que cada macro tiene su propio factor.
+                "srcKcalPer100"     to (row.getOrNull(8)?.takeIf { it.toDoubleOrNull() != null } ?: ""),
+                "srcProteinsPer100" to (row.getOrNull(9)?.takeIf { it.toDoubleOrNull() != null } ?: ""),
+                "srcCarbsPer100"    to (row.getOrNull(10)?.takeIf { it.toDoubleOrNull() != null } ?: ""),
+                "srcFatPer100"      to (row.getOrNull(11)?.takeIf { it.toDoubleOrNull() != null } ?: "")
             )
         }
         call.respond(response)

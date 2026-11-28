@@ -44,7 +44,21 @@ data class MealEntry(
     val fatPer100: Double,
     val basis: String? = null,
     val yieldId: String? = null,
-    val yieldFactor: Double? = null
+    val yieldFactor: Double? = null,
+    /**
+     * Los cuatro valores por 100 g **en la base de origen** (cruda o en seco), antes de convertir.
+     *
+     * Con ellos, reutilizar un alimento del historial es leer en vez de deshacer una multiplicación.
+     * Importa desde que cada macro tiene su propio factor de conversión: deshacer los cuatro con el
+     * factor de la energía dejaría la proteína de un muslo de pollo un 15 % por debajo de su valor
+     * crudo, y volver a marcar "cocido" compondría el error.
+     *
+     * Null en lo registrado antes de estas columnas y en lo que no se convirtió.
+     */
+    val sourceKcalPer100: Double? = null,
+    val sourceProteinsPer100: Double? = null,
+    val sourceCarbsPer100: Double? = null,
+    val sourceFatPer100: Double? = null
 ) {
     val kcal:     Double get() = kcalPer100     / 100.0 * grams
     val proteins: Double get() = proteinsPer100 / 100.0 * grams
@@ -72,6 +86,11 @@ data class MealEntryRequest(
     val yieldId: String? = null,
     /** El factor realmente aplicado. Ver [MealEntry.yieldFactor]. */
     val yieldFactor: Double? = null,
+    /** Los valores en la base de origen. Ver [MealEntry.sourceKcalPer100]. */
+    val sourceKcalPer100: Double? = null,
+    val sourceProteinsPer100: Double? = null,
+    val sourceCarbsPer100: Double? = null,
+    val sourceFatPer100: Double? = null,
     /** Ver [nuevoClientId]. Hace idempotente el guardado para que un reintento no duplique la fila. */
     val clientId: String? = null
 )

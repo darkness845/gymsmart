@@ -32,7 +32,9 @@ class NutritionService(private val httpClient: HttpClient) {
                     MealEntryRequest(
                         entry.name, entry.grams, entry.kcalPer100,
                         entry.proteinsPer100, entry.carbsPer100, entry.fatPer100,
-                        mealType, date, entry.basis, entry.yieldId, entry.yieldFactor, clientId
+                        mealType, date, entry.basis, entry.yieldId, entry.yieldFactor,
+                        entry.sourceKcalPer100, entry.sourceProteinsPer100,
+                        entry.sourceCarbsPer100, entry.sourceFatPer100, clientId
                     )
                 )
             }
@@ -93,8 +95,32 @@ class NutritionService(private val httpClient: HttpClient) {
             val rows = response.body<List<Map<String, String>>>()
             rows.map { row ->
                 val name = row["name"]
-                // Si se registró en cocido, el factor devuelve los valores a base cruda: cocido fue
-                // "dividir entre el factor", así que lo inverso es multiplicar por él.
+
+                // Camino bueno: los valores en la base de origen vienen guardados, así que no hay
+                // nada que deshacer. Es lo único exacto desde que cada macro tiene su propio factor
+                // de conversión — multiplicar los cuatro por el factor de la energía dejaría la
+                // proteína de un muslo de pollo un 15 % por debajo de su valor crudo.
+                val origen = listOfNotNull(
+                    row["srcKcalPer100"]?.toDoubleOrNull(),
+                    row["srcProteinsPer100"]?.toDoubleOrNull(),
+                    row["srcCarbsPer100"]?.toDoubleOrNull(),
+                    row["srcFatPer100"]?.toDoubleOrNull()
+                ).takeIf { it.size == 4 && it.all { v -> v.isFinite() && v >= 0.0 } }
+                if (origen != null) {
+                    return@map Product(
+                        product_name = name,
+                        nutriments = Nutriments(
+                            energy_kcal_100g = origen[0],
+                            proteins_100g = origen[1],
+                            carbohydrates_100g = origen[2],
+                            fat_100g = origen[3]
+                        )
+                    )
+                }
+
+                // Respaldo para las comidas registradas antes de que existieran esas columnas: se
+                // deshace con el factor, como se hacía. Es aproximado en los macros y exacto en las
+                // kcal, y es lo mejor que se puede hacer con lo que hay guardado.
                 val toRaw = if (row["basis"] == "cooked") {
                     // **El factor guardado manda sobre todo lo demás.** Es el que se aplicó de verdad
                     // al registrar esta comida, así que deshacer con él es exacto aunque el catálogo

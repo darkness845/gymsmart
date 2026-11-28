@@ -50,6 +50,13 @@ class NutritionService(private val turso: TursoService) {
         // que el catálogo siga igual (doc/13 §2.4, I-3). NULL en todo lo anterior, y ahí se sigue
         // cayendo al catálogo, que es el comportamiento que había.
         runCatching { turso.execute("ALTER TABLE meals ADD COLUMN yield_factor REAL") }
+
+        // Los valores por 100 g en la base de origen, para que reutilizar un alimento del historial
+        // sea leer en vez de deshacer una multiplicación. Ver MealEntryRequest.sourceKcalPer100.
+        runCatching { turso.execute("ALTER TABLE meals ADD COLUMN src_kcal_per_100 REAL") }
+        runCatching { turso.execute("ALTER TABLE meals ADD COLUMN src_proteins_per_100 REAL") }
+        runCatching { turso.execute("ALTER TABLE meals ADD COLUMN src_carbs_per_100 REAL") }
+        runCatching { turso.execute("ALTER TABLE meals ADD COLUMN src_fat_per_100 REAL") }
         runCatching { turso.execute("ALTER TABLE meals ADD COLUMN client_id TEXT") }
         runCatching {
             turso.execute(
@@ -137,6 +144,20 @@ class NutritionService(private val turso: TursoService) {
             columnas += "yield_factor"
             valores += it.toString()
         }
+        // Las cuatro de origen van juntas o no van: media conversión guardada a medias no sirve para
+        // deshacer nada, y dejarla entrar obligaría a comprobar cada una por separado al leerla.
+        val origen = listOf(
+            "src_kcal_per_100" to req.sourceKcalPer100,
+            "src_proteins_per_100" to req.sourceProteinsPer100,
+            "src_carbs_per_100" to req.sourceCarbsPer100,
+            "src_fat_per_100" to req.sourceFatPer100
+        )
+        if (origen.all { (_, v) -> v != null && v.isFinite() && v >= 0.0 }) {
+            origen.forEach { (columna, valor) ->
+                columnas += columna
+                valores += valor!!.toString()
+            }
+        }
         clientId?.let {
             columnas += "client_id"
             valores += it
@@ -200,7 +221,8 @@ class NutritionService(private val turso: TursoService) {
     suspend fun getFoodHistory(userId: String): List<List<String?>> {
         val result = turso.execute(
             """
-            SELECT name, kcal_per_100, proteins_per_100, carbs_per_100, fat_per_100, basis, yield_id, yield_factor
+            SELECT name, kcal_per_100, proteins_per_100, carbs_per_100, fat_per_100, basis, yield_id,
+                   yield_factor, src_kcal_per_100, src_proteins_per_100, src_carbs_per_100, src_fat_per_100
             FROM meals
             WHERE user_id = ? AND id IN (
                 SELECT id FROM meals WHERE user_id = ?

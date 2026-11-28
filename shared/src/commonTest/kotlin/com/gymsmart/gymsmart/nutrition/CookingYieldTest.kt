@@ -10,12 +10,27 @@ import kotlin.test.assertTrue
 
 class CookingYieldTest {
 
-    private fun assertClose(expected: Double, actual: Double, tolerance: Double = 0.5) {
+    private fun assertClose(
+        expected: Double,
+        actual: Double,
+        tolerance: Double = 0.5,
+        detalle: String = ""
+    ) {
         assertTrue(
             abs(expected - actual) <= tolerance,
-            "esperado ~$expected pero fue $actual (tolerancia $tolerance)"
+            (if (detalle.isBlank()) "" else "$detalle: ") +
+                "esperado ~$expected pero fue $actual (tolerancia $tolerance)"
         )
     }
+
+    /** Cinco valores con nombre, para que los casos de prueba se lean sin contar posiciones. */
+    private data class Quintuple(
+        val nombre: String,
+        val pCrudo: Double,
+        val gCrudo: Double,
+        val pCocinado: Double,
+        val gCocinado: Double
+    )
 
     // ── Reconocimiento del alimento ───────────────────────────────────────────
 
@@ -373,6 +388,69 @@ class CookingYieldTest {
                 y.looksAlreadyCooked(kcal),
                 "$nombre ($kcal kcal/100 g) es un alimento crudo normal y no debería bloquearse"
             )
+        }
+    }
+
+    // ── Un factor por macro ──────────────────────────────────────────────────
+
+    @Test
+    fun el_factor_por_macro_reproduce_los_cuatro_valores_medidos_por_la_usda() {
+        // La afirmación central del cambio: no se inventa nada. Cada factor por macro es el cociente
+        // de la misma pareja de la USDA que cita la entrada, así que aplicarlo devuelve el valor que
+        // la USDA publica para el alimento cocinado **en los cuatro nutrientes**, no solo en las
+        // kcal. Antes los cuatro se dividían por el de la energía y la grasa se iba hasta un 30 %.
+        //
+        // (nombre, crudo P, crudo G, cocinado P medido, cocinado G medido)
+        val casos = listOf(
+            // Muslo de pollo 173627 -> 172388. El peor caso de grasa del catálogo.
+            Quintuple("Muslo de pollo", 19.66, 4.12, 24.76, 8.15),
+            // Carne picada 85/15 171796 -> 174032.
+            Quintuple("Carne picada", 18.59, 15.0, 25.93, 15.41),
+            // Pasta 168927 -> 168928.
+            Quintuple("Espaguetis", 13.04, 1.51, 5.80, 0.93)
+        )
+        for ((nombre, pCrudo, gCrudo, pCocinado, gCocinado) in casos) {
+            val y = assertNotNull(findCookingYield(nombre), "no reconoció $nombre")
+            assertClose(pCocinado, y.per100For(pCrudo, WeighBasis.COOKED, Macro.PROTEIN), 0.15,
+                "$nombre: proteína cocinada")
+            assertClose(gCocinado, y.per100For(gCrudo, WeighBasis.COOKED, Macro.FAT), 0.15,
+                "$nombre: grasa cocinada")
+        }
+    }
+
+    @Test
+    fun usar_el_factor_de_la_energia_para_la_grasa_se_desvia_de_verdad() {
+        // Cuantifica por qué hacía falta: es el error que había antes de separar los factores.
+        val muslo = findCookingYield("Muslo de pollo")!!
+        val conEnergia = muslo.per100For(4.12, WeighBasis.COOKED, Macro.ENERGY)
+        val conGrasa = muslo.per100For(4.12, WeighBasis.COOKED, Macro.FAT)
+        // 8,15 g es el valor medido; con el factor de la energía salen ~6,1, un 25 % menos.
+        assertClose(8.15, conGrasa, 0.15)
+        assertTrue(conEnergia < conGrasa * 0.8, "el factor de la energía infravalora la grasa")
+    }
+
+    @Test
+    fun sin_factor_propio_se_cae_al_de_la_energia() {
+        // El pescado blanco no tiene factores por macro a propósito: su entrada cocinada está
+        // imputada por la USDA (los tres cocientes salen idénticos), así que separarlos no añadiría
+        // información. Tiene que comportarse exactamente como antes.
+        val pescado = findCookingYield("Bacalao")!!
+        assertNull(pescado.factorProtein, "el pescado no debería tener factor propio de proteína")
+        for (macro in Macro.entries) {
+            assertEquals(pescado.factor, pescado.factorFor(macro), 1e-9)
+        }
+    }
+
+    @Test
+    fun ningun_factor_por_macro_es_absurdo() {
+        // Guardia sobre los datos: un factor negativo o cero invertiría o reventaría la conversión,
+        // y uno disparatado delataría una fila mal copiada del volcado.
+        for (y in COOKING_YIELDS) {
+            for (macro in Macro.entries) {
+                val f = y.factorFor(macro)
+                assertTrue(f > 0.0, "${y.id}/$macro: factor $f no positivo")
+                assertTrue(f in 0.3..6.0, "${y.id}/$macro: factor $f fuera de lo creíble")
+            }
         }
     }
 

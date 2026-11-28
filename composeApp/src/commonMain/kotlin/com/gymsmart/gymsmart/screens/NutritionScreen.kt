@@ -58,6 +58,7 @@ import com.gymsmart.gymsmart.nutrition.CookingYield
 import com.gymsmart.gymsmart.nutrition.cookingYieldById
 import com.gymsmart.gymsmart.nutrition.isExcludedFromCooking
 import com.gymsmart.gymsmart.nutrition.looksAlreadyCooked
+import com.gymsmart.gymsmart.nutrition.Macro
 import com.gymsmart.gymsmart.nutrition.GENERIC_BRAND
 import com.gymsmart.gymsmart.nutrition.matchingGenerics
 import com.gymsmart.gymsmart.nutrition.rankFoodResults
@@ -1142,6 +1143,22 @@ private fun FoodSearchSheet(
                 }
             }
         }
+
+        // Atribución de las fuentes de datos.
+        //
+        // No es decorativa: la licencia **ODbL** de Open Food Facts obliga a mencionar la licencia y
+        // a atribuir la fuente, y hasta ahora "Open Food Facts" solo aparecía en comentarios del
+        // código. Para uso personal da igual; para publicar en Play Store es un bloqueante, y está
+        // anotado como tal en doc/04-produccion-playstore.md. Los datos de la USDA son de dominio
+        // público y no exigen nada, pero decirlo ayuda a saber de dónde sale cada cifra.
+        Spacer(Modifier.height(14.dp))
+        Text(
+            "Datos de alimentos: Open Food Facts (ODbL) · USDA FoodData Central",
+            style = MaterialTheme.typography.labelSmall,
+            color = Palette.current.textSecondary,
+            modifier = Modifier.fillMaxWidth(),
+            textAlign = TextAlign.Center
+        )
     }
 }
 
@@ -1450,11 +1467,19 @@ private fun PortionPickerSheet(
     val n = product.nutriments
     // Los datos de origen están en base cruda (o en seco); se convierten a la base que haya elegido
     // el usuario antes de calcular cualquier total.
-    fun per100(valueRaw: Double): Double = cookingYield?.per100For(valueRaw, basis) ?: valueRaw
-    val kcalPer100     = per100(n.estimatedKcalPer100())
-    val proteinsPer100 = per100(n?.proteins_100g ?: 0.0)
-    val carbsPer100    = per100(n?.carbohydrates_100g ?: 0.0)
-    val fatPer100      = per100(n?.fat_100g ?: 0.0)
+    //
+    // **Cada macro con su propio factor.** Antes los cuatro se dividían por el de la energía, que es
+    // dar por supuesto que se comportan igual al cocinar. No lo hacen: la grasa gotea y la proteína
+    // se queda. En 15 de las 26 parejas del catálogo la divergencia pasa del 10 % (ver [Macro]).
+    fun per100(valueRaw: Double, macro: Macro): Double =
+        cookingYield?.per100For(valueRaw, basis, macro) ?: valueRaw
+    // true si de verdad se ha aplicado un factor. Es lo que decide si hay valores de origen distintos
+    // de los guardados y, por tanto, si merece la pena guardarlos.
+    val huboConversion = cookingYield != null && basis == WeighBasis.COOKED
+    val kcalPer100     = per100(n.estimatedKcalPer100(), Macro.ENERGY)
+    val proteinsPer100 = per100(n?.proteins_100g ?: 0.0, Macro.PROTEIN)
+    val carbsPer100    = per100(n?.carbohydrates_100g ?: 0.0, Macro.CARBS)
+    val fatPer100      = per100(n?.fat_100g ?: 0.0, Macro.FAT)
 
     val basisLabel = cookingYield?.let {
         if (basis == WeighBasis.RAW) it.rawLabel else it.cookedLabel
@@ -1672,7 +1697,15 @@ private fun PortionPickerSheet(
                             // El factor se guarda solo cuando de verdad se aplicó. Pesado en crudo no
                             // se convierte nada, así que guardar un número ahí sería afirmar una
                             // conversión que no ocurrió.
-                            yieldFactor = cookingYield?.factor?.takeIf { basis == WeighBasis.COOKED }
+                            yieldFactor = cookingYield?.factor?.takeIf { basis == WeighBasis.COOKED },
+                            // Los valores de origen, que son los que permiten reutilizar este
+                            // alimento desde el historial sin deshacer ninguna multiplicación. Se
+                            // guardan solo si hubo conversión: si no, los valores almacenados ya
+                            // son los de origen y repetirlos no aportaría nada.
+                            sourceKcalPer100 = sourceKcalPer100.takeIf { huboConversion },
+                            sourceProteinsPer100 = (n?.proteins_100g ?: 0.0).takeIf { huboConversion },
+                            sourceCarbsPer100 = (n?.carbohydrates_100g ?: 0.0).takeIf { huboConversion },
+                            sourceFatPer100 = (n?.fat_100g ?: 0.0).takeIf { huboConversion }
                         ),
                         clientId
                     )

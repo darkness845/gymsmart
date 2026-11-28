@@ -76,8 +76,48 @@ data class CookingYield(
     val excludes: List<String> = emptyList(),
     val minRawKcalPer100: Double? = null,
     val maxRawKcalPer100: Double? = null,
-    val defaultBasis: WeighBasis = WeighBasis.RAW
+    val defaultBasis: WeighBasis = WeighBasis.RAW,
+    /** Ver [Macro]. `null` significa "usa el de la energía". */
+    val factorProtein: Double? = null,
+    val factorCarbs: Double? = null,
+    val factorFat: Double? = null
 )
+
+/**
+ * Qué se está convirtiendo. Existe porque **un solo factor para los cuatro no es defendible**.
+ *
+ * El factor de la energía describe cómo cambia la densidad energética al cocinar, y aplicarlo también
+ * a la proteína y a la grasa da por supuesto que los tres se comportan igual. No lo hacen: al cocinar
+ * una carne la grasa gotea y se va, mientras la proteína se queda. De las 26 parejas crudo/cocinado
+ * del catálogo, **15 divergen más del 10 %** entre macros, y algunas muchísimo más:
+ *
+ *   muslo de pollo   energía 0,676  proteína 0,794  grasa 0,506   (25 % de divergencia)
+ *   cordero          energía 0,996  proteína 0,669  grasa 1,191   (33 %)
+ *   cebada perlada   energía 2,862  proteína 4,385  grasa 2,636   (53 %)
+ *   pasta            energía 2,348  proteína 2,248  grasa 1,624   (31 %)
+ *
+ * La propia USDA nunca afirma que los nutrientes se conserven: su publicación de rendimientos define
+ * `Yield`, `Moisture change` y **`Fat change`** como tres magnitudes separadas. La frase que había en
+ * la cabecera de este fichero —"los nutrientes se conservan; lo que cambia es el peso", atribuida a
+ * la USDA— no está en la fuente y es falsa para la grasa.
+ *
+ * Y no se trata de inventar nada: cada factor por macro es el cociente de esa misma pareja de la
+ * USDA, así que aplicarlo **reproduce exactamente el valor que la USDA publica** para el alimento
+ * cocinado, en los cuatro nutrientes y no solo en las kcal.
+ *
+ * Donde la entrada cocinada es una **imputación** de la USDA (el pescado blanco: los tres cocientes
+ * salen idénticos a tres decimales porque dividió todos los nutrientes por 0,78), los factores por
+ * macro no añaden nada y se dejan a `null`.
+ */
+enum class Macro { ENERGY, PROTEIN, CARBS, FAT }
+
+/** El factor que corresponde a [macro], cayendo al de la energía cuando no hay uno propio. */
+fun CookingYield.factorFor(macro: Macro): Double = when (macro) {
+    Macro.ENERGY -> factor
+    Macro.PROTEIN -> factorProtein ?: factor
+    Macro.CARBS -> factorCarbs ?: factor
+    Macro.FAT -> factorFat ?: factor
+}
 
 /**
  * Techos de cordura, en kcal/100 g, para los alimentos en los que **no hay suelo defendible pero sí
@@ -226,6 +266,8 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
 
     CookingYield(
         id = "pollo_muslo",
+        factorProtein = 0.794,
+        factorFat = 0.506,
         maxRawKcalPer100 = MAX_RAW_KCAL_POULTRY,
         label = "Muslo o contramuslo de pollo",
         family = FAMILY_MEAT,
@@ -243,6 +285,8 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
     ),
     CookingYield(
         id = "pollo_pechuga",
+        factorProtein = 0.725,
+        factorFat = 0.734,
         maxRawKcalPer100 = MAX_RAW_KCAL_POULTRY,
         label = "Pechuga de pollo",
         family = FAMILY_MEAT,
@@ -260,6 +304,8 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
     ),
     CookingYield(
         id = "pavo_pechuga",
+        factorProtein = 0.762,
+        factorFat = 0.947,
         maxRawKcalPer100 = MAX_RAW_KCAL_POULTRY,
         label = "Pechuga de pavo (fresca)",
         family = FAMILY_MEAT,
@@ -276,6 +322,8 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
     ),
     CookingYield(
         id = "pavo_picado",
+        factorProtein = 0.718,
+        factorFat = 0.737,
         maxRawKcalPer100 = MAX_RAW_KCAL_POULTRY,
         label = "Carne picada de pavo",
         family = FAMILY_MEAT,
@@ -288,6 +336,8 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
     ),
     CookingYield(
         id = "ternera_picada",
+        factorProtein = 0.717,
+        factorFat = 0.973,
         maxRawKcalPer100 = MAX_RAW_KCAL_MEAT,
         label = "Carne picada de ternera",
         family = FAMILY_MEAT,
@@ -318,6 +368,8 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
     ),
     CookingYield(
         id = "ternera_filete",
+        factorProtein = 0.798,
+        factorFat = 0.766,
         maxRawKcalPer100 = MAX_RAW_KCAL_MEAT,
         label = "Filete o solomillo de ternera",
         family = FAMILY_MEAT,
@@ -334,6 +386,8 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
     ),
     CookingYield(
         id = "cerdo_lomo",
+        factorProtein = 0.801,
+        factorFat = 0.618,
         maxRawKcalPer100 = MAX_RAW_KCAL_MEAT,
         label = "Lomo o solomillo de cerdo",
         family = FAMILY_MEAT,
@@ -347,6 +401,8 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
     ),
     CookingYield(
         id = "cordero",
+        factorProtein = 0.669,
+        factorFat = 1.191,
         maxRawKcalPer100 = MAX_RAW_KCAL_MEAT,
         label = "Cordero",
         family = FAMILY_MEAT,
@@ -370,6 +426,8 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
 
     CookingYield(
         id = "gambas",
+        factorProtein = 0.838,
+        factorFat = 1.821,
         maxRawKcalPer100 = MAX_RAW_KCAL_FISH,
         label = "Gambas o langostinos",
         family = FAMILY_FISH,
@@ -382,6 +440,8 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
     ),
     CookingYield(
         id = "salmon",
+        factorProtein = 0.924,
+        factorFat = 1.087,
         maxRawKcalPer100 = MAX_RAW_KCAL_FISH,
         label = "Salmón",
         family = FAMILY_FISH,
@@ -446,6 +506,9 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
 
     CookingYield(
         id = "arroz_integral",
+        factorProtein = 2.752,
+        factorCarbs = 2.981,
+        factorFat = 3.299,
         maxRawKcalPer100 = MAX_RAW_KCAL_DRY,
         label = "Arroz integral",
         family = FAMILY_GRAIN,
@@ -460,6 +523,9 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
     ),
     CookingYield(
         id = "arroz_vaporizado",
+        factorProtein = 2.581,
+        factorCarbs = 3.105,
+        factorFat = 2.784,
         maxRawKcalPer100 = MAX_RAW_KCAL_DRY,
         label = "Arroz vaporizado",
         family = FAMILY_GRAIN,
@@ -481,6 +547,9 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
     ),
     CookingYield(
         id = "arroz_blanco",
+        factorProtein = 2.651,
+        factorCarbs = 2.838,
+        factorFat = 2.357,
         maxRawKcalPer100 = MAX_RAW_KCAL_DRY,
         label = "Arroz blanco",
         family = FAMILY_GRAIN,
@@ -495,6 +564,9 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
     ),
     CookingYield(
         id = "pasta",
+        factorProtein = 2.248,
+        factorCarbs = 2.42,
+        factorFat = 1.624,
         maxRawKcalPer100 = MAX_RAW_KCAL_DRY,
         label = "Pasta",
         family = FAMILY_GRAIN,
@@ -514,6 +586,9 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
     ),
     CookingYield(
         id = "quinoa",
+        factorProtein = 3.209,
+        factorCarbs = 3.012,
+        factorFat = 3.161,
         maxRawKcalPer100 = MAX_RAW_KCAL_DRY,
         label = "Quinoa",
         family = FAMILY_GRAIN,
@@ -528,6 +603,9 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
     ),
     CookingYield(
         id = "couscous",
+        factorProtein = 3.367,
+        factorCarbs = 3.335,
+        factorFat = 4.0,
         maxRawKcalPer100 = MAX_RAW_KCAL_DRY,
         label = "Cuscús",
         family = FAMILY_GRAIN,
@@ -542,6 +620,9 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
     ),
     CookingYield(
         id = "bulgur",
+        factorProtein = 3.99,
+        factorCarbs = 4.083,
+        factorFat = 5.542,
         maxRawKcalPer100 = MAX_RAW_KCAL_DRY,
         label = "Bulgur",
         family = FAMILY_GRAIN,
@@ -556,6 +637,9 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
     ),
     CookingYield(
         id = "cebada",
+        factorProtein = 4.385,
+        factorCarbs = 2.754,
+        factorFat = 2.636,
         maxRawKcalPer100 = MAX_RAW_KCAL_DRY,
         label = "Cebada perlada",
         family = FAMILY_GRAIN,
@@ -573,6 +657,9 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
 
     CookingYield(
         id = "lentejas",
+        factorProtein = 2.731,
+        factorCarbs = 3.147,
+        factorFat = 2.789,
         maxRawKcalPer100 = MAX_RAW_KCAL_DRY,
         label = "Lentejas",
         family = FAMILY_LEGUME,
@@ -587,6 +674,9 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
     ),
     CookingYield(
         id = "garbanzos",
+        factorProtein = 2.31,
+        factorCarbs = 2.296,
+        factorFat = 2.332,
         maxRawKcalPer100 = MAX_RAW_KCAL_DRY,
         label = "Garbanzos",
         family = FAMILY_LEGUME,
@@ -601,6 +691,9 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
     ),
     CookingYield(
         id = "alubia_blanca",
+        factorProtein = 2.401,
+        factorCarbs = 2.402,
+        factorFat = 2.429,
         maxRawKcalPer100 = MAX_RAW_KCAL_DRY,
         label = "Alubias blancas",
         family = FAMILY_LEGUME,
@@ -615,6 +708,9 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
     ),
     CookingYield(
         id = "alubia_roja",
+        factorProtein = 2.72,
+        factorCarbs = 2.632,
+        factorFat = 1.66,
         maxRawKcalPer100 = MAX_RAW_KCAL_DRY,
         label = "Alubias rojas",
         family = FAMILY_LEGUME,
@@ -629,6 +725,9 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
     ),
     CookingYield(
         id = "alubia_negra",
+        factorProtein = 2.438,
+        factorCarbs = 2.63,
+        factorFat = 2.63,
         maxRawKcalPer100 = MAX_RAW_KCAL_DRY,
         label = "Alubias negras",
         family = FAMILY_LEGUME,
@@ -643,6 +742,9 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
     ),
     CookingYield(
         id = "habas",
+        factorProtein = 3.437,
+        factorCarbs = 2.966,
+        factorFat = 3.825,
         maxRawKcalPer100 = MAX_RAW_KCAL_DRY,
         label = "Habas secas",
         family = FAMILY_LEGUME,
@@ -660,6 +762,9 @@ val COOKING_YIELDS: List<CookingYield> = listOf(
 
     CookingYield(
         id = "patata",
+        factorProtein = 1.096,
+        factorCarbs = 0.869,
+        factorFat = 0.9,
         maxRawKcalPer100 = MAX_RAW_KCAL_TUBER,
         label = "Patata",
         family = FAMILY_TUBER,
@@ -832,9 +937,13 @@ fun cookingYieldById(id: String?): CookingYield? =
  * cocinarse, esos 76 g siguen conteniendo las mismas kcal, así que por cada 100 g de cocinado hay
  * más kcal que por cada 100 g de crudo.
  */
-fun CookingYield.per100For(valuePer100Raw: Double, basis: WeighBasis): Double = when (basis) {
+fun CookingYield.per100For(
+    valuePer100Raw: Double,
+    basis: WeighBasis,
+    macro: Macro = Macro.ENERGY
+): Double = when (basis) {
     WeighBasis.RAW -> valuePer100Raw
-    WeighBasis.COOKED -> valuePer100Raw / factor
+    WeighBasis.COOKED -> valuePer100Raw / factorFor(macro)
 }
 
 /**

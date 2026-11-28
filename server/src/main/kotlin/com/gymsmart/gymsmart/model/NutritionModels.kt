@@ -39,6 +39,28 @@ data class MealEntryRequest(
      */
     val yieldFactor: Double? = null,
     /**
+     * Los cuatro valores por 100 g **en la base de origen** (cruda o en seco), antes de convertir.
+     *
+     * Son lo que hace exacta la reutilización de un alimento desde el historial. La fila guarda los
+     * valores ya convertidos a la base que eligió el usuario —eso es lo que mantiene inmutables los
+     * totales de los días pasados— y toda la app da por hecho que los nutrientes de un producto
+     * están en base cruda, así que el historial tiene que deshacer la conversión.
+     *
+     * Hasta ahora deshacía multiplicando por el factor, que era exacto mientras hubiera **un solo
+     * factor**. Al pasar a un factor por macro deja de serlo: en el muslo de pollo la proteína se
+     * convierte con 0,794 y la energía con 0,676, así que multiplicar la proteína por 0,676 la deja
+     * un 15 % por debajo de su valor crudo, y volver a marcar "cocido" compondría el error.
+     *
+     * Guardar el origen quita la aritmética de en medio: deshacer es leer. Y deja de depender del
+     * catálogo por completo, que era el otro agujero (doc/13 §2.4, I-3).
+     *
+     * Null en todo lo registrado antes de estas columnas; ahí se sigue cayendo al factor.
+     */
+    val sourceKcalPer100: Double? = null,
+    val sourceProteinsPer100: Double? = null,
+    val sourceCarbsPer100: Double? = null,
+    val sourceFatPer100: Double? = null,
+    /**
      * Identificador que genera el **cliente** para este intento de guardado, y que repite si tiene que
      * reintentar. Hace que `POST /nutrition/add` sea idempotente.
      *
