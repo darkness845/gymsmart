@@ -1173,3 +1173,13 @@ de encontrar fallos y mejoras). Se repartió en cuatro frentes en paralelo: GPS 
   de `USE_EXACT_ALARM`; y la pantalla cancelaba la notificación si el contador llegaba a cero con la
   app abierta. Los tres arreglados; canal nuevo con vibración y visibilidad en bloqueo.
 - Verificado con la batería completa + Android. Sin probar en el móvil.
+
+### 2026-11-28 — Investigación Render/actualización del cliente y bot de 8:00 a 1:00
+
+- Investigado: mantener Render gratis despierto (funciona con pings, 744 h ≤ 750 h si es el único
+  servicio, pero Render lo considera abuso) y actualizar el cliente solo (Render no compila APKs; la vía
+  es GitHub Actions → Release firmada → Obtainium en el móvil; requiere clave de firma propia y un
+  `versionCode` que suba).
+- El usuario eligió ping solo de 8:00 a 1:00 con un bot externo (cron-job.org), configurado por él.
+  Se llegó a escribir un workflow de GitHub Actions y se borró sin subir: el repo pasará a privado y el
+  usuario no lo había pedido.

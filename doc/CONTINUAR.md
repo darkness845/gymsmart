@@ -349,7 +349,16 @@ factor tiene que caer con el último cambio de fórmula.
 
 ---
 
-## ✅ 2026-11-27 — Aviso de descanso como notificación real + insignia de unión (sin commitear)
+## 🟡 2026-11-28 — Bot que mantiene despierto Render de 8:00 a 1:00 (lo configura el usuario)
+
+Decisión del usuario: un bot externo (cron-job.org) que llama a `/health` cada 10 min entre las 8:00 y
+la 1:00 hora de Madrid. **Nada en el repo**: el usuario va a hacer el repositorio privado y no quiere
+GitHub Actions (se llegó a crear `.github/workflows/keep-awake.yml` y se borró sin subirlo).
+Contexto: Render apaga el plan gratis a los 15 min sin tráfico (despertar ≈ 40 s medidos), da 750 h/mes
+por cuenta, y su personal llama "abuso" a mantenerlo despierto; con horario son ~530 h/mes.
+La actualización automática del cliente (GitHub Actions + Obtainium) se investigó y queda aparcada.
+
+## ✅ 2026-11-27 — Aviso de descanso como notificación real + insignia de unión (commiteado)
 
 Pedido por el usuario antes de GPS-5/6, PERM-1 y ERR-1 (que siguen siendo lo siguiente).
 
@@ -370,7 +379,7 @@ Pedido por el usuario antes de GPS-5/6, PERM-1 y ERR-1 (que siguen siendo lo sig
 - **Sin verificar en dispositivo.** En Xiaomi/HyperOS puede hacer falta activar a mano en Ajustes de
   la app "Pantalla de bloqueo" y "Notificaciones flotantes".
 
-## ✅ 2026-11-27 — Limpieza: tema viejo fuera y AUD-16 cerrado (sin commitear)
+## ✅ 2026-11-27 — Limpieza: tema viejo fuera y AUD-16 cerrado (commiteado)
 
 - **Borrado `ui/theme/AppTheme.kt`** (`GymSmartColors`, `GymSmartTheme`, `GymSmartSpacing`,
   `GymSmartElevation`), con confirmación del usuario. Su último uso era `RateSliderColors.Legacy`;
